@@ -1,0 +1,8 @@
+customtkinter
+requests
+pillow
+pystray
+winshell
+pywin32
+fastapi
+uvicorn

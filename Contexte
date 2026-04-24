@@ -1,0 +1,134 @@
+Plan refonte complète vers Tauri + Rust
+On va faire un plan pour une refonte complète, on veut les même feature, mieux faites car actuellement, un peu bug, pourquoi pas plus à partir des bases qu'on a.
+On va passer sur un environnement Tauri + Rust.
+ · 
+Planning Refactoring Approach
+
+I'm currently mapping out the core functionalities of Twitch Miner, aiming to preserve all existing features while identifying areas for significant improvement and bug resolution. My focus is on laying a robust foundation within Tauri and Rust for future expansion.
+
+Exploring Project Structure
+
+I am currently analyzing the project's directory and files to understand its existing functionalities and dependencies. My goal is to get a clear picture of the current state before planning any refactoring actions.
+
+Examining Project Files
+
+I am now actively investigating the project's file structure and key configuration documents. My objective is to gain a thorough understanding of its current components and dependencies before proceeding with any refactoring plans.
+
+Discovering Directory Contents
+
+I'm exploring the codebase by initially focusing on glob to locate all files. I've noted that PowerShell doesn't interpret ls -la, so I'll be leaning on standard PowerShell commands or glob for navigation instead.
+
+Exploring Project Structure
+
+I'm currently analyzing the project's setup. It appears to be primarily Python-based, with potential UI frameworks like PySide6 or Tkinter. I'm also investigating an experimental integration with Tauri, possibly using a sidecar pattern for Python. The presence of tauri_ui/src-tauri/target suggests initial Tauri build artifacts.
+
+Analyzing Project Architecture
+
+I'm digging into the project's composition. It seems to be a hybrid, with a Python backend that might leverage PySide6 or Tkinter for the UI, and an experimental Tauri integration. I'm also spotting React in the tauri_ui directory and exploring the Python codebase to understand the existing functionalities before considering a Rust rewrite.
+
+Developing Application Features
+
+I'm currently refining the core functionalities, specifically focusing on the DeviceAuthenticator for Twitch integration, the DropMiner for efficient drop farming, and the BonusManager to optimize streak and farming mechanics within the Python application.
+
+Refactoring Backend Logic
+
+I'm now concentrating on translating the existing Python backend logic for authentication, drop mining, and bonus management into Rust, aiming for improved stability and performance within the new Tauri framework. The goal is to rebuild these core features from the ground up.
+
+Exploring Device Code Auth
+
+I'm currently diving into the device code authentication flow for Twitch. My focus is on understanding the implementation details within core/miner.py to grasp its intricacies.
+
+Developing Core Backend
+
+My focus has been on establishing the foundational backend components. I'm currently implementing the authentication flow using the device code grant for Twitch tokens and developing a custom wrapper to interface with the Twitch GQL API. The miner loop is also in progress.
+
+Implementing Backend Logic
+
+I'm actively building out the core functionality. This involves defining the authentication mechanisms with Twitch's device code flow and creating a dedicated wrapper for GQL API interactions. The miner loop, responsible for drop and campaign management, is also under active development, alongside the initial design for the bonus manager.
+
+Exploring StreakMiner Logic
+
+I'm currently dissecting StreakMiner's functionality, specifically how it leverages "minute-watched" pings across channels for point farming or streak maintenance. Next, I'll be examining the tauri_ui directory to understand their current frontend implementation.
+
+Planning Complete Refactor
+
+I'm considering a full refactor of the application, aiming to retain existing features but enhance their quality and stability, addressing current bugs and potentially improving performance. The tech stack remains React 19, Tailwind, Radix UI, Tanstack Query, Lucide React, and Tauri v2.
+
+Designing New Architecture
+
+I'm planning the new architecture, focusing on integrating Tauri v2 with a Rust backend and a React frontend. This will involve porting existing features like authentication and background mining to Rust, leveraging its concurrency and strict typing for improved stability and performance.
+
+Planning New Architecture
+
+I'm detailing the integration of Tauri v2 with a Rust backend and a React frontend. This involves porting authentication, the Twitch GQL client, and background mining processes to Rust, aiming to leverage its performance and stability advantages for a more robust application.
+
+Developing Twitch Miner Logic
+
+I'm now focusing on refining the core logic for automated Twitch drop farming. This involves the intricate process of inventory checking, identifying relevant streams, and utilizing Spade telemetry for efficient watching. My attention is currently on integrating the priority system for games and streamers to optimize drop acquisition.
+
+Refining Rust Architecture
+
+My focus has shifted to solidifying the core Rust backend architecture within Tauri v2. I'm prioritizing robust asynchronous operations using reqwest for all API interactions, ensuring proper proxy and retry handling. This move away from Python is crucial for performance and stability.
+
+Integrating Spade URL Logic
+
+I'm now focusing on finding a more robust method for obtaining Spade URLs, aiming to move beyond fragile regex parsing of HTML. My current direction involves investigating direct GQL endpoints that might provide this information, which should significantly improve stability and reduce errors.
+
+Building Rust GQL Client
+
+I'm now focusing on creating strongly-typed Rust structs for Twitch GQL requests and responses. This will eliminate the fragility of dynamic dictionary access and ensure robust JSON parsing, preventing crashes on malformed data. My aim is to move towards safer, more predictable API interactions.
+
+Refining Tauri GQL Integration
+
+I'm now working on establishing robust, strongly-typed Rust structures for Twitch's GQL requests and responses. This eliminates the current fragility of dynamic dictionary access and ensures safer, more predictable JSON parsing for API interactions.
+
+Voici un plan complet et structuré pour la refonte totale de "Twitch Miner" vers un environnement natif Tauri (v2) + Rust + React, en supprimant complètement le backend Python.
+
+L'objectif est d'avoir une application beaucoup plus performante, légère, sans bugs (finis les crashs de requêtes synchrones ou de parsing JSON), et d'en profiter pour ajouter des fonctionnalités très demandées.
+
+🏗️ 1. Nouvelle Architecture (Tauri + Rust)
+Backend (Core Rust) :
+Remplacement de requests par reqwest (asynchrone, plus rapide, gère mieux les proxys et les headers).
+Utilisation de tokio pour gérer les boucles de minage (Drop & Streak) en véritable asynchrone (non-bloquant), ce qui permet de faire tourner le minage en arrière-plan sans freezer l'UI.
+Sérialisation stricte avec serde : Fini les data.get("data", {}).get("...") qui causent des erreurs silencieuses en Python. Rust validera les réponses de Twitch (GQL) à la volée.
+Communication avec le frontend via les Tauri Events (push en temps réel du backend vers l'UI, au lieu d'un polling de l'API côté React).
+Frontend (React/Vite) :
+On garde la base que tu as commencée dans tauri_ui (React 19, Tailwind, Radix, Lucide).
+Utilisation de @tauri-apps/api/core pour appeler les fonctions Rust (invoke) et écouter les événements du miner (listen).
+🚀 2. Refonte des Fonctionnalités (Mêmes features, mais robustes)
+Authentification (Device Code Flow) :
+Gérée nativement en Rust.
+Amélioration : Sauvegarde sécurisée des tokens via le trousseau du système d'exploitation (tauri-plugin-store ou keyring) plutôt qu'un config.json en clair.
+Moteur GQL & Spade Telemetry (Anti-AFK Twitch) :
+Le cœur du bot. L'extraction de l'URL Spade (actuellement faite avec des regex fragiles en Python) sera fiabilisée.
+Amélioration : Ajout d'un système de Retry et de Jitter (délais aléatoires) pour éviter les erreurs 429 et mieux simuler un comportement humain.
+Drop Miner (Priorités & Auto-Claim) :
+La logique de recherche de campagnes et de streams sera une Task Tokio.
+Amélioration : Meilleure gestion des changements de streams en direct (si le streamer change de jeu ou se déconnecte, le bot bascule instantanément sans attendre le prochain tick d'une minute).
+Bonus Manager (Streaks & Green Chests) :
+La version Python simulait le mode parallèle. En Rust, on peut miner 10 chaînes en simultané avec un impact CPU de 0%.
+✨ 3. "Pourquoi pas plus" : Nouvelles Features (Propositions)
+Puisqu'on repart sur une base saine et ultra-performante en Rust, voici ce qu'on peut ajouter facilement :
+
+Support Multi-Comptes 👥 : Rust gère très bien les états isolés. On pourrait ajouter la possibilité de connecter 2, 3 ou 5 comptes Twitch différents et de les faire miner en parallèle dans la même application.
+Mode "Background / System Tray" tray : L'application peut se fermer dans la barre des tâches (à côté de l'horloge Windows) et miner silencieusement.
+Notifications Natives 🔔 : Utiliser @tauri-apps/plugin-notification pour envoyer une vraie notification Windows/Mac à chaque drop récupéré.
+Statistiques & Historique 📊 : Sauvegarder localement l'historique des drops obtenus (avec une mini BDD SQLite locale ou de simples fichiers JSON) pour afficher un graphique des gains dans le Dashboard React.
+Auto-Updater 🔄 : Intégrer l'updater natif de Tauri pour que l'app se mette à jour toute seule à la prochaine release.
+📋 4. Plan d'Implémentation (Étape par étape)
+Si ce plan te convient, voici comment nous procéderons :
+
+Étape 1 : Nettoyage et Setup Tauri
+Conserver le dossier tauri_ui actuel, configurer correctement le fichier Cargo.toml et tauri.conf.json pour préparer le backend Rust.
+Étape 2 : API Twitch & Auth en Rust
+Créer les structs Rust (Modèles de données) pour le GQL Twitch.
+Implémenter le Device Auth Flow.
+Étape 3 : Le Cœur du Miner (Drops & Bonus)
+Réécrire DropMiner et StreakMiner en utilisant tokio::spawn.
+Mettre en place le système de "Spade Telemetry" (Minute-watched).
+Étape 4 : Pont Rust <-> React (Tauri IPC)
+Créer les commandes invoke (ex: start_miner, get_config).
+Pousser les événements en direct vers React (miner_progress_update, drop_claimed).
+Étape 5 : Refonte UI & Finitions
+Câbler le dashboard React existant aux événements Rust.
+Qu'en penses-tu ? Es-tu particulièrement intéressé par le Multi-comptes ou le System Tray pour cette V2 ? Y a-t-il d'autres features que tu avais en tête avant qu'on passe à l'action ? (Rappel: je suis actuellement en mode "Plan", je ne modifierai aucun fichier sans ton feu vert).

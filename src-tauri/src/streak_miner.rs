@@ -347,9 +347,15 @@ async fn process_single_channel(
     gql.send_spade_minute_watched(&spade_url, payload).await
 }
 
-fn get_streak_channels(_store: &Arc<tauri_plugin_store::Store<tauri::Wry>>) -> Vec<String> {
-    // For now, return some default channels
-    // In the future, this should be configurable
+fn get_streak_channels(store: &Arc<tauri_plugin_store::Store<tauri::Wry>>) -> Vec<String> {
+    // Try to load from config
+    if let Some(config_json) = store.get("app_config") {
+        if let Ok(config) = serde_json::from_value::<crate::models::AppConfig>(config_json) {
+            return config.bonus.daily_streaks.channels;
+        }
+    }
+    
+    // Fallback to defaults
     vec![
         "shroud".to_string(),
         "summit1g".to_string(),
@@ -359,8 +365,14 @@ fn get_streak_channels(_store: &Arc<tauri_plugin_store::Store<tauri::Wry>>) -> V
     ]
 }
 
-fn get_streak_mode(_store: &Arc<tauri_plugin_store::Store<tauri::Wry>>) -> String {
-    // For now, default to parallel mode
-    // In the future, this should be configurable
+fn get_streak_mode(store: &Arc<tauri_plugin_store::Store<tauri::Wry>>) -> String {
+    // Try to load from config
+    if let Some(config_json) = store.get("app_config") {
+        if let Ok(config) = serde_json::from_value::<crate::models::AppConfig>(config_json) {
+            return config.bonus.daily_streaks.mode;
+        }
+    }
+    
+    // Fallback to default
     "parallel".to_string()
 }

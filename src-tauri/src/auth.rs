@@ -1,6 +1,6 @@
 use reqwest::Client;
 use serde_json::json;
-use crate::models::{AuthInitResponse, TokenResponse};
+use crate::models::AuthInitResponse;
 use tauri_plugin_store::StoreExt;
 use tauri::AppHandle;
 
@@ -51,15 +51,38 @@ pub async fn poll_for_token(app: AppHandle, device_code: String, interval: u64) 
         let text = res.text().await.unwrap_or_default();
 
         if status.is_success() {
-            if let Ok(token_data) = serde_json::from_str::<TokenResponse>(&text) {
-                // Save to store
-                let store = app.store("config.json").map_err(|e| e.to_string())?;
-                store.set("access_token", json!(token_data.access_token));
-                store.set("refresh_token", json!(token_data.refresh_token));
-                store.save().map_err(|e| e.to_string())?;
-                
-                return Ok("Authenticated successfully!".to_string());
-            }
+            println!("Auth response received: {}", &text[..text.len().min(100)]);
+            
+            // Parse as Value for maximum flexibility
+            let token_data: serde_json::Value = serde_json::from_str(&text)
+                .map_err(|e| format!("Failed to parse JSON: {} - Raw: {}", e, text))?;
+            
+            println!("JSON parsed as Value: {}", token_data.to_string());
+            
+            // Extract required fields
+            let access_token = token_data.get("access_token")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing access_token in response")?;
+            
+            let refresh_token = token_data.get("refresh_token")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing refresh_token in response")?;
+            
+            println!("Access token length: {}", access_token.len());
+            println!("Refresh token length: {}", refresh_token.len());
+            
+            // Save to store
+            let store = app.store("config.json").map_err(|e: tauri_plugin_store::Error| e.to_string())?;
+            println!("Store created successfully");
+            
+            store.set("access_token", json!(access_token));
+            store.set("refresh_token", json!(refresh_token));
+            println!("Token set in store");
+            
+            store.save().map_err(|e: tauri_plugin_store::Error| e.to_string())?;
+            println!("Store saved successfully");
+            
+            return Ok("Authenticated successfully!".to_string());
         } else if status == 400 {
             if let Ok(error_data) = serde_json::from_str::<serde_json::Value>(&text) {
                 if let Some(msg) = error_data.get("message").and_then(|m| m.as_str()) {

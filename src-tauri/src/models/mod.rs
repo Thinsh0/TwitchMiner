@@ -34,8 +34,57 @@ pub struct AuthInitResponse {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TokenResponse {
     pub access_token: String,
+    #[serde(default)]
+    pub id_token: Option<String>,
     pub refresh_token: String,
     pub expires_in: u64,
+    #[serde(default)]
+    pub scope: Vec<String>,
+    pub token_type: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct AppConfig {
+    pub client_id: String,
+    pub priorities: Priorities,
+    pub bonus: BonusConfig,
+    pub settings: Settings,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct Priorities {
+    pub games: Vec<String>,
+    pub streamers: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct BonusConfig {
+    pub daily_streaks: DailyStreaksConfig,
+    pub points_farming: PointsFarmingConfig,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct DailyStreaksConfig {
+    pub channels: Vec<String>,
+    pub auto_start: bool,
+    pub mode: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct PointsFarmingConfig {
+    pub channels: Vec<String>,
+    pub auto_start: bool,
+    pub max_concurrent: u32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct Settings {
+    pub language: String,
+    pub check_interval: u64,
+    pub notifications_enabled: bool,
+    pub notify_active_drop: bool,
+    pub notify_claim: bool,
+    pub notify_campaign_finish: bool,
 }
 
 // We will add more structs for GQL responses as we implement them.

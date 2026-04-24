@@ -12,6 +12,16 @@ pub struct MinerStatus {
     pub current_points: String,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct StreakMinerStatus {
+    pub status: String,
+    pub current_channels: Vec<String>,
+    pub total_pings_sent: u64,
+    pub successful_pings: u64,
+    pub failed_pings: u64,
+    pub cycle_count: u64,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AuthInitResponse {
     pub device_code: String,

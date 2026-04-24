@@ -1,6 +1,6 @@
 use crate::models::MinerStatus;
 use crate::api::TwitchGQL;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter};
 use tauri_plugin_store::StoreExt;
 use std::sync::Arc;
 use tokio::sync::Mutex;

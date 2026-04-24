@@ -1,12 +1,14 @@
 pub mod api;
 pub mod auth;
 pub mod miner;
+pub mod streak_miner;
 pub mod models;
 
 use tauri::Manager;
 use tokio::sync::Mutex;
 use std::sync::Arc;
 use crate::miner::MinerState;
+use crate::streak_miner::StreakMinerState;
 
 #[tauri::command]
 async fn get_status(state: tauri::State<'_, Arc<Mutex<MinerState>>>) -> Result<models::MinerStatus, String> {
@@ -17,6 +19,7 @@ async fn get_status(state: tauri::State<'_, Arc<Mutex<MinerState>>>) -> Result<m
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let miner_state = Arc::new(Mutex::new(MinerState::new()));
+    let streak_miner_state = Arc::new(Mutex::new(StreakMinerState::new()));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_os::init())
@@ -25,6 +28,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(move |app| {
             app.manage(miner_state.clone());
+            app.manage(streak_miner_state.clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -32,7 +36,10 @@ pub fn run() {
             auth::start_auth,
             auth::poll_for_token,
             miner::start_miner,
-            miner::stop_miner
+            miner::stop_miner,
+            streak_miner::start_streak_miner,
+            streak_miner::stop_streak_miner,
+            streak_miner::get_streak_miner_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

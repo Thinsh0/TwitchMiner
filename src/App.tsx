@@ -17,10 +17,22 @@ function App() {
   const [userCode, setUserCode] = useState('')
   const [authUri, setAuthUri] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
+  
+  // Streak Miner state
+  const [streakStatus, setStreakStatus] = useState({
+    status: "Idle",
+    current_channels: [],
+    total_pings_sent: 0,
+    successful_pings: 0,
+    failed_pings: 0,
+    cycle_count: 0,
+  })
+  const [streakRunning, setStreakRunning] = useState(false)
 
   // Real-time Events for Miner Status
   useEffect(() => {
     let unlisten: any;
+    let streakUnlisten: any;
     
     if (isAuthenticated) {
       // Listen for real-time updates from backend
@@ -30,15 +42,34 @@ function App() {
         unlisten = unlistenFn;
       }).catch(console.error);
 
+      // Listen for streak miner updates
+      listen('streak-miner-status-update', (event) => {
+        const payload = event.payload as typeof streakStatus;
+        setStreakStatus(payload);
+        setStreakRunning(payload.status !== "Idle" && payload.status !== "Stopped");
+      }).then((unlistenFn) => {
+        streakUnlisten = unlistenFn;
+      }).catch(console.error);
+
       // Get initial status
       invoke<MinerStatus>('get_status')
         .then(setStatus)
+        .catch(console.error);
+      
+      invoke('get_streak_miner_status')
+        .then((status: any) => {
+          setStreakStatus(status);
+          setStreakRunning(status.status !== "Idle" && status.status !== "Stopped");
+        })
         .catch(console.error);
     }
     
     return () => {
       if (unlisten) {
         unlisten();
+      }
+      if (streakUnlisten) {
+        streakUnlisten();
       }
     };
   }, [isAuthenticated, setStatus])
@@ -71,6 +102,14 @@ function App() {
       await invoke('stop_miner')
     } else {
       await invoke('start_miner')
+    }
+  }
+
+  const toggleStreakMiner = async () => {
+    if (streakRunning) {
+      await invoke('stop_streak_miner')
+    } else {
+      await invoke('start_streak_miner')
     }
   }
 
@@ -142,11 +181,11 @@ function App() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Main Status Card */}
-          <Card className="md:col-span-2 bg-black/40 border-white/10 backdrop-blur-xl shadow-xl">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Drop Mining Status Card */}
+          <Card className="bg-black/40 border-white/10 backdrop-blur-xl shadow-xl">
             <CardHeader>
-              <CardTitle className="text-lg text-white">Current Operation</CardTitle>
+              <CardTitle className="text-lg text-white">Drop Mining</CardTitle>
               <CardDescription className="text-zinc-400">{status.status}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -170,41 +209,109 @@ function App() {
                 </div>
                 <Progress value={status.progress} className="h-2 bg-zinc-800" />
               </div>
+
+              <Button 
+                className="w-full"
+                variant={status.is_running ? "destructive" : "default"}
+                onClick={toggleMiner}
+              >
+                {status.is_running ? <><Square className="mr-2 h-4 w-4" /> Stop Drop Mining</> : <><Play className="mr-2 h-4 w-4" /> Start Drop Mining</>}
+              </Button>
             </CardContent>
           </Card>
 
-          {/* Side Panel */}
-          <div className="space-y-6">
-            <Card className="bg-black/40 border-white/10 backdrop-blur-xl shadow-xl">
-              <CardHeader>
-                <CardTitle className="text-lg text-white">Channel Points</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-green-400 drop-shadow-[0_0_10px_rgba(74,222,128,0.3)]">
-                  {status.current_points}
+          {/* Streak Mining Status Card */}
+          <Card className="bg-black/40 border-white/10 backdrop-blur-xl shadow-xl">
+            <CardHeader>
+              <CardTitle className="text-lg text-white">Channel Points Mining</CardTitle>
+              <CardDescription className="text-zinc-400">{streakStatus.status}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 rounded-xl bg-white/5 border border-white/5 text-center">
+                  <div className="text-2xl font-bold text-green-400">{streakStatus.successful_pings}</div>
+                  <div className="text-xs text-zinc-400">Successful</div>
                 </div>
-                <p className="text-sm text-zinc-400 mt-1">Farmable Points</p>
-              </CardContent>
-            </Card>
+                <div className="p-3 rounded-xl bg-white/5 border border-white/5 text-center">
+                  <div className="text-2xl font-bold text-red-400">{streakStatus.failed_pings}</div>
+                  <div className="text-xs text-zinc-400">Failed</div>
+                </div>
+              </div>
 
-            <Card className="bg-black/40 border-white/10 backdrop-blur-xl shadow-xl">
-              <CardHeader>
-                <CardTitle className="text-lg text-white">Session Info</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm text-zinc-400">
-                <div className="flex justify-between">
-                  <span>Backend</span>
-                  <span className="text-white">Tauri V2 + Rust</span>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-zinc-400">Total Pings</span>
+                  <span className="text-white font-medium">{streakStatus.total_pings_sent}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Status</span>
-                  <span className="text-white">{status.is_running ? 'Connected' : 'Disconnected'}</span>
+                <div className="flex justify-between text-sm">
+                  <span className="text-zinc-400">Cycles</span>
+                  <span className="text-white font-medium">{streakStatus.cycle_count}</span>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-zinc-400">Success Rate</span>
+                  <span className="text-white font-medium">
+                    {streakStatus.total_pings_sent > 0 
+                      ? `${((streakStatus.successful_pings / streakStatus.total_pings_sent) * 100).toFixed(1)}%`
+                      : "0%"
+                    }
+                  </span>
+                </div>
+              </div>
+
+              {streakStatus.current_channels.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-sm text-zinc-400">Active Channels:</div>
+                  <div className="flex flex-wrap gap-1">
+                    {streakStatus.current_channels.slice(0, 3).map((channel, i) => (
+                      <Badge key={i} variant="secondary" className="text-xs bg-blue-500/20 text-blue-400 border-blue-500/50">
+                        {channel}
+                      </Badge>
+                    ))}
+                    {streakStatus.current_channels.length > 3 && (
+                      <Badge variant="secondary" className="text-xs bg-zinc-800 text-zinc-400">
+                        +{streakStatus.current_channels.length - 3}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <Button 
+                className="w-full"
+                variant={streakRunning ? "destructive" : "default"}
+                onClick={toggleStreakMiner}
+              >
+                {streakRunning ? <><Square className="mr-2 h-4 w-4" /> Stop Streak Mining</> : <><Play className="mr-2 h-4 w-4" /> Start Streak Mining</>}
+              </Button>
+            </CardContent>
+          </Card>
         </div>
 
+        {/* Session Info */}
+        <Card className="bg-black/40 border-white/10 backdrop-blur-xl shadow-xl">
+          <CardHeader>
+            <CardTitle className="text-lg text-white">Session Info</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div className="text-center">
+              <div className="text-zinc-400">Backend</div>
+              <div className="text-white font-medium">Tauri V2 + Rust</div>
+            </div>
+            <div className="text-center">
+              <div className="text-zinc-400">Drop Status</div>
+              <div className="text-white font-medium">{status.is_running ? 'Active' : 'Idle'}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-zinc-400">Streak Status</div>
+              <div className="text-white font-medium">{streakRunning ? 'Active' : 'Idle'}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-zinc-400">Channel Points</div>
+              <div className="text-white font-medium">{status.current_points}</div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

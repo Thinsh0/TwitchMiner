@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { useAppStore } from './store'
 import type { MinerStatus } from './store'
 import { Button } from '@/components/ui/button'
@@ -17,23 +18,29 @@ function App() {
   const [authUri, setAuthUri] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
 
-  // Polling Miner Status
+  // Real-time Events for Miner Status
   useEffect(() => {
-    let interval: number | undefined;
+    let unlisten: any;
     
     if (isAuthenticated) {
-      // Poll backend every 2s
-      interval = window.setInterval(async () => {
-        try {
-          const newStatus = await invoke<MinerStatus>('get_status');
-          setStatus(newStatus);
-        } catch (e) {
-          console.error(e);
-        }
-      }, 2000);
+      // Listen for real-time updates from backend
+      listen<MinerStatus>('miner-status-update', (event) => {
+        setStatus(event.payload);
+      }).then((unlistenFn) => {
+        unlisten = unlistenFn;
+      }).catch(console.error);
+
+      // Get initial status
+      invoke<MinerStatus>('get_status')
+        .then(setStatus)
+        .catch(console.error);
     }
     
-    return () => clearInterval(interval);
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
   }, [isAuthenticated, setStatus])
 
   const startAuth = async () => {

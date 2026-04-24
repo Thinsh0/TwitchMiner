@@ -206,26 +206,78 @@ impl TwitchGQL {
     }
 
     pub async fn get_spade_url(&self, streamer_login: &str) -> Result<String, String> {
-        let url = format!("https://www.twitch.tv/{}", streamer_login);
-        let res = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
-        let text = res.text().await.map_err(|e| e.to_string())?;
+        // Retry logic with exponential backoff
+        for attempt in 1..=3 {
+            match self._get_spade_url_internal(streamer_login).await {
+                Ok(url) => return Ok(url),
+                Err(e) => {
+                    if attempt == 3 {
+                        return Err(format!("Failed after 3 attempts: {}", e));
+                    }
+                    // Wait with jitter before retry
+                    let delay = (1000 * attempt) + rand::random::<u64>() % 500;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
+                }
+            }
+        }
+        Err("Spade URL not found".to_string())
+    }
 
-        let re = Regex::new(r#""beacon_?url": ?"(https://video-edge-[.\w\-/]+\.ts(?:\?allow_stream=true)?)""#).unwrap();
-        if let Some(caps) = re.captures(&text) {
-            return Ok(caps[1].to_string());
+    async fn _get_spade_url_internal(&self, streamer_login: &str) -> Result<String, String> {
+        let url = format!("https://www.twitch.tv/{}", streamer_login);
+        
+        let res = self.client.get(&url)
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header("Accept-Language", "en-US,en;q=0.5")
+            .send()
+            .await
+            .map_err(|e| format!("Failed to fetch page: {}", e))?;
+
+        if !res.status().is_success() {
+            return Err(format!("HTTP {}: Failed to fetch streamer page", res.status()));
+        }
+
+        let text = res.text().await.map_err(|e| format!("Failed to read response: {}", e))?;
+
+        // Try multiple regex patterns for better reliability
+        let patterns = vec![
+            r#""beacon_url": ?"(https://video-edge-[.\w\-/]+\.ts\?[^"]*)""#,
+            r#""beacon-url": ?"(https://video-edge-[.\w\-/]+\.ts\?[^"]*)""#,
+            r#""beacon_?url": ?"(https://video-edge-[.\w\-/]+\.ts(?:\?allow_stream=true)?)[^"]*""#,
+            r#"spade\.url = "(https://video-edge-[.\w\-/]+\.ts[^"]*)""#,
+        ];
+
+        for pattern in &patterns {
+            let re = Regex::new(pattern).map_err(|e| format!("Invalid regex: {}", e))?;
+            if let Some(caps) = re.captures(&text) {
+                return Ok(caps[1].to_string());
+            }
         }
         
-        let re_settings = Regex::new(r#"src="(https://[\w.]+/config/settings\.[0-9a-f]{32}\.js)""#).unwrap();
+        // Fallback: try to find settings.js and extract from there
+        let re_settings = Regex::new(r#"src="(https://[\w.]+/config/settings\.[0-9a-f]{32}\.js)""#)
+            .map_err(|e| format!("Settings regex error: {}", e))?;
+            
         if let Some(caps) = re_settings.captures(&text) {
             let settings_url = &caps[1];
-            let res_js = self.client.get(settings_url).send().await.map_err(|e| e.to_string())?;
-            let text_js = res_js.text().await.map_err(|e| e.to_string())?;
-            if let Some(caps_js) = re.captures(&text_js) {
-                return Ok(caps_js[1].to_string());
+            match self.client.get(settings_url).send().await {
+                Ok(res_js) => {
+                    if res_js.status().is_success() {
+                        if let Ok(text_js) = res_js.text().await {
+                            for pattern in &patterns {
+                                let re = Regex::new(pattern).map_err(|e| format!("Invalid regex: {}", e))?;
+                                if let Some(caps_js) = re.captures(&text_js) {
+                                    return Ok(caps_js[1].to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => return Err(format!("Failed to fetch settings.js: {}", e)),
             }
         }
 
-        Err("Spade URL not found".to_string())
+        Err("Spade URL not found in any pattern".to_string())
     }
 
     pub async fn send_spade_minute_watched(&self, spade_url: &str, payload_data: Value) -> Result<bool, String> {

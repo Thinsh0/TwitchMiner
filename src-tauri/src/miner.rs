@@ -1,6 +1,6 @@
 use crate::models::MinerStatus;
 use crate::api::TwitchGQL;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_store::StoreExt;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -27,6 +27,13 @@ impl MinerState {
 
     pub fn get_status(&self) -> MinerStatus {
         self.status.clone()
+    }
+
+    pub fn update_and_notify(&mut self, app: &AppHandle, new_status: MinerStatus) {
+        self.status = new_status.clone();
+        
+        // Send real-time update to frontend
+        let _ = app.emit("miner-status-update", new_status);
     }
 }
 
@@ -106,10 +113,13 @@ pub async fn start_miner(app: AppHandle, state: tauri::State<'_, Arc<Mutex<Miner
     }
 
     s.is_running = true;
-    s.status.status = "Starting...".to_string();
-    s.status.is_running = true;
+    let mut new_status = s.status.clone();
+    new_status.status = "Starting...".to_string();
+    new_status.is_running = true;
+    s.update_and_notify(&app, new_status);
 
     let state_clone = state.inner().clone();
+    let app_clone = app.clone();
     
     let store = match app.store("config.json") {
         Ok(st) => st,
@@ -130,7 +140,9 @@ pub async fn start_miner(app: AppHandle, state: tauri::State<'_, Arc<Mutex<Miner
 
             {
                 let mut s_guard = state_clone.lock().await;
-                s_guard.status.status = "Checking Inventory...".to_string();
+                let mut new_status = s_guard.status.clone();
+                new_status.status = "Checking Inventory...".to_string();
+                s_guard.update_and_notify(&app_clone, new_status);
             }
 
             // 1. Get User Info
@@ -177,7 +189,9 @@ pub async fn start_miner(app: AppHandle, state: tauri::State<'_, Arc<Mutex<Miner
                     if let (Some(game_id), Some(game_name)) = (target_game_id, target_game_name) {
                         {
                             let mut s_guard = state_clone.lock().await;
-                            s_guard.status.status = format!("Looking for {} streamer...", game_name);
+                            let mut new_status = s_guard.status.clone();
+                            new_status.status = format!("Looking for {} streamer...", game_name);
+                            s_guard.update_and_notify(&app_clone, new_status);
                         }
 
                         if let Ok(streams) = gql.get_live_streams(&store, &game_id).await {
@@ -206,9 +220,11 @@ pub async fn start_miner(app: AppHandle, state: tauri::State<'_, Arc<Mutex<Miner
                             if let Some(streamer_login) = target_streamer_login {
                                 {
                                     let mut s_guard = state_clone.lock().await;
-                                    s_guard.status.current_streamer = target_streamer_name.clone();
-                                    s_guard.status.streamer_image_url = target_streamer_image.clone();
-                                    s_guard.status.status = format!("Watching {}...", target_streamer_name.unwrap_or_default());
+                                    let mut new_status = s_guard.status.clone();
+                                    new_status.current_streamer = target_streamer_name.clone();
+                                    new_status.streamer_image_url = target_streamer_image.clone();
+                                    new_status.status = format!("Watching {}...", target_streamer_name.unwrap_or_default());
+                                    s_guard.update_and_notify(&app_clone, new_status);
                                 }
 
                                 let _ = gql.get_playback_access_token(&store, &streamer_login).await;
@@ -239,10 +255,12 @@ pub async fn start_miner(app: AppHandle, state: tauri::State<'_, Arc<Mutex<Miner
                                                                 
                                                                 if !is_claimed && cur_mins < req_mins {
                                                                     let mut s_guard = state_clone.lock().await;
-                                                                    s_guard.status.current_drop = drop.get("name").and_then(|v| v.as_str()).map(|s| s.to_string());
-                                                                    s_guard.status.drop_image_url = extract_image_url(drop);
-                                                                    s_guard.status.progress = if req_mins > 0 { (cur_mins as f64 / req_mins as f64) * 100.0 } else { 0.0 };
-                                                                    s_guard.status.status = format!("Mining: {}m / {}m", cur_mins, req_mins);
+                                                                    let mut new_status = s_guard.status.clone();
+                                                                    new_status.current_drop = drop.get("name").and_then(|v| v.as_str()).map(|s| s.to_string());
+                                                                    new_status.drop_image_url = extract_image_url(drop);
+                                                                    new_status.progress = if req_mins > 0 { (cur_mins as f64 / req_mins as f64) * 100.0 } else { 0.0 };
+                                                                    new_status.status = format!("Mining: {}m / {}m", cur_mins, req_mins);
+                                                                    s_guard.update_and_notify(&app_clone, new_status);
                                                                     loop_count = (req_mins - cur_mins).max(1);
                                                                     found = true;
                                                                     break;
@@ -277,11 +295,13 @@ pub async fn start_miner(app: AppHandle, state: tauri::State<'_, Arc<Mutex<Miner
                                         if let Ok(pts_res) = gql.get_channel_points_context(&store, &streamer_login).await {
                                             if let Some(balance) = pts_res.pointer("/data/channel/self/communityPoints/balance").and_then(|v| v.as_i64()) {
                                                 let mut s_guard = state_clone.lock().await;
+                                                let mut new_status = s_guard.status.clone();
                                                 if balance >= 1000 {
-                                                    s_guard.status.current_points = format!("{:.1}K", balance as f64 / 1000.0);
+                                                    new_status.current_points = format!("{:.1}K", balance as f64 / 1000.0);
                                                 } else {
-                                                    s_guard.status.current_points = balance.to_string();
+                                                    new_status.current_points = balance.to_string();
                                                 }
+                                                s_guard.update_and_notify(&app_clone, new_status);
                                             }
                                             
                                             if let Some(claim_id) = pts_res.pointer("/data/channel/self/communityPoints/availableClaim/id").and_then(|v| v.as_str()) {
@@ -298,8 +318,10 @@ pub async fn start_miner(app: AppHandle, state: tauri::State<'_, Arc<Mutex<Miner
                             } else {
                                 {
                                     let mut s_guard = state_clone.lock().await;
-                                    s_guard.status.status = format!("No drops-enabled streams found for {}", game_name);
-                                    s_guard.status.current_streamer = None;
+                                    let mut new_status = s_guard.status.clone();
+                                    new_status.status = format!("No drops-enabled streams found for {}", game_name);
+                                    new_status.current_streamer = None;
+                                    s_guard.update_and_notify(&app_clone, new_status);
                                 }
                                 tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
                             }
@@ -307,10 +329,12 @@ pub async fn start_miner(app: AppHandle, state: tauri::State<'_, Arc<Mutex<Miner
                     } else {
                         {
                             let mut s_guard = state_clone.lock().await;
-                            s_guard.status.status = "No active drops found.".to_string();
-                            s_guard.status.current_streamer = None;
-                            s_guard.status.current_drop = None;
-                            s_guard.status.progress = 0.0;
+                            let mut new_status = s_guard.status.clone();
+                            new_status.status = "No active drops found.".to_string();
+                            new_status.current_streamer = None;
+                            new_status.current_drop = None;
+                            new_status.progress = 0.0;
+                            s_guard.update_and_notify(&app_clone, new_status);
                         }
                         tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
                     }
@@ -318,15 +342,19 @@ pub async fn start_miner(app: AppHandle, state: tauri::State<'_, Arc<Mutex<Miner
             } else {
                 {
                     let mut s_guard = state_clone.lock().await;
-                    s_guard.status.status = "Authentication Error".to_string();
+                    let mut new_status = s_guard.status.clone();
+                    new_status.status = "Authentication Error".to_string();
+                    s_guard.update_and_notify(&app_clone, new_status);
                 }
                 tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
             }
         }
 
         let mut s_guard = state_clone.lock().await;
-        s_guard.status.status = "Idle".to_string();
-        s_guard.status.is_running = false;
+        let mut new_status = s_guard.status.clone();
+        new_status.status = "Idle".to_string();
+        new_status.is_running = false;
+        s_guard.update_and_notify(&app_clone, new_status);
     });
 
     s.task = Some(handle);
@@ -334,13 +362,16 @@ pub async fn start_miner(app: AppHandle, state: tauri::State<'_, Arc<Mutex<Miner
 }
 
 #[tauri::command]
-pub async fn stop_miner(state: tauri::State<'_, Arc<Mutex<MinerState>>>) -> Result<(), String> {
+pub async fn stop_miner(app: AppHandle, state: tauri::State<'_, Arc<Mutex<MinerState>>>) -> Result<(), String> {
     let mut s = state.lock().await;
     s.is_running = false;
-    s.status.is_running = false;
+    let mut new_status = s.status.clone();
+    new_status.is_running = false;
+    new_status.status = "Stopped".to_string();
+    s.update_and_notify(&app, new_status);
+    
     if let Some(task) = s.task.take() {
         task.abort();
     }
-    s.status.status = "Stopped".to_string();
     Ok(())
 }

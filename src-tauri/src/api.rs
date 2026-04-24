@@ -290,7 +290,14 @@ impl TwitchGQL {
             .await
             .map_err(|e| e.to_string())?;
 
-        Ok(res.status().as_u16() == 204)
+        let status = res.status().as_u16();
+        let success = status == 204 || status == 200;
+        
+        if !success {
+            println!("Spade ping returned status: {} (expected 200 or 204)", status);
+        }
+
+        Ok(success)
     }
 
     pub async fn get_channel_points_context(&self, store: &Arc<Store<tauri::Wry>>, channel_login: &str) -> Result<Value, String> {
@@ -327,4 +334,5 @@ impl TwitchGQL {
         let vars = json!({ "input": { "channelID": channel_id, "claimID": claim_id } });
         self.post(store, "ClaimCommunityPoints", query, vars).await
     }
+
 }

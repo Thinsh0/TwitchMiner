@@ -81,3 +81,32 @@ pub async fn reset_config(app: AppHandle) -> Result<AppConfig, String> {
     
     Ok(default)
 }
+
+#[tauri::command]
+pub async fn search_games_cmd(app: AppHandle, query: String) -> Result<Vec<(String, String)>, String> {
+    let gql = crate::api::TwitchGQL::new();
+    let store = app.store("config.json").map_err(|e: tauri_plugin_store::Error| e.to_string())?;
+    
+    let res = gql.search_games(&store, &query).await?;
+    
+    let mut games = Vec::new();
+    if let Some(games_data) = res.pointer("/data/searchFor/games/edges") {
+        if let Some(edges_array) = games_data.as_array() {
+            for edge in edges_array {
+                if let Some(item) = edge.get("item") {
+                    let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let name = item.get("displayName")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| item.get("name").and_then(|v| v.as_str()))
+                        .unwrap_or("")
+                        .to_string();
+                    if !id.is_empty() && !name.is_empty() {
+                        games.push((id, name));
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(games)
+}

@@ -307,11 +307,15 @@ async fn process_single_channel(
     channel: &str,
     user_id: &str,
 ) -> Result<bool, String> {
+    println!("Processing channel: {}", channel);
+    
     // Get Spade URL
     let spade_url = gql.get_spade_url(channel).await?;
+    println!("Got Spade URL for {}: {}...", channel, &spade_url[..spade_url.len().min(50)]);
     
     // Get stream info
     let stream_info = gql.get_stream_info(store, channel).await?;
+    println!("Got stream info for {}", channel);
     
     let user_data = stream_info.pointer("/data/user")
         .ok_or("No user data found")?;
@@ -326,6 +330,8 @@ async fn process_single_channel(
     let channel_id = user_data.get("id")
         .and_then(|v| v.as_str())
         .ok_or("No channel ID")?;
+
+    println!("Channel {}: broadcast_id={}, channel_id={}", channel, broadcast_id, channel_id);
 
     // Prepare and send minute-watched payload
     let payload = serde_json::json!({
@@ -344,7 +350,13 @@ async fn process_single_channel(
         }
     });
 
-    gql.send_spade_minute_watched(&spade_url, payload).await
+    let result = gql.send_spade_minute_watched(&spade_url, payload).await;
+    match &result {
+        Ok(true) => println!("Ping sent successfully for {}", channel),
+        Ok(false) => println!("Ping returned non-success for {}", channel),
+        Err(e) => println!("Ping failed for {}: {}", channel, e),
+    }
+    result
 }
 
 fn get_streak_channels(store: &Arc<tauri_plugin_store::Store<tauri::Wry>>) -> Vec<String> {

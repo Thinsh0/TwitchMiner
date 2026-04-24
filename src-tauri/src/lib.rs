@@ -61,7 +61,8 @@ pub fn run() {
             streak_miner::get_streak_miner_status,
             config::get_config,
             config::save_config,
-            config::reset_config
+            config::reset_config,
+            config::search_games_cmd
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

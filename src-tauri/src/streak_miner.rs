@@ -235,7 +235,7 @@ async fn process_channels_sequential(
 }
 
 async fn process_channels_parallel(
-    gql: &TwitchGQL,
+    _gql: &TwitchGQL,
     store: &Arc<tauri_plugin_store::Store<tauri::Wry>>,
     channels: &[String],
     user_id: &str,
@@ -257,8 +257,8 @@ async fn process_channels_parallel(
         let store = store.clone();
         let channel = channel.clone();
         let user_id = user_id.to_string();
-        let state = state.clone();
-        let app = app.clone();
+        let _state = state.clone();
+        let _app = app.clone();
 
         let task = tokio::spawn(async move {
             process_single_channel(&*gql, &store, &channel, &user_id).await
@@ -279,7 +279,7 @@ async fn process_channels_parallel(
                 } else {
                     new_status.failed_pings += 1;
                 }
-                s_guard.update_and_notify(&app, new_status);
+                s_guard.update_and_notify(app, new_status);
             }
             Ok(Err(e)) => {
                 let mut s_guard = state.lock().await;
@@ -287,7 +287,7 @@ async fn process_channels_parallel(
                 new_status.total_pings_sent += 1;
                 new_status.failed_pings += 1;
                 new_status.status = format!("Error in parallel task {}: {}", i, e);
-                s_guard.update_and_notify(&app, new_status);
+                s_guard.update_and_notify(app, new_status);
             }
             Err(e) => {
                 let mut s_guard = state.lock().await;
@@ -295,7 +295,7 @@ async fn process_channels_parallel(
                 new_status.total_pings_sent += 1;
                 new_status.failed_pings += 1;
                 new_status.status = format!("Task panicked: {}", e);
-                s_guard.update_and_notify(&app, new_status);
+                s_guard.update_and_notify(app, new_status);
             }
         }
     }

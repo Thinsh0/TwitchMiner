@@ -1,5 +1,5 @@
 use crate::api::TwitchGQL;
-use crate::models::StreakMinerStatus;
+use crate::models::{StreakMinerStatus, ChannelPointsInfo};
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_store::StoreExt;
 use std::sync::Arc;
@@ -182,6 +182,42 @@ pub async fn get_streak_miner_status(state: tauri::State<'_, Arc<Mutex<StreakMin
     Ok(s.get_status())
 }
 
+async fn get_channel_points(gql: &TwitchGQL, store: &Arc<tauri_plugin_store::Store<tauri::Wry>>, channel: &str) -> ChannelPointsInfo {
+    let mut info = ChannelPointsInfo {
+        channel_name: channel.to_string(),
+        points: 0,
+        has_claim_available: false,
+        status: "Checking...".to_string(),
+    };
+
+    match gql.get_channel_points_context(store, channel).await {
+        Ok(response) => {
+            if let Some(channel_data) = response.pointer("/data/channel") {
+                if let Some(display_name) = channel_data.get("displayName").and_then(|v| v.as_str()) {
+                    info.channel_name = display_name.to_string();
+                }
+                if let Some(self_data) = channel_data.get("self") {
+                    if let Some(points_data) = self_data.get("communityPoints") {
+                        info.points = points_data.get("balance")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
+                        info.has_claim_available = points_data.get("availableClaim").is_some();
+                    }
+                }
+                info.status = "Ready".to_string();
+            } else {
+                info.status = "Channel not found".to_string();
+            }
+        }
+        Err(e) => {
+            println!("Failed to get points for {}: {}", channel, e);
+            info.status = "Error".to_string();
+        }
+    }
+
+    info
+}
+
 async fn process_channels_sequential(
     gql: &TwitchGQL,
     store: &Arc<tauri_plugin_store::Store<tauri::Wry>>,
@@ -190,6 +226,25 @@ async fn process_channels_sequential(
     state: &Arc<Mutex<StreakMinerState>>,
     app: &AppHandle,
 ) {
+    // First pass: get points for all channels
+    let mut channels_info = Vec::new();
+    for channel in channels {
+        let info = get_channel_points(gql, store, channel).await;
+        channels_info.push(info);
+
+        // Update status with current info
+        {
+            let mut s_guard = state.lock().await;
+            let mut new_status = s_guard.status.clone();
+            new_status.status = format!("Fetching points for {}...", channel);
+            new_status.channels_info = channels_info.clone();
+            s_guard.update_and_notify(app, new_status);
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    }
+
+    // Second pass: send minute-watched pings
     for channel in channels {
         // Check if still running
         {
@@ -202,7 +257,7 @@ async fn process_channels_sequential(
         {
             let mut s_guard = state.lock().await;
             let mut new_status = s_guard.status.clone();
-            new_status.status = format!("Pinging {}...", channel);
+            new_status.status = format!("Watching {}...", channel);
             new_status.current_channels = vec![channel.clone()];
             s_guard.update_and_notify(app, new_status);
         }
@@ -217,14 +272,27 @@ async fn process_channels_sequential(
                 } else {
                     new_status.failed_pings += 1;
                 }
+                // Update channel status in channels_info
+                for info in &mut new_status.channels_info {
+                    if info.channel_name.to_lowercase() == channel.to_lowercase() {
+                        info.status = if success { "Watching" } else { "Ping failed" }.to_string();
+                    }
+                }
                 s_guard.update_and_notify(app, new_status);
             }
             Err(e) => {
+                let error_msg = e.clone();
                 let mut s_guard = state.lock().await;
                 let mut new_status = s_guard.status.clone();
                 new_status.total_pings_sent += 1;
                 new_status.failed_pings += 1;
-                new_status.status = format!("Error processing {}: {}", channel, e);
+                new_status.status = format!("Error on {}: {}", channel, e);
+                // Update channel status
+                for info in &mut new_status.channels_info {
+                    if info.channel_name.to_lowercase() == channel.to_lowercase() {
+                        info.status = if error_msg.contains("offline") { "Offline" } else { "Error" }.to_string();
+                    }
+                }
                 s_guard.update_and_notify(app, new_status);
             }
         }

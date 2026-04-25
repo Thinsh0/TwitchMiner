@@ -13,6 +13,14 @@ pub struct MinerStatus {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ChannelPointsInfo {
+    pub channel_name: String,
+    pub points: u64,
+    pub has_claim_available: bool,
+    pub status: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct StreakMinerStatus {
     pub status: String,
     pub current_channels: Vec<String>,
@@ -20,6 +28,7 @@ pub struct StreakMinerStatus {
     pub successful_pings: u64,
     pub failed_pings: u64,
     pub cycle_count: u64,
+    pub channels_info: Vec<ChannelPointsInfo>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

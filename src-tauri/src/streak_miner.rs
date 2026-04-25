@@ -1,5 +1,6 @@
 use crate::api::TwitchGQL;
-use crate::models::{StreakMinerStatus, ChannelPointsInfo};
+use crate::models::StreakMinerStatus;
+use crate::models::ChannelPointsInfo;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_store::StoreExt;
 use std::sync::Arc;

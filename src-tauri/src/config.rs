@@ -47,13 +47,24 @@ pub async fn get_config(app: AppHandle) -> Result<AppConfig, String> {
     
     // Try to load existing config
     if let Some(config_json) = store.get("app_config") {
-        if let Ok(config) = serde_json::from_value::<AppConfig>(config_json) {
-            // Update client_id if it changed
-            if config.client_id != DEFAULT_CLIENT_ID {
-                return Ok(default_config());
+        println!("get_config: Found stored config: {:?}", config_json);
+        match serde_json::from_value::<AppConfig>(config_json.clone()) {
+            Ok(config) => {
+                println!("get_config: Parsed config successfully. Games: {:?}, Streamers: {:?}", 
+                    config.priorities.games, config.priorities.streamers);
+                // Update client_id if it changed
+                if config.client_id != DEFAULT_CLIENT_ID {
+                    println!("get_config: Client ID mismatch, returning default");
+                    return Ok(default_config());
+                }
+                return Ok(config);
             }
-            return Ok(config);
+            Err(e) => {
+                println!("get_config: Failed to parse config: {}. Raw: {:?}", e, config_json);
+            }
         }
+    } else {
+        println!("get_config: No stored config found, returning default");
     }
     
     // Return default config if none exists
@@ -65,9 +76,13 @@ pub async fn get_config(app: AppHandle) -> Result<AppConfig, String> {
 pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String> {
     let store = app.store("config.json").map_err(|e: tauri_plugin_store::Error| e.to_string())?;
     
+    println!("save_config: Saving config with games={:?}, streamers={:?}, streak_channels={:?}",
+        config.priorities.games, config.priorities.streamers, config.bonus.daily_streaks.channels);
+    
     store.set("app_config", json!(config));
     store.save().map_err(|e: tauri_plugin_store::Error| e.to_string())?;
     
+    println!("save_config: Config saved successfully");
     Ok(())
 }
 

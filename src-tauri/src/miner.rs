@@ -257,6 +257,9 @@ fn collect_incomplete_time_based_drops_for_game(
                     continue;
                 }
                 if let Some(drops) = camp.get("timeBasedDrops").and_then(|v| v.as_array()) {
+                    // Per campaign: only expose the ONE active drop — the incomplete drop
+                    // with the least remaining watch time (Twitch campaigns are sequential).
+                    let mut best: Option<(String, String, Option<String>, i64, i64, i64)> = None;
                     for drop in drops {
                         let is_claimed = drop.pointer("/self/isClaimed").and_then(|v| v.as_bool()).unwrap_or(false);
                         let cur_mins = drop.pointer("/self/currentMinutesWatched").and_then(|v| v.as_i64()).unwrap_or(0);
@@ -266,12 +269,21 @@ fn collect_incomplete_time_based_drops_for_game(
                             let drop_id = json_id_to_string(drop.get("id")).unwrap_or_else(|| {
                                 drop.get("name").and_then(|v| v.as_str()).unwrap_or("Drop Reward").to_string()
                             });
-                            if !seen_drop_ids.insert(drop_id.clone()) {
+                            if seen_drop_ids.contains(&drop_id) {
                                 continue;
                             }
+                            let remaining = req_mins - cur_mins;
                             let name = drop.get("name").and_then(|v| v.as_str()).unwrap_or("Drop Reward").to_string();
-                            active_drops.push((drop_id, name, extract_image_url(drop), cur_mins, req_mins, percent));
+                            let entry = (drop_id, name, extract_image_url(drop), cur_mins, req_mins, percent);
+                            let is_better = best.as_ref().map_or(true, |(_, _, _, bc, br, _)| (*br - *bc) > remaining);
+                            if is_better {
+                                best = Some(entry);
+                            }
                         }
+                    }
+                    if let Some(entry) = best {
+                        seen_drop_ids.insert(entry.0.clone());
+                        active_drops.push(entry);
                     }
                 }
             }
@@ -662,6 +674,42 @@ pub async fn start_miner(app: AppHandle, state: tauri::State<'_, Arc<Mutex<Miner
                                 });
                                 if let Some(spade_url) = &cached_spade_url {
                                     let _ = gql.send_spade_minute_watched(spade_url, payload).await;
+                                } else {
+                                    println!("spade_ping: no spade_url cached, skipping ping");
+                                }
+
+                                // Update progress from real-time session (more accurate than Inventory)
+                                if let Ok(session_res) = gql.get_drop_current_session(&store, &streamer_login).await {
+                                    if let Some(session) = session_res.pointer("/data/currentUser/dropCurrentSession") {
+                                        let cur = session.get("currentMinutesWatched").and_then(|v| v.as_i64()).unwrap_or(0);
+                                        let req = session.get("requiredMinutesWatched").and_then(|v| v.as_i64()).unwrap_or(0);
+                                        let drop_name_rt = session.pointer("/drop/name").and_then(|v| v.as_str());
+                                        let drop_img_rt = session.pointer("/drop/benefitEdges/0/benefit/imageAssetURL").and_then(|v| v.as_str());
+                                        let drop_id_rt = session.pointer("/drop/id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                        println!("drop_session: cur={}m req={}m name={:?}", cur, req, drop_name_rt);
+                                        if req > 0 {
+                                            let pct = (cur as f64 / req as f64 * 100.0).min(100.0);
+                                            let mut s_guard = state_clone.lock().await;
+                                            let mut new_status = s_guard.status.clone();
+                                            // Update or insert the real-time drop in active_drops
+                                            if let Some(existing) = new_status.active_drops.iter_mut().find(|d| d.id == drop_id_rt || drop_name_rt.map_or(false, |n| d.name == n)) {
+                                                existing.current_minutes = cur;
+                                                existing.progress = pct;
+                                            } else if !drop_id_rt.is_empty() {
+                                                new_status.active_drops = vec![crate::models::ActiveDropInfo {
+                                                    id: drop_id_rt,
+                                                    name: drop_name_rt.unwrap_or("Drop").to_string(),
+                                                    image_url: drop_img_rt.map(|s| s.to_string()),
+                                                    current_minutes: cur,
+                                                    required_minutes: req,
+                                                    progress: pct,
+                                                }];
+                                            }
+                                            new_status.progress = pct;
+                                            new_status.status = format!("Mining: {}m / {}m", cur, req);
+                                            s_guard.update_and_notify(&app_clone, new_status);
+                                        }
+                                    }
                                 }
 
                                 if let Ok(pts_res) = gql.get_channel_points_context(&store, &streamer_login).await {
@@ -798,6 +846,41 @@ pub async fn start_miner(app: AppHandle, state: tauri::State<'_, Arc<Mutex<Miner
                                         });
                                         if let Some(spade_url) = &spade_url {
                                             let _ = gql.send_spade_minute_watched(spade_url, payload).await;
+                                        } else {
+                                            println!("spade_ping: no spade_url, skipping ping");
+                                        }
+
+                                        // Update progress from real-time session
+                                        if let Ok(session_res) = gql.get_drop_current_session(&store, &streamer_login).await {
+                                            if let Some(session) = session_res.pointer("/data/currentUser/dropCurrentSession") {
+                                                let cur = session.get("currentMinutesWatched").and_then(|v| v.as_i64()).unwrap_or(0);
+                                                let req = session.get("requiredMinutesWatched").and_then(|v| v.as_i64()).unwrap_or(0);
+                                                let drop_name_rt = session.pointer("/drop/name").and_then(|v| v.as_str());
+                                                let drop_img_rt = session.pointer("/drop/benefitEdges/0/benefit/imageAssetURL").and_then(|v| v.as_str());
+                                                let drop_id_rt = session.pointer("/drop/id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                                println!("drop_session: cur={}m req={}m name={:?}", cur, req, drop_name_rt);
+                                                if req > 0 {
+                                                    let pct = (cur as f64 / req as f64 * 100.0).min(100.0);
+                                                    let mut s_guard = state_clone.lock().await;
+                                                    let mut new_status = s_guard.status.clone();
+                                                    if let Some(existing) = new_status.active_drops.iter_mut().find(|d| d.id == drop_id_rt || drop_name_rt.map_or(false, |n| d.name == n)) {
+                                                        existing.current_minutes = cur;
+                                                        existing.progress = pct;
+                                                    } else if !drop_id_rt.is_empty() {
+                                                        new_status.active_drops = vec![crate::models::ActiveDropInfo {
+                                                            id: drop_id_rt,
+                                                            name: drop_name_rt.unwrap_or("Drop").to_string(),
+                                                            image_url: drop_img_rt.map(|s| s.to_string()),
+                                                            current_minutes: cur,
+                                                            required_minutes: req,
+                                                            progress: pct,
+                                                        }];
+                                                    }
+                                                    new_status.progress = pct;
+                                                    new_status.status = format!("Mining: {}m / {}m", cur, req);
+                                                    s_guard.update_and_notify(&app_clone, new_status);
+                                                }
+                                            }
                                         }
 
                                         // Claim points

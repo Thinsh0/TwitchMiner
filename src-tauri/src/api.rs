@@ -307,11 +307,52 @@ impl TwitchGQL {
         let status = res.status().as_u16();
         let success = status == 204 || status == 200;
         
-        if !success {
-            println!("Spade ping returned status: {} (expected 200 or 204)", status);
+        if success {
+            println!("spade_ping: OK ({})", status);
+        } else {
+            println!("spade_ping: FAILED status {} for url {}", status, &spade_url[..spade_url.len().min(80)]);
         }
 
         Ok(success)
+    }
+
+    /// Fetch real-time drop session progress for the current channel.
+    /// Returns the GQL response containing `data.currentUser.dropCurrentSession`.
+    pub async fn get_drop_current_session(&self, store: &Arc<Store<tauri::Wry>>, channel_login: &str) -> Result<Value, String> {
+        let query = "
+        query DropCurrentSessionContext($channelLogin: String!) {
+            currentUser {
+                id
+                dropCurrentSession(channelLogin: $channelLogin) {
+                    dropID
+                    currentMinutesWatched
+                    requiredMinutesWatched
+                    drop {
+                        id
+                        name
+                        requiredMinutesWatched
+                        benefitEdges {
+                            benefit {
+                                id
+                                name
+                                imageAssetURL
+                            }
+                        }
+                        campaign {
+                            id
+                            name
+                            game {
+                                id
+                                displayName
+                                boxArtURL
+                            }
+                        }
+                    }
+                }
+            }
+        }";
+        let vars = json!({ "channelLogin": channel_login });
+        self.post(store, "DropCurrentSessionContext", query, vars).await
     }
 
     pub async fn get_channel_points_context(&self, store: &Arc<Store<tauri::Wry>>, channel_login: &str) -> Result<Value, String> {

@@ -25,3 +25,11 @@
 
 ### Task 6: DropsView auto-refresh
 - **Fix**: `useEffect` auto-fetches on mount + `setInterval` every 2min while miner is running
+
+### Task 7: Parallel Drops Mining Mode
+- **Feature**: Replaced single-stream target logic with parallel multi-target mining.
+- **Backend**: Created `TargetStream` struct in `miner.rs` to hold stream state per game.
+- **Backend**: `start_miner` now scans `inventory` to find up to 5 concurrent campaigns that have incomplete drops.
+- **Backend**: Fetches `spade_url` for a streamer for each campaign, caching them in `active_streams`.
+- **Backend**: Inner `miner_loop` sends `minute-watched` spade pings for ALL active streams in parallel every 60 seconds.
+- **Backend**: Updates UI with aggregated multi-stream drop progress using `summarize_active_drops` over all target games.

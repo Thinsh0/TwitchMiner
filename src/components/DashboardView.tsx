@@ -4,19 +4,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { Play, Square, Activity, Zap, TrendingUp, Clock } from 'lucide-react'
+import { open } from '@tauri-apps/plugin-shell'
+import { useAppStore } from '@/store'
+import type { ActiveDropInfo, MinerStatus } from '@/store'
+import { Play, Square, Activity, Zap, TrendingUp, Clock, ImageOff } from 'lucide-react'
 
 interface DashboardViewProps {
-  status: {
-    status: string;
-    is_running: boolean;
-    current_streamer: string | null;
-    current_drop: string | null;
-    drop_image_url: string | null;
-    streamer_image_url: string | null;
-    progress: number;
-    current_points: string;
-  };
+  status: MinerStatus;
   streakStatus: {
     status: string;
     current_channels: string[];
@@ -39,6 +33,7 @@ interface DashboardViewProps {
 export function DashboardView({ status, streakStatus, streakRunning, onToggleDropMiner, onToggleStreakMiner }: DashboardViewProps) {
   const [configuredChannels, setConfiguredChannels] = useState<string[]>([])
   const [priorityGames, setPriorityGames] = useState<string[]>([])
+  const dropCampaigns = useAppStore(state => state.dropCampaigns)
 
   useEffect(() => {
     invoke<any>('get_config').then(cfg => {
@@ -52,6 +47,22 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
   const totalPoints = streakStatus.channels_info?.reduce((sum, ch) => sum + ch.points, 0) || 0;
   const activeChannels = streakStatus.channels_info?.filter(ch => ch.status === 'Watching' || ch.status === 'Ready').length || 0;
   const claimsAvailable = streakStatus.channels_info?.filter(ch => ch.has_claim_available).length || 0;
+  const fallbackDrop = dropCampaigns
+    .flatMap(campaign => campaign.drops)
+    .find(drop => !drop.is_claimed && drop.current_minutes < drop.required_minutes);
+  const displayDrop = status.current_drop || fallbackDrop?.name || null;
+  const streamerLogin = status.current_streamer_login || status.current_streamer?.toLowerCase().replace(/\s+/g, '')
+  const streamerUrl = streamerLogin
+    ? `https://www.twitch.tv/${encodeURIComponent(streamerLogin)}`
+    : null;
+  const openStreamer = async () => {
+    if (!streamerUrl) return
+    try {
+      await open(streamerUrl)
+    } catch (err) {
+      console.error('Failed to open streamer URL:', err)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -85,7 +96,6 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
 
       {/* Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Drop Mining Quick Card */}
         <Card className="bg-black/40 border-white/10 backdrop-blur-xl shadow-xl">
           <CardHeader>
             <CardTitle className="text-lg text-white flex items-center gap-2">
@@ -95,25 +105,28 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
             <CardDescription className="text-zinc-400">{status.status}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center space-x-4 p-4 rounded-xl bg-white/5 border border-white/5">
+            {/* Streamer row */}
+            <div className="flex items-center space-x-3 p-3 rounded-xl bg-white/5 border border-white/5">
               {status.streamer_image_url ? (
-                <img src={status.streamer_image_url} alt="Streamer" className="w-16 h-16 rounded-full border-2 border-purple-500/50" />
+                <img src={status.streamer_image_url} alt="Streamer" className="w-10 h-10 rounded-full border-2 border-purple-500/50 flex-shrink-0" />
               ) : (
-                <div className="w-16 h-16 rounded-full bg-zinc-800 border-2 border-zinc-700 animate-pulse" />
+                <div className="w-10 h-10 rounded-full bg-zinc-800 border-2 border-zinc-700 flex-shrink-0" />
               )}
-              <div className="flex-1">
-                <h3 className="font-medium text-lg text-white">{status.current_streamer || 'No Streamer'}</h3>
-                <p className="text-sm text-zinc-400">{status.current_drop || 'No active drop'}</p>
-              </div>
+              {status.current_streamer && streamerUrl ? (
+                <button
+                  type="button"
+                  onClick={openStreamer}
+                  className="font-medium text-sm text-purple-300 underline underline-offset-4 hover:text-purple-200 transition-colors truncate"
+                >
+                  {status.current_streamer}
+                </button>
+              ) : (
+                <span className="text-sm text-zinc-400">No streamer</span>
+              )}
             </div>
 
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-zinc-400">Progress</span>
-                <span className="text-purple-400">{status.progress.toFixed(1)}%</span>
-              </div>
-              <Progress value={status.progress} className="h-2 bg-zinc-800" />
-            </div>
+            {/* Active drops list */}
+            <ActiveDropList drops={status.active_drops} fallbackDrop={displayDrop} fallbackImage={status.drop_image_url} fallbackProgress={status.progress} />
 
             <Button
               className="w-full"
@@ -196,5 +209,84 @@ function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label:
         <div className={`text-xl font-bold ${color}`}>{value}</div>
       </CardContent>
     </Card>
+  );
+}
+
+function ActiveDropList({
+  drops,
+  fallbackDrop,
+  fallbackImage,
+  fallbackProgress,
+}: {
+  drops: ActiveDropInfo[];
+  fallbackDrop: string | null;
+  fallbackImage: string | null;
+  fallbackProgress: number;
+}) {
+  // If we have real active_drops from backend, show them individually
+  if (drops && drops.length > 0) {
+    return (
+      <div className="space-y-3 max-h-52 overflow-y-auto pr-0.5">
+        {drops.map((drop) => (
+          <div
+            key={drop.id}
+            className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors"
+          >
+            {/* Drop image */}
+            <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-zinc-800 border border-white/10 flex items-center justify-center">
+              {drop.image_url ? (
+                <img
+                  src={drop.image_url}
+                  alt={drop.name}
+                  className="w-full h-full object-cover"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                />
+              ) : (
+                <ImageOff className="w-5 h-5 text-zinc-600" />
+              )}
+            </div>
+            {/* Name + progress */}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-white truncate" title={drop.name}>{drop.name}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <Progress value={drop.progress} className="h-1.5 bg-zinc-700 flex-1" />
+                <span className="text-xs text-purple-400 font-mono tabular-nums flex-shrink-0">
+                  {drop.progress.toFixed(1)}%
+                </span>
+              </div>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                {drop.current_minutes}m / {drop.required_minutes}m
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Fallback: backend hasn't sent active_drops yet (old status or idle)
+  return (
+    <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/5">
+      <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-zinc-800 border border-white/10 flex items-center justify-center">
+        {fallbackImage ? (
+          <img src={fallbackImage} alt="drop" className="w-full h-full object-cover" />
+        ) : (
+          <ImageOff className="w-5 h-5 text-zinc-600" />
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-white truncate">{fallbackDrop || 'No active drop'}</p>
+        {fallbackDrop && (
+          <>
+            <div className="flex items-center gap-2 mt-1">
+              <Progress value={fallbackProgress} className="h-1.5 bg-zinc-700 flex-1" />
+              <span className="text-xs text-purple-400 font-mono tabular-nums flex-shrink-0">
+                {fallbackProgress.toFixed(1)}%
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }

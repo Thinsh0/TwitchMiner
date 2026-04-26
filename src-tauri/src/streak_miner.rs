@@ -6,6 +6,7 @@ use tauri_plugin_store::StoreExt;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
+use serde_json::Value;
 
 pub struct StreakMinerState {
     pub status: StreakMinerStatus,
@@ -35,6 +36,13 @@ impl StreakMinerState {
         // Send real-time update to frontend
         let _ = app.emit("streak-miner-status-update", new_status);
     }
+}
+
+fn json_id_to_string(value: Option<&Value>) -> Option<String> {
+    value.and_then(|v| {
+        v.as_str().map(|s| s.to_string())
+            .or_else(|| v.as_u64().map(|n| n.to_string()))
+    })
 }
 
 #[tauri::command]
@@ -109,7 +117,7 @@ pub async fn start_streak_miner(
                 }
             };
 
-            let user_id = match user_info.pointer("/data/currentUser/id").and_then(|v| v.as_str()) {
+            let user_id = match json_id_to_string(user_info.pointer("/data/currentUser/id")) {
                 Some(id) => id,
                 None => {
                     {
@@ -125,8 +133,8 @@ pub async fn start_streak_miner(
 
             // Process channels based on mode
             match mode.as_str() {
-                "parallel" => process_channels_parallel(&gql, &store, &channels, user_id, &state_clone, &app_clone).await,
-                _ => process_channels_sequential(&gql, &store, &channels, user_id, &state_clone, &app_clone).await,
+                "parallel" => process_channels_parallel(&gql, &store, &channels, &user_id, &state_clone, &app_clone).await,
+                _ => process_channels_sequential(&gql, &store, &channels, &user_id, &state_clone, &app_clone).await,
             }
 
             // Update cycle count and wait for next cycle
@@ -138,8 +146,8 @@ pub async fn start_streak_miner(
                 s_guard.update_and_notify(&app_clone, new_status);
             }
 
-            // Wait 60 seconds before next cycle (minute-watched interval)
-            for _ in 0..60 {
+            // Wait 5 minutes before next cycle to avoid excessive Twitch traffic.
+            for _ in 0..300 {
                 {
                     let s_guard = state_clone.lock().await;
                     if !s_guard.is_running {
@@ -304,18 +312,24 @@ async fn process_channels_sequential(
 }
 
 async fn process_channels_parallel(
-    _gql: &TwitchGQL,
+    gql: &TwitchGQL,
     store: &Arc<tauri_plugin_store::Store<tauri::Wry>>,
     channels: &[String],
     user_id: &str,
     state: &Arc<Mutex<StreakMinerState>>,
     app: &AppHandle,
 ) {
+    let mut channels_info = Vec::new();
+    for channel in channels {
+        channels_info.push(get_channel_points(gql, store, channel).await);
+    }
+
     {
         let mut s_guard = state.lock().await;
         let mut new_status = s_guard.status.clone();
         new_status.status = "Processing channels in parallel...".to_string();
         new_status.current_channels = channels.to_vec();
+        new_status.channels_info = channels_info;
         s_guard.update_and_notify(app, new_status);
     }
 
@@ -340,6 +354,7 @@ async fn process_channels_parallel(
     for (i, task) in tasks.into_iter().enumerate() {
         match task.await {
             Ok(Ok(success)) => {
+                println!("[parallel] Task {} completed: success={}", i, success);
                 let mut s_guard = state.lock().await;
                 let mut new_status = s_guard.status.clone();
                 new_status.total_pings_sent += 1;
@@ -351,6 +366,7 @@ async fn process_channels_parallel(
                 s_guard.update_and_notify(app, new_status);
             }
             Ok(Err(e)) => {
+                println!("[parallel] Task {} error: {}", i, e);
                 let mut s_guard = state.lock().await;
                 let mut new_status = s_guard.status.clone();
                 new_status.total_pings_sent += 1;
@@ -359,6 +375,7 @@ async fn process_channels_parallel(
                 s_guard.update_and_notify(app, new_status);
             }
             Err(e) => {
+                println!("[parallel] Task {} panicked: {}", i, e);
                 let mut s_guard = state.lock().await;
                 let mut new_status = s_guard.status.clone();
                 new_status.total_pings_sent += 1;
@@ -368,6 +385,7 @@ async fn process_channels_parallel(
             }
         }
     }
+    println!("[parallel] All tasks completed");
 }
 
 async fn process_single_channel(
@@ -376,31 +394,61 @@ async fn process_single_channel(
     channel: &str,
     user_id: &str,
 ) -> Result<bool, String> {
-    println!("Processing channel: {}", channel);
+    println!("[process_single_channel] Starting {}", channel);
     
     // Get Spade URL
-    let spade_url = gql.get_spade_url(channel).await?;
-    println!("Got Spade URL for {}: {}...", channel, &spade_url[..spade_url.len().min(50)]);
+    let spade_url = match gql.get_spade_url(channel).await {
+        Ok(url) => url,
+        Err(e) => {
+            println!("[process_single_channel] {}: Spade URL error: {}", channel, e);
+            return Ok(false); // Not a fatal error, streamer may be offline
+        }
+    };
+    println!("[process_single_channel] {}: Spade URL = {}...", channel, &spade_url[..spade_url.len().min(50)]);
     
     // Get stream info
-    let stream_info = gql.get_stream_info(store, channel).await?;
-    println!("Got stream info for {}", channel);
+    let stream_info = match gql.get_stream_info(store, channel).await {
+        Ok(info) => info,
+        Err(e) => {
+            println!("[process_single_channel] {}: Stream info error: {}", channel, e);
+            return Ok(false);
+        }
+    };
+    println!("[process_single_channel] {}: Got stream info", channel);
     
-    let user_data = stream_info.pointer("/data/user")
-        .ok_or("No user data found")?;
+    let user_data = match stream_info.pointer("/data/user") {
+        Some(u) => u,
+        None => {
+            println!("[process_single_channel] {}: No user data", channel);
+            return Ok(false);
+        }
+    };
     
-    let stream_data = user_data.pointer("/stream")
-        .ok_or("Stream is offline")?;
+    let stream_data = match user_data.pointer("/stream") {
+        Some(s) => s,
+        None => {
+            println!("[process_single_channel] {}: Stream is offline", channel);
+            return Ok(false);
+        }
+    };
     
-    let broadcast_id = stream_data.get("id")
-        .and_then(|v| v.as_str())
-        .ok_or("No broadcast ID")?;
+    let broadcast_id = match json_id_to_string(stream_data.get("id")) {
+        Some(id) => id,
+        None => {
+            println!("[process_single_channel] {}: No broadcast ID", channel);
+            return Ok(false);
+        }
+    };
     
-    let channel_id = user_data.get("id")
-        .and_then(|v| v.as_str())
-        .ok_or("No channel ID")?;
+    let channel_id = match json_id_to_string(user_data.get("id")) {
+        Some(id) => id,
+        None => {
+            println!("[process_single_channel] {}: No channel ID", channel);
+            return Ok(false);
+        }
+    };
 
-    println!("Channel {}: broadcast_id={}, channel_id={}", channel, broadcast_id, channel_id);
+    println!("[process_single_channel] {}: broadcast_id={}, channel_id={}", channel, broadcast_id, channel_id);
 
     // Prepare and send minute-watched payload
     let payload = serde_json::json!({
@@ -421,18 +469,23 @@ async fn process_single_channel(
 
     let result = gql.send_spade_minute_watched(&spade_url, payload).await;
     match &result {
-        Ok(true) => println!("Ping sent successfully for {}", channel),
-        Ok(false) => println!("Ping returned non-success for {}", channel),
-        Err(e) => println!("Ping failed for {}: {}", channel, e),
+        Ok(true) => println!("[process_single_channel] {}: Ping OK", channel),
+        Ok(false) => println!("[process_single_channel] {}: Ping returned non-success", channel),
+        Err(e) => println!("[process_single_channel] {}: Ping error: {}", channel, e),
     }
     result
 }
 
 fn get_streak_channels(store: &Arc<tauri_plugin_store::Store<tauri::Wry>>) -> Vec<String> {
-    // Try to load from config
     if let Some(config_json) = store.get("app_config") {
         if let Ok(config) = serde_json::from_value::<crate::models::AppConfig>(config_json) {
-            return config.bonus.daily_streaks.channels;
+            let mut channels = config.bonus.points_farming.channels;
+            for channel in config.bonus.daily_streaks.channels {
+                if !channels.iter().any(|c| c.eq_ignore_ascii_case(&channel)) {
+                    channels.push(channel);
+                }
+            }
+            return channels;
         }
     }
     
@@ -455,5 +508,5 @@ fn get_streak_mode(store: &Arc<tauri_plugin_store::Store<tauri::Wry>>) -> String
     }
     
     // Fallback to default
-    "parallel".to_string()
+    "sequential".to_string()
 }

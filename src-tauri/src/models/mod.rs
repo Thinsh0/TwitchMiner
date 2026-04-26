@@ -1,15 +1,55 @@
 use serde::{Serialize, Deserialize};
 
+/// Snapshot of a single time-based drop that is currently being mined.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ActiveDropInfo {
+    pub id: String,
+    pub name: String,
+    pub image_url: Option<String>,
+    pub current_minutes: i64,
+    pub required_minutes: i64,
+    /// Individual progress percentage (0-100).
+    pub progress: f64,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct MinerStatus {
     pub status: String,
     pub is_running: bool,
     pub current_streamer: Option<String>,
+    pub current_streamer_login: Option<String>,
+    /// Name of the first active drop (kept for backwards-compat).
     pub current_drop: Option<String>,
+    /// Image of the first active drop (kept for backwards-compat).
     pub drop_image_url: Option<String>,
     pub streamer_image_url: Option<String>,
+    /// Overall progress across all active drops (kept for backwards-compat).
     pub progress: f64,
     pub current_points: String,
+    /// Full list of drops currently being mined (may be >1 simultaneous campaigns).
+    pub active_drops: Vec<ActiveDropInfo>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct DropCampaign {
+    pub id: String,
+    pub name: String,
+    pub game_name: String,
+    pub image_url: Option<String>,
+    pub status: String,
+    pub start_date: String,
+    pub end_date: String,
+    pub drops: Vec<DropItem>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct DropItem {
+    pub id: String,
+    pub name: String,
+    pub required_minutes: u64,
+    pub current_minutes: u64,
+    pub is_claimed: bool,
+    pub image_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

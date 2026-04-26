@@ -17,7 +17,7 @@ import { DropsView } from '@/components/DropsView'
 import { DashboardView } from '@/components/DashboardView'
 
 function App() {
-  const { status, setStatus, isAuthenticated, setAuthenticated } = useAppStore()
+  const { status, setStatus, isAuthenticated, setAuthenticated, setDropCampaigns } = useAppStore()
   const [authDialog, setAuthDialog] = useState(false)
   const [userCode, setUserCode] = useState('')
   const [authUri, setAuthUri] = useState('')
@@ -83,6 +83,13 @@ function App() {
         .then((status: any) => {
           setStreakStatus(status);
           setStreakRunning(status.status !== "Idle" && status.status !== "Stopped");
+        })
+        .catch(console.error);
+
+      // Fetch drop campaigns once on mount and store globally
+      invoke<any>('get_drop_campaigns')
+        .then((campaigns: any) => {
+          setDropCampaigns(campaigns ?? [])
         })
         .catch(console.error);
     }
@@ -200,7 +207,7 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-black/95 text-white flex relative overflow-hidden font-sans">
+    <div className="h-screen bg-black/95 text-white flex relative overflow-hidden font-sans">
       <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-purple-900/20 to-transparent pointer-events-none" />
 
       {/* Sidebar Navigation */}

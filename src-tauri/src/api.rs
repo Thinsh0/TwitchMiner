@@ -141,6 +141,12 @@ impl TwitchGQL {
         self.post(store, "GetLiveStreams", query, vars).await
     }
 
+    pub async fn get_available_drops(&self, store: &Arc<Store<tauri::Wry>>, channel_id: &str) -> Result<Value, String> {
+        let sha256 = "9a62a09bce5b53e26e64a671e530bc599cb6aab1e5ba3cbd5d85966d3940716f";
+        let vars = json!({ "channelID": channel_id });
+        self.post_persisted(store, "DropsHighlightService_AvailableDrops", sha256, vars).await
+    }
+
     pub async fn get_stream_info(&self, store: &Arc<Store<tauri::Wry>>, channel_login: &str) -> Result<Value, String> {
         let query = "
         query GetStreamInfo($login: String!) {
@@ -225,19 +231,24 @@ impl TwitchGQL {
 
     async fn _get_spade_url_internal(&self, streamer_login: &str) -> Result<String, String> {
         let url = format!("https://www.twitch.tv/{}", streamer_login);
+        println!("get_spade_url: Fetching {}", url);
         
         let res = self.client.get(&url)
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .header("Accept-Language", "en-US,en;q=0.5")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             .send()
             .await
             .map_err(|e| format!("Failed to fetch page: {}", e))?;
 
+        println!("get_spade_url: HTTP status {}", res.status());
+        
         if !res.status().is_success() {
             return Err(format!("HTTP {}: Failed to fetch streamer page", res.status()));
         }
 
         let text = res.text().await.map_err(|e| format!("Failed to read response: {}", e))?;
+        println!("get_spade_url: Got {} bytes of HTML", text.len());
 
         // Try multiple regex patterns for better reliability
         let patterns = vec![
@@ -250,9 +261,11 @@ impl TwitchGQL {
         for pattern in &patterns {
             let re = Regex::new(pattern).map_err(|e| format!("Invalid regex: {}", e))?;
             if let Some(caps) = re.captures(&text) {
+                println!("get_spade_url: Found beacon URL with pattern");
                 return Ok(caps[1].to_string());
             }
         }
+        println!("get_spade_url: No beacon URL found in main page, trying settings.js...");
         
         // Fallback: try to find settings.js and extract from there
         let re_settings = Regex::new(r#"src="(https://[\w.]+/config/settings\.[0-9a-f]{32}\.js)""#)
@@ -260,6 +273,7 @@ impl TwitchGQL {
             
         if let Some(caps) = re_settings.captures(&text) {
             let settings_url = &caps[1];
+            println!("get_spade_url: Found settings.js: {}", settings_url);
             match self.client.get(settings_url).send().await {
                 Ok(res_js) => {
                     if res_js.status().is_success() {

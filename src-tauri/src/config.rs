@@ -22,7 +22,7 @@ fn default_config() -> AppConfig {
                     "ninja".to_string(),
                 ],
                 auto_start: true,
-                mode: "parallel".to_string(),
+                mode: "sequential".to_string(),
             },
             points_farming: PointsFarmingConfig {
                 channels: vec![],

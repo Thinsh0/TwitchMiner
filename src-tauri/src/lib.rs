@@ -56,6 +56,7 @@ pub fn run() {
             auth::poll_for_token,
             miner::start_miner,
             miner::stop_miner,
+            miner::get_drop_campaigns,
             streak_miner::start_streak_miner,
             streak_miner::stop_streak_miner,
             streak_miner::get_streak_miner_status,

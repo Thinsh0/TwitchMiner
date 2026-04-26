@@ -233,10 +233,13 @@ impl TwitchGQL {
         let url = format!("https://www.twitch.tv/{}", streamer_login);
         println!("get_spade_url: Fetching {}", url);
         
+        // Use a full desktop browser User-Agent — Twitch serves different HTML for mobile
+        let desktop_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+        
         let res = self.client.get(&url)
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .header("Accept-Language", "en-US,en;q=0.5")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .header("User-Agent", desktop_ua)
             .send()
             .await
             .map_err(|e| format!("Failed to fetch page: {}", e))?;
@@ -250,40 +253,44 @@ impl TwitchGQL {
         let text = res.text().await.map_err(|e| format!("Failed to read response: {}", e))?;
         println!("get_spade_url: Got {} bytes of HTML", text.len());
 
-        // Try multiple regex patterns for better reliability
-        let patterns = vec![
-            r#""beacon_url": ?"(https://video-edge-[.\w\-/]+\.ts\?[^"]*)""#,
-            r#""beacon-url": ?"(https://video-edge-[.\w\-/]+\.ts\?[^"]*)""#,
-            r#""beacon_?url": ?"(https://video-edge-[.\w\-/]+\.ts(?:\?allow_stream=true)?)[^"]*""#,
-            r#"spade\.url = "(https://video-edge-[.\w\-/]+\.ts[^"]*)""#,
+        // Patterns ordered from broadest (TwitchDropsMiner style) to most specific
+        let patterns: Vec<&str> = vec![
+            // TDM-style broad pattern — matches current Twitch format
+            r#""spade_?url": ?"(https://[.\w\-/]+)""#,
+            // Legacy beacon patterns
+            r#""beacon_?url": ?"(https://[.\w\-/]+)""#,
+            r#""beacon_url": ?"(https://video-edge-[.\w\-/]+\.ts\?[^"]*)"#,
+            r#""beacon-url": ?"(https://video-edge-[.\w\-/]+\.ts\?[^"]*)"#,
         ];
 
-        for pattern in &patterns {
-            let re = Regex::new(pattern).map_err(|e| format!("Invalid regex: {}", e))?;
-            if let Some(caps) = re.captures(&text) {
-                println!("get_spade_url: Found beacon URL with pattern");
-                return Ok(caps[1].to_string());
-            }
+        // Try main page first
+        if let Some(found) = Self::try_extract_spade(&text, &patterns) {
+            println!("get_spade_url: Found spade URL in main page: {}", &found[..found.len().min(80)]);
+            return Ok(found);
         }
-        println!("get_spade_url: No beacon URL found in main page, trying settings.js...");
+        println!("get_spade_url: No spade URL in main page, trying settings.js...");
         
-        // Fallback: try to find settings.js and extract from there
+        // Fallback: extract from settings.js
         let re_settings = Regex::new(r#"src="(https://[\w.]+/config/settings\.[0-9a-f]{32}\.js)""#)
             .map_err(|e| format!("Settings regex error: {}", e))?;
             
         if let Some(caps) = re_settings.captures(&text) {
             let settings_url = &caps[1];
             println!("get_spade_url: Found settings.js: {}", settings_url);
-            match self.client.get(settings_url).send().await {
+            match self.client.get(settings_url)
+                .header("User-Agent", desktop_ua)
+                .send().await
+            {
                 Ok(res_js) => {
                     if res_js.status().is_success() {
                         if let Ok(text_js) = res_js.text().await {
-                            for pattern in &patterns {
-                                let re = Regex::new(pattern).map_err(|e| format!("Invalid regex: {}", e))?;
-                                if let Some(caps_js) = re.captures(&text_js) {
-                                    return Ok(caps_js[1].to_string());
-                                }
+                            if let Some(found) = Self::try_extract_spade(&text_js, &patterns) {
+                                println!("get_spade_url: Found spade URL in settings.js: {}", &found[..found.len().min(80)]);
+                                return Ok(found);
                             }
+                            // Log a snippet of settings.js for debugging
+                            let snippet: String = text_js.chars().take(500).collect();
+                            println!("get_spade_url: settings.js snippet (no match): {}", snippet);
                         }
                     }
                 }
@@ -292,6 +299,17 @@ impl TwitchGQL {
         }
 
         Err("Spade URL not found in any pattern".to_string())
+    }
+
+    fn try_extract_spade(text: &str, patterns: &[&str]) -> Option<String> {
+        for pattern in patterns {
+            if let Ok(re) = Regex::new(pattern) {
+                if let Some(caps) = re.captures(text) {
+                    return Some(caps[1].to_string());
+                }
+            }
+        }
+        None
     }
 
     pub async fn send_spade_minute_watched(&self, spade_url: &str, payload_data: Value) -> Result<bool, String> {

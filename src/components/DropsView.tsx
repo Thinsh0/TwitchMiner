@@ -38,7 +38,18 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
       const games: string[] = cfg?.priorities?.games ?? []
       setPriorityGames(games)
     }).catch(console.error)
+    // Fetch campaigns on mount
+    fetchCampaigns()
   }, [])
+
+  // Auto-refresh campaigns every 2 minutes while miner is running
+  useEffect(() => {
+    if (!dropStatus.is_running) return
+    const interval = setInterval(() => {
+      fetchCampaigns()
+    }, 120_000)
+    return () => clearInterval(interval)
+  }, [dropStatus.is_running])
 
   const fetchCampaigns = async () => {
     try {

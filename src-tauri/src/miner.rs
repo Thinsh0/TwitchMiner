@@ -297,22 +297,11 @@ fn summarize_active_drops(
     active_drops: &[(String, String, Option<String>, i64, i64, i64)],
 ) -> (Option<String>, Option<String>, f64, i64, i64, i64, Vec<ActiveDropInfo>) {
     let total_required: i64 = active_drops.iter().map(|(_, _, _, _, req, _)| *req).sum();
-    let total_current: i64 = active_drops.iter().map(|(_, _, _, cur, req, percent)| {
-        if *cur > 0 {
-            *cur
-        } else {
-            ((*req as f64) * (*percent as f64 / 100.0)).round() as i64
-        }
-    }).sum();
-    let min_remaining = active_drops.iter().map(|(_, _, _, cur, req, percent)| {
-        let effective_current = if *cur > 0 {
-            *cur
-        } else {
-            ((*req as f64) * (*percent as f64 / 100.0)).round() as i64
-        };
-        (req - effective_current).max(1)
+    // Always use cur_mins directly — percentAwarded is unreliable (often 0)
+    let total_current: i64 = active_drops.iter().map(|(_, _, _, cur, _, _)| *cur).sum();
+    let min_remaining = active_drops.iter().map(|(_, _, _, cur, req, _)| {
+        (req - cur).max(1)
     }).min().unwrap_or(15);
-    // Overall progress (sum) kept for compat
     let overall_progress = if total_required > 0 {
         (total_current as f64 / total_required as f64) * 100.0
     } else {
@@ -324,15 +313,9 @@ fn summarize_active_drops(
         count => Some(format!("{} drops actifs en cours", count)),
     };
     let image = active_drops.iter().find_map(|(_, _, image, _, _, _)| image.clone());
-    // Build per-drop detail list with individual progress
-    let drop_infos: Vec<ActiveDropInfo> = active_drops.iter().map(|(id, name, img, cur, req, percent)| {
-        let effective_current = if *cur > 0 {
-            *cur
-        } else {
-            ((*req as f64) * (*percent as f64 / 100.0)).round() as i64
-        };
+    let drop_infos: Vec<ActiveDropInfo> = active_drops.iter().map(|(id, name, img, cur, req, _)| {
         let pct = if *req > 0 {
-            (effective_current as f64 / *req as f64 * 100.0).min(100.0)
+            (*cur as f64 / *req as f64 * 100.0).min(100.0)
         } else {
             0.0
         };
@@ -340,7 +323,7 @@ fn summarize_active_drops(
             id: id.clone(),
             name: name.clone(),
             image_url: img.clone(),
-            current_minutes: effective_current,
+            current_minutes: *cur,
             required_minutes: *req,
             progress: pct,
         }

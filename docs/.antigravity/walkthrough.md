@@ -62,3 +62,10 @@
 - L'apparence moderne (glassmorphism/gradients) était déjà en place. L'amélioration a visé l'interactivité.
 - Installation de `framer-motion` via npm.
 - Mise en place d'une transition de vue (Page Transition) fluide dans `App.tsx` en enveloppant le `renderView` d'un composant `AnimatePresence` et d'une `motion.div`.
+
+## Drop Miner Priority Fix
+- Résolution du problème où le mineur ciblait tout l'inventaire au lieu des jeux prioritaires.
+- Ajout du paramètre `mine_all_inventory` dans les modèles (`mod.rs`, `types.ts`).
+- Modification de `build_mineable_candidates` dans `miner.rs` pour filtrer strictement selon les `priority_games` (par défaut).
+- Ajout d'un bouton de bascule "Mine all inventory drops" dans `Settings.tsx` pour restaurer l'ancien comportement global si souhaité.
+- Ajout d'une alerte bloquante si `mine_all_inventory` est `false` mais qu'aucun jeu prioritaire n'est défini.

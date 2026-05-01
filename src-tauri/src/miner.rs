@@ -392,6 +392,7 @@ fn parse_drop_campaigns(inventory: &Value) -> Vec<DropCampaign> {
 fn build_mineable_candidates(
     inventory: &Value,
     priority_games: &[String],
+    mine_all: bool,
 ) -> Vec<MineableDropCandidate> {
     let mut candidates = Vec::new();
     let campaign_paths = [
@@ -478,6 +479,10 @@ fn build_mineable_candidates(
                         }
                         score += (100 - remaining_minutes.min(100)).max(0);
                         score += percent.min(100) / 2;
+
+                        if !mine_all && !priority_games.iter().any(|game| game.eq_ignore_ascii_case(&game_name)) {
+                            continue;
+                        }
 
                         candidates.push(MineableDropCandidate {
                             campaign_id: campaign_id.clone(),
@@ -844,7 +849,22 @@ pub async fn start_miner(
                     }
                 };
 
-                let candidates = build_mineable_candidates(&inventory, &priority_games);
+                let mine_all = store
+                    .get("app_config")
+                    .and_then(|value| serde_json::from_value::<crate::models::AppConfig>(value).ok())
+                    .map(|config| config.settings.mine_all_inventory)
+                    .unwrap_or(false);
+
+                if !mine_all && priority_games.is_empty() {
+                    let mut s_guard = state_clone.lock().await;
+                    let mut new_status = s_guard.status.clone();
+                    new_status.status = "No priority games configured. Add games in Settings.".to_string();
+                    s_guard.update_and_notify(&app_clone, new_status);
+                    tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                    continue;
+                }
+
+                let candidates = build_mineable_candidates(&inventory, &priority_games, mine_all);
 
                 for candidate in candidates {
                     if active_streams

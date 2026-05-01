@@ -42,6 +42,7 @@ fn default_config() -> AppConfig {
             minimize_to_tray: true,
             show_tray_icon: true,
             auto_start_drops: false,
+            mine_all_inventory: false,
         },
     }
 }

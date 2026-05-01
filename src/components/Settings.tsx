@@ -628,6 +628,18 @@ export function SettingsPanel() {
 
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
+                  <Label className="text-white text-base">Mine all inventory drops</Label>
+                  <p className="text-sm text-zinc-400">Mine all in-progress drops, not just priority games</p>
+                </div>
+                <Switch 
+                  checked={config.settings.mine_all_inventory ?? false}
+                  onCheckedChange={(checked) => updateSetting('mine_all_inventory', checked)}
+                  className="data-[state=checked]:bg-purple-500" 
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
                   <Label className="text-white">Logs</Label>
                   <p className="text-xs text-zinc-400">View application log files</p>
                 </div>

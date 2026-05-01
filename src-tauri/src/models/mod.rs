@@ -142,6 +142,8 @@ pub struct Settings {
     pub show_tray_icon: bool,
     #[serde(default)]
     pub auto_start_drops: bool,
+    #[serde(default)]
+    pub mine_all_inventory: bool,
 }
 
 fn default_true() -> bool {

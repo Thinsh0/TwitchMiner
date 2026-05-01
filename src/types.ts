@@ -95,6 +95,7 @@ export interface AppConfig {
     minimize_to_tray?: boolean
     show_tray_icon?: boolean
     auto_start_drops: boolean
+    mine_all_inventory?: boolean
   }
 }
 

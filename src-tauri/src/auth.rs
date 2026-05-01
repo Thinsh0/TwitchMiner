@@ -1,8 +1,8 @@
+use crate::models::AuthInitResponse;
 use reqwest::Client;
 use serde_json::json;
-use crate::models::AuthInitResponse;
-use tauri_plugin_store::StoreExt;
 use tauri::AppHandle;
+use tauri_plugin_store::StoreExt;
 
 const CLIENT_ID: &str = "kimne78kx3ncx6brgo4mv6wki5h1ko"; // Typical Switch/Web Client ID
 const SCOPES: &str = "openid user:read:email";
@@ -10,12 +10,10 @@ const SCOPES: &str = "openid user:read:email";
 #[tauri::command]
 pub async fn start_auth() -> Result<AuthInitResponse, String> {
     let client = Client::new();
-    
-    let res = client.post("https://id.twitch.tv/oauth2/device")
-        .form(&[
-            ("client_id", CLIENT_ID),
-            ("scopes", SCOPES)
-        ])
+
+    let res = client
+        .post("https://id.twitch.tv/oauth2/device")
+        .form(&[("client_id", CLIENT_ID), ("scopes", SCOPES)])
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -29,19 +27,24 @@ pub async fn start_auth() -> Result<AuthInitResponse, String> {
 }
 
 #[tauri::command]
-pub async fn poll_for_token(app: AppHandle, device_code: String, interval: u64) -> Result<String, String> {
+pub async fn poll_for_token(
+    app: AppHandle,
+    device_code: String,
+    interval: u64,
+) -> Result<String, String> {
     let client = Client::new();
     let mut current_interval = interval;
 
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(current_interval)).await;
 
-        let res = client.post("https://id.twitch.tv/oauth2/token")
+        let res = client
+            .post("https://id.twitch.tv/oauth2/token")
             .form(&[
                 ("client_id", CLIENT_ID),
                 ("scopes", SCOPES),
                 ("device_code", &device_code),
-                ("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+                ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
             ])
             .send()
             .await
@@ -51,37 +54,39 @@ pub async fn poll_for_token(app: AppHandle, device_code: String, interval: u64) 
         let text = res.text().await.unwrap_or_default();
 
         if status.is_success() {
-            println!("Auth response received: {}", &text[..text.len().min(100)]);
-            
             // Parse as Value for maximum flexibility
             let token_data: serde_json::Value = serde_json::from_str(&text)
-                .map_err(|e| format!("Failed to parse JSON: {} - Raw: {}", e, text))?;
-            
-            println!("JSON parsed as Value: {}", token_data.to_string());
-            
+                .map_err(|e| format!("Failed to parse auth response JSON: {}", e))?;
+
             // Extract required fields
-            let access_token = token_data.get("access_token")
+            let access_token = token_data
+                .get("access_token")
                 .and_then(|v| v.as_str())
                 .ok_or("Missing access_token in response")?;
-            
-            let refresh_token = token_data.get("refresh_token")
+
+            let refresh_token = token_data
+                .get("refresh_token")
                 .and_then(|v| v.as_str())
                 .ok_or("Missing refresh_token in response")?;
-            
-            println!("Access token length: {}", access_token.len());
-            println!("Refresh token length: {}", refresh_token.len());
-            
+
+            log::info!("Access token length: {}", access_token.len());
+            log::info!("Refresh token length: {}", refresh_token.len());
+
             // Save to store
-            let store = app.store("config.json").map_err(|e: tauri_plugin_store::Error| e.to_string())?;
-            println!("Store created successfully");
-            
+            let store = app
+                .store("config.json")
+                .map_err(|e: tauri_plugin_store::Error| e.to_string())?;
+            log::info!("Store created successfully");
+
             store.set("access_token", json!(access_token));
             store.set("refresh_token", json!(refresh_token));
-            println!("Token set in store");
-            
-            store.save().map_err(|e: tauri_plugin_store::Error| e.to_string())?;
-            println!("Store saved successfully");
-            
+            log::info!("Token set in store");
+
+            store
+                .save()
+                .map_err(|e: tauri_plugin_store::Error| e.to_string())?;
+            log::info!("Store saved successfully");
+
             return Ok("Authenticated successfully!".to_string());
         } else if status == 400 {
             if let Ok(error_data) = serde_json::from_str::<serde_json::Value>(&text) {
@@ -91,14 +96,88 @@ pub async fn poll_for_token(app: AppHandle, device_code: String, interval: u64) 
                         "slow_down" => {
                             current_interval += 2;
                             continue;
-                        },
-                        "expired_token" => return Err("Code expired. Please try again.".to_string()),
-                        _ => return Err(format!("Auth Error: {}", msg))
+                        }
+                        "expired_token" => {
+                            return Err("Code expired. Please try again.".to_string())
+                        }
+                        _ => return Err(format!("Auth Error: {}", msg)),
                     }
                 }
             }
         }
-        
+
         return Err(format!("Unexpected response: {}", text));
     }
+}
+
+#[tauri::command]
+pub async fn logout(app: AppHandle) -> Result<(), String> {
+    let store = app
+        .store("config.json")
+        .map_err(|e: tauri_plugin_store::Error| e.to_string())?;
+    store.delete("access_token");
+    store.delete("refresh_token");
+    store.delete("id_token");
+    store
+        .save()
+        .map_err(|e: tauri_plugin_store::Error| e.to_string())?;
+    Ok(())
+}
+
+pub async fn refresh_access_token(
+    store: &std::sync::Arc<tauri_plugin_store::Store<tauri::Wry>>,
+) -> Result<(), String> {
+    let refresh_token = store
+        .get("refresh_token")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .ok_or("No refresh token available")?;
+
+    let client = Client::new();
+    let res = client
+        .post("https://id.twitch.tv/oauth2/token")
+        .form(&[
+            ("client_id", CLIENT_ID),
+            ("grant_type", "refresh_token"),
+            ("refresh_token", &refresh_token),
+        ])
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if res.status().is_success() {
+        let token_data: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+
+        let new_access_token = token_data
+            .get("access_token")
+            .and_then(|v| v.as_str())
+            .ok_or("Missing access_token in response")?;
+
+        let new_refresh_token = token_data
+            .get("refresh_token")
+            .and_then(|v| v.as_str())
+            .ok_or("Missing refresh_token in response")?;
+
+        store.set("access_token", json!(new_access_token));
+        store.set("refresh_token", json!(new_refresh_token));
+        store.save().map_err(|e| e.to_string())?;
+
+        Ok(())
+    } else {
+        let text = res.text().await.unwrap_or_default();
+        store.delete("access_token");
+        store.delete("refresh_token");
+        let _ = store.save();
+        Err(format!("Failed to refresh token: {}", text))
+    }
+}
+
+#[tauri::command]
+pub async fn get_user_info(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let store = app
+        .store("config.json")
+        .map_err(|e: tauri_plugin_store::Error| e.to_string())?;
+    let store_arc = std::sync::Arc::new(store);
+
+    let gql = crate::api::TwitchGQL::new();
+    gql.get_user_info(&store_arc).await
 }

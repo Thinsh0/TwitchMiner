@@ -1,11 +1,11 @@
-use reqwest::{Client, header};
-use serde_json::{json, Value};
-use uuid::Uuid;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use tauri_plugin_store::Store;
-use std::sync::Arc;
 use regex::Regex;
+use reqwest::{header, Client};
+use serde_json::{json, Value};
+use std::sync::Arc;
+use tauri_plugin_store::Store;
+use uuid::Uuid;
 
 pub struct TwitchGQL {
     client: Client,
@@ -15,8 +15,11 @@ pub struct TwitchGQL {
 
 impl TwitchGQL {
     pub fn new() -> Self {
-        let device_id = format!("ecd{}", Uuid::new_v4().to_string().replace("-", "")[..29].to_string());
-        
+        let device_id = format!(
+            "ecd{}",
+            Uuid::new_v4().to_string().replace("-", "")[..29].to_string()
+        );
+
         let client = Client::builder()
             .user_agent("Dalvik/2.1.0 (Linux; U; Android 16; SM-S911B Build/TP1A.220624.014) tv.twitch.android.app/25.3.0/2503006")
             .build()
@@ -30,7 +33,9 @@ impl TwitchGQL {
     }
 
     fn get_auth_token(store: &Arc<Store<tauri::Wry>>) -> Option<String> {
-        store.get("access_token").and_then(|v| v.as_str().map(|s| s.to_string()))
+        store
+            .get("access_token")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
     }
 
     fn build_headers(&self, token: &Option<String>) -> header::HeaderMap {
@@ -38,36 +43,111 @@ impl TwitchGQL {
         headers.insert("Client-ID", self.client_id.parse().unwrap());
         headers.insert("X-Device-Id", self.device_id.parse().unwrap());
         headers.insert("Content-Type", "application/json".parse().unwrap());
-        
+
         if let Some(t) = token {
             if let Ok(auth_header) = format!("OAuth {}", t).parse() {
                 headers.insert("Authorization", auth_header);
             }
         }
-        
+
         headers
     }
 
-    pub async fn post(&self, store: &Arc<Store<tauri::Wry>>, operation_name: &str, query: &str, variables: Value) -> Result<Value, String> {
-        let token = Self::get_auth_token(store);
+    pub async fn post(
+        &self,
+        store: &Arc<Store<tauri::Wry>>,
+        operation_name: &str,
+        query: &str,
+        variables: Value,
+    ) -> Result<Value, String> {
         let payload = json!({
             "operationName": operation_name,
             "query": query,
             "variables": variables
         });
 
-        let res = self.client.post("https://gql.twitch.tv/gql")
-            .headers(self.build_headers(&token))
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
+        let mut last_error = String::new();
+        for attempt in 1..=3 {
+            let token = Self::get_auth_token(store);
+            let res = match self
+                .client
+                .post("https://gql.twitch.tv/gql")
+                .headers(self.build_headers(&token))
+                .json(&payload)
+                .send()
+                .await
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    last_error = e.to_string();
+                    let delay = (1000 * attempt) + rand::random::<u64>() % 500;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
+                    continue;
+                }
+            };
 
-        res.json().await.map_err(|e| e.to_string())
+            if res.status() == reqwest::StatusCode::UNAUTHORIZED {
+                log::info!("Got 401 on GQL post, attempting token refresh...");
+                if let Ok(()) = crate::auth::refresh_access_token(store).await {
+                    continue;
+                }
+            }
+
+            if res.status().is_server_error()
+                || res.status() == reqwest::StatusCode::TOO_MANY_REQUESTS
+            {
+                last_error = format!("HTTP {}", res.status());
+                let delay = (1000 * attempt) + rand::random::<u64>() % 500;
+                tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
+                continue;
+            }
+
+            let json_val: Value = match res.json().await {
+                Ok(v) => v,
+                Err(e) => {
+                    last_error = e.to_string();
+                    let delay = (1000 * attempt) + rand::random::<u64>() % 500;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
+                    continue;
+                }
+            };
+
+            if let Some(errors) = json_val.get("errors").and_then(|e| e.as_array()) {
+                let is_unauth = errors.iter().any(|e| {
+                    e.get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("")
+                        .contains("unauthenticated")
+                        || e.get("message")
+                            .and_then(|m| m.as_str())
+                            .unwrap_or("")
+                            .contains("failed to verify")
+                });
+
+                if is_unauth {
+                    log::info!("Got GQL unauthenticated error, attempting token refresh...");
+                    if let Ok(()) = crate::auth::refresh_access_token(store).await {
+                        continue;
+                    }
+                }
+            }
+
+            return Ok(json_val);
+        }
+
+        Err(format!(
+            "GQL post failed after 3 attempts. Last error: {}",
+            last_error
+        ))
     }
 
-    pub async fn post_persisted(&self, store: &Arc<Store<tauri::Wry>>, operation_name: &str, sha256: &str, variables: Value) -> Result<Value, String> {
-        let token = Self::get_auth_token(store);
+    pub async fn post_persisted(
+        &self,
+        store: &Arc<Store<tauri::Wry>>,
+        operation_name: &str,
+        sha256: &str,
+        variables: Value,
+    ) -> Result<Value, String> {
         let payload = json!({
             "operationName": operation_name,
             "extensions": {
@@ -79,14 +159,81 @@ impl TwitchGQL {
             "variables": variables
         });
 
-        let res = self.client.post("https://gql.twitch.tv/gql")
-            .headers(self.build_headers(&token))
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
+        let mut last_error = String::new();
+        for attempt in 1..=3 {
+            let token = Self::get_auth_token(store);
+            let res = match self
+                .client
+                .post("https://gql.twitch.tv/gql")
+                .headers(self.build_headers(&token))
+                .json(&payload)
+                .send()
+                .await
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    last_error = e.to_string();
+                    let delay = (1000 * attempt) + rand::random::<u64>() % 500;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
+                    continue;
+                }
+            };
 
-        res.json().await.map_err(|e| e.to_string())
+            if res.status() == reqwest::StatusCode::UNAUTHORIZED {
+                log::info!("Got 401 on GQL post_persisted, attempting token refresh...");
+                if let Ok(()) = crate::auth::refresh_access_token(store).await {
+                    continue;
+                }
+            }
+
+            if res.status().is_server_error()
+                || res.status() == reqwest::StatusCode::TOO_MANY_REQUESTS
+            {
+                last_error = format!("HTTP {}", res.status());
+                let delay = (1000 * attempt) + rand::random::<u64>() % 500;
+                tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
+                continue;
+            }
+
+            let json_val: Value = match res.json().await {
+                Ok(v) => v,
+                Err(e) => {
+                    last_error = e.to_string();
+                    let delay = (1000 * attempt) + rand::random::<u64>() % 500;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
+                    continue;
+                }
+            };
+
+            if let Some(errors) = json_val.get("errors").and_then(|e| e.as_array()) {
+                let is_unauth = errors.iter().any(|e| {
+                    e.get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("")
+                        .contains("unauthenticated")
+                        || e.get("message")
+                            .and_then(|m| m.as_str())
+                            .unwrap_or("")
+                            .contains("failed to verify")
+                });
+
+                if is_unauth {
+                    log::info!(
+                        "Got GQL unauthenticated error (persisted), attempting token refresh..."
+                    );
+                    if let Ok(()) = crate::auth::refresh_access_token(store).await {
+                        continue;
+                    }
+                }
+            }
+
+            return Ok(json_val);
+        }
+
+        Err(format!(
+            "GQL post_persisted failed after 3 attempts. Last error: {}",
+            last_error
+        ))
     }
 
     pub async fn get_inventory(&self, store: &Arc<Store<tauri::Wry>>) -> Result<Value, String> {
@@ -96,21 +243,31 @@ impl TwitchGQL {
     }
 
     pub async fn get_user_info(&self, store: &Arc<Store<tauri::Wry>>) -> Result<Value, String> {
-        let query = "query UserInfo { currentUser { id login displayName profileImageURL(width: 50) } }";
+        let query =
+            "query UserInfo { currentUser { id login displayName profileImageURL(width: 50) } }";
         self.post(store, "UserInfo", query, json!({})).await
     }
 
-    pub async fn claim_drop(&self, store: &Arc<Store<tauri::Wry>>, drop_id: &str) -> Result<Value, String> {
+    pub async fn claim_drop(
+        &self,
+        store: &Arc<Store<tauri::Wry>>,
+        drop_id: &str,
+    ) -> Result<Value, String> {
         let sha256 = "a455deea71bdc9015b78eb49f4acfbce8baa7ccbedd28e549bb025bd0f751930";
         let vars = json!({
             "input": {
                 "dropInstanceID": drop_id
             }
         });
-        self.post_persisted(store, "DropsPage_ClaimDropRewards", sha256, vars).await
+        self.post_persisted(store, "DropsPage_ClaimDropRewards", sha256, vars)
+            .await
     }
 
-    pub async fn get_live_streams(&self, store: &Arc<Store<tauri::Wry>>, game_id: &str) -> Result<Value, String> {
+    pub async fn get_live_streams(
+        &self,
+        store: &Arc<Store<tauri::Wry>>,
+        game_id: &str,
+    ) -> Result<Value, String> {
         let query = "
         query GetLiveStreams($gameID: ID!) {
             game(id: $gameID) {
@@ -141,13 +298,22 @@ impl TwitchGQL {
         self.post(store, "GetLiveStreams", query, vars).await
     }
 
-    pub async fn get_available_drops(&self, store: &Arc<Store<tauri::Wry>>, channel_id: &str) -> Result<Value, String> {
+    pub async fn get_available_drops(
+        &self,
+        store: &Arc<Store<tauri::Wry>>,
+        channel_id: &str,
+    ) -> Result<Value, String> {
         let sha256 = "9a62a09bce5b53e26e64a671e530bc599cb6aab1e5ba3cbd5d85966d3940716f";
         let vars = json!({ "channelID": channel_id });
-        self.post_persisted(store, "DropsHighlightService_AvailableDrops", sha256, vars).await
+        self.post_persisted(store, "DropsHighlightService_AvailableDrops", sha256, vars)
+            .await
     }
 
-    pub async fn get_stream_info(&self, store: &Arc<Store<tauri::Wry>>, channel_login: &str) -> Result<Value, String> {
+    pub async fn get_stream_info(
+        &self,
+        store: &Arc<Store<tauri::Wry>>,
+        channel_login: &str,
+    ) -> Result<Value, String> {
         let query = "
         query GetStreamInfo($login: String!) {
             user(login: $login) {
@@ -167,7 +333,11 @@ impl TwitchGQL {
         self.post(store, "GetStreamInfo", query, vars).await
     }
 
-    pub async fn get_playback_access_token(&self, store: &Arc<Store<tauri::Wry>>, channel_login: &str) -> Result<Value, String> {
+    pub async fn get_playback_access_token(
+        &self,
+        store: &Arc<Store<tauri::Wry>>,
+        channel_login: &str,
+    ) -> Result<Value, String> {
         let query = "
         query PlaybackAccessToken($login: String!, $template: String) {
             streamPlaybackAccessToken(channelName: $login, params: {platform: \"web\", playerBackend: \"mediaplayer\", playerType: \"site\"}) {
@@ -189,7 +359,11 @@ impl TwitchGQL {
         slug.trim_matches('-').to_string()
     }
 
-    pub async fn search_games(&self, store: &Arc<Store<tauri::Wry>>, query_text: &str) -> Result<Value, String> {
+    pub async fn search_games(
+        &self,
+        store: &Arc<Store<tauri::Wry>>,
+        query_text: &str,
+    ) -> Result<Value, String> {
         let query = "
         query SearchFor($query: String!) {
             searchFor(userQuery: $query, platform: \"web\", target: {index: GAME}) {
@@ -231,27 +405,38 @@ impl TwitchGQL {
 
     async fn _get_spade_url_internal(&self, streamer_login: &str) -> Result<String, String> {
         let url = format!("https://www.twitch.tv/{}", streamer_login);
-        println!("get_spade_url: Fetching {}", url);
-        
+        log::info!("get_spade_url: Fetching {}", url);
+
         // Use a full desktop browser User-Agent — Twitch serves different HTML for mobile
         let desktop_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-        
-        let res = self.client.get(&url)
-            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+
+        let res = self
+            .client
+            .get(&url)
+            .header(
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            )
             .header("Accept-Language", "en-US,en;q=0.5")
             .header("User-Agent", desktop_ua)
             .send()
             .await
             .map_err(|e| format!("Failed to fetch page: {}", e))?;
 
-        println!("get_spade_url: HTTP status {}", res.status());
-        
+        log::info!("get_spade_url: HTTP status {}", res.status());
+
         if !res.status().is_success() {
-            return Err(format!("HTTP {}: Failed to fetch streamer page", res.status()));
+            return Err(format!(
+                "HTTP {}: Failed to fetch streamer page",
+                res.status()
+            ));
         }
 
-        let text = res.text().await.map_err(|e| format!("Failed to read response: {}", e))?;
-        println!("get_spade_url: Got {} bytes of HTML", text.len());
+        let text = res
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read response: {}", e))?;
+        log::info!("get_spade_url: Got {} bytes of HTML", text.len());
 
         // Patterns ordered from broadest (TwitchDropsMiner style) to most specific
         let patterns: Vec<&str> = vec![
@@ -265,32 +450,41 @@ impl TwitchGQL {
 
         // Try main page first
         if let Some(found) = Self::try_extract_spade(&text, &patterns) {
-            println!("get_spade_url: Found spade URL in main page: {}", &found[..found.len().min(80)]);
+            log::info!(
+                "get_spade_url: Found spade URL in main page: {}",
+                &found[..found.len().min(80)]
+            );
             return Ok(found);
         }
-        println!("get_spade_url: No spade URL in main page, trying settings.js...");
-        
+        log::info!("get_spade_url: No spade URL in main page, trying settings.js...");
+
         // Fallback: extract from settings.js
         let re_settings = Regex::new(r#"src="(https://[\w.]+/config/settings\.[0-9a-f]{32}\.js)""#)
             .map_err(|e| format!("Settings regex error: {}", e))?;
-            
+
         if let Some(caps) = re_settings.captures(&text) {
             let settings_url = &caps[1];
-            println!("get_spade_url: Found settings.js: {}", settings_url);
-            match self.client.get(settings_url)
+            log::info!("get_spade_url: Found settings.js: {}", settings_url);
+            match self
+                .client
+                .get(settings_url)
                 .header("User-Agent", desktop_ua)
-                .send().await
+                .send()
+                .await
             {
                 Ok(res_js) => {
                     if res_js.status().is_success() {
                         if let Ok(text_js) = res_js.text().await {
                             if let Some(found) = Self::try_extract_spade(&text_js, &patterns) {
-                                println!("get_spade_url: Found spade URL in settings.js: {}", &found[..found.len().min(80)]);
+                                log::info!(
+                                    "get_spade_url: Found spade URL in settings.js: {}",
+                                    &found[..found.len().min(80)]
+                                );
                                 return Ok(found);
                             }
                             // Log a snippet of settings.js for debugging
                             let snippet: String = text_js.chars().take(500).collect();
-                            println!("get_spade_url: settings.js snippet (no match): {}", snippet);
+                            log::info!("get_spade_url: settings.js snippet (no match): {}", snippet);
                         }
                     }
                 }
@@ -312,11 +506,17 @@ impl TwitchGQL {
         None
     }
 
-    pub async fn send_spade_minute_watched(&self, spade_url: &str, payload_data: Value) -> Result<bool, String> {
+    pub async fn send_spade_minute_watched(
+        &self,
+        spade_url: &str,
+        payload_data: Value,
+    ) -> Result<bool, String> {
         let json_str = serde_json::to_string(&payload_data).map_err(|e| e.to_string())?;
         let b64_data = STANDARD.encode(json_str);
-        
-        let res = self.client.post(spade_url)
+
+        let res = self
+            .client
+            .post(spade_url)
             .form(&[("data", b64_data)])
             .send()
             .await
@@ -324,11 +524,15 @@ impl TwitchGQL {
 
         let status = res.status().as_u16();
         let success = status == 204 || status == 200;
-        
+
         if success {
-            println!("spade_ping: OK ({})", status);
+            log::info!("spade_ping: OK ({})", status);
         } else {
-            println!("spade_ping: FAILED status {} for url {}", status, &spade_url[..spade_url.len().min(80)]);
+            log::info!(
+                "spade_ping: FAILED status {} for url {}",
+                status,
+                &spade_url[..spade_url.len().min(80)]
+            );
         }
 
         Ok(success)
@@ -336,7 +540,11 @@ impl TwitchGQL {
 
     /// Fetch real-time drop session progress for the current channel.
     /// Returns the GQL response containing `data.currentUser.dropCurrentSession`.
-    pub async fn get_drop_current_session(&self, store: &Arc<Store<tauri::Wry>>, channel_login: &str) -> Result<Value, String> {
+    pub async fn get_drop_current_session(
+        &self,
+        store: &Arc<Store<tauri::Wry>>,
+        channel_login: &str,
+    ) -> Result<Value, String> {
         let query = "
         query DropCurrentSessionContext($channelLogin: String!) {
             currentUser {
@@ -370,10 +578,15 @@ impl TwitchGQL {
             }
         }";
         let vars = json!({ "channelLogin": channel_login });
-        self.post(store, "DropCurrentSessionContext", query, vars).await
+        self.post(store, "DropCurrentSessionContext", query, vars)
+            .await
     }
 
-    pub async fn get_channel_points_context(&self, store: &Arc<Store<tauri::Wry>>, channel_login: &str) -> Result<Value, String> {
+    pub async fn get_channel_points_context(
+        &self,
+        store: &Arc<Store<tauri::Wry>>,
+        channel_login: &str,
+    ) -> Result<Value, String> {
         let query = "
         query GetChannelPointsContext($login: String!) {
             channel(name: $login) {
@@ -390,10 +603,16 @@ impl TwitchGQL {
             }
         }";
         let vars = json!({ "login": channel_login });
-        self.post(store, "GetChannelPointsContext", query, vars).await
+        self.post(store, "GetChannelPointsContext", query, vars)
+            .await
     }
 
-    pub async fn claim_community_points(&self, store: &Arc<Store<tauri::Wry>>, channel_id: &str, claim_id: &str) -> Result<Value, String> {
+    pub async fn claim_community_points(
+        &self,
+        store: &Arc<Store<tauri::Wry>>,
+        channel_id: &str,
+        claim_id: &str,
+    ) -> Result<Value, String> {
         let query = "
         mutation ClaimCommunityPoints($input: ClaimCommunityPointsInput!) {
             claimCommunityPoints(input: $input) {
@@ -407,5 +626,4 @@ impl TwitchGQL {
         let vars = json!({ "input": { "channelID": channel_id, "claimID": claim_id } });
         self.post(store, "ClaimCommunityPoints", query, vars).await
     }
-
 }

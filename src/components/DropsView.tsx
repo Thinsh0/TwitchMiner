@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { invoke } from '@tauri-apps/api/core'
-import { useAppStore, type DropCampaign, type DropItem } from '@/store'
+import { api } from '@/api'
+import { useAppStore } from '@/store'
+import type { DropCampaign, DropItem } from '@/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -33,8 +34,17 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
   const [globalSortDirection, setGlobalSortDirection] = useState<SortDirection>('asc');
   const [groupSorts, setGroupSorts] = useState<Record<string, { key: DropSortKey; direction: SortDirection }>>({});
 
+  const fetchCampaigns = async () => {
+    try {
+      const result = await api.getDropCampaigns().catch(() => []);
+      setDropCampaigns(result);
+    } catch (err) {
+      console.error('Failed to fetch campaigns:', err);
+    }
+  };
+
   useEffect(() => {
-    invoke<any>('get_config').then(cfg => {
+    api.getConfig().then(cfg => {
       const games: string[] = cfg?.priorities?.games ?? []
       setPriorityGames(games)
     }).catch(console.error)
@@ -50,15 +60,6 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
     }, 120_000)
     return () => clearInterval(interval)
   }, [dropStatus.is_running])
-
-  const fetchCampaigns = async () => {
-    try {
-      const result = await invoke<any[]>('get_drop_campaigns').catch(() => []);
-      setDropCampaigns(result);
-    } catch (err) {
-      console.error('Failed to fetch campaigns:', err);
-    }
-  };
 
   const sortedCampaigns = sortCampaigns(dropCampaigns, globalSortKey, globalSortDirection);
   const campaignsByGame = sortedCampaigns.reduce<Record<string, DropCampaign[]>>((acc, campaign) => {

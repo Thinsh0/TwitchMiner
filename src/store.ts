@@ -1,47 +1,7 @@
 import { create } from 'zustand'
-
-export interface ActiveDropInfo {
-  id: string
-  name: string
-  image_url: string | null
-  current_minutes: number
-  required_minutes: number
-  /** Individual progress percentage (0-100). */
-  progress: number
-}
-
-export interface MinerStatus {
-  status: string
-  is_running: boolean
-  current_streamer: string | null
-  current_streamer_login: string | null
-  current_drop: string | null
-  drop_image_url: string | null
-  streamer_image_url: string | null
-  progress: number
-  current_points: string
-  active_drops: ActiveDropInfo[]
-}
-
-export interface DropCampaign {
-  id: string;
-  name: string;
-  game_name: string;
-  image_url?: string;
-  status: string;
-  start_date: string;
-  end_date: string;
-  drops: DropItem[];
-}
-
-export interface DropItem {
-  id: string;
-  name: string;
-  required_minutes: number;
-  current_minutes: number;
-  is_claimed: boolean;
-  image_url?: string;
-}
+import { activityNotifications, activityStorage } from './activity'
+import type { ActivityEvent, ActivityEventType, DropCampaign, MinerStatus } from './types'
+export type { ActiveDropInfo, DropCampaign, DropItem, MinerStatus } from './types'
 
 interface AppState {
   status: MinerStatus
@@ -50,6 +10,21 @@ interface AppState {
   setAuthenticated: (val: boolean) => void
   dropCampaigns: DropCampaign[]
   setDropCampaigns: (campaigns: DropCampaign[]) => void
+  activities: ActivityEvent[]
+  addActivity: (event: Omit<ActivityEvent, 'id' | 'timestamp'>) => void
+  setActivities: (events: ActivityEvent[]) => void
+  loadActivities: () => Promise<void>
+  claimedDrops: DropItem[]
+  setClaimedDrops: (drops: DropItem[]) => void
+  addClaimedDrop: (drop: DropItem) => void
+  loadClaimedDrops: () => Promise<void>
+}
+
+const activityTitles: Record<ActivityEventType, string> = {
+  drop: 'Drops',
+  points: 'Channel Points',
+  auth: 'Authentication',
+  system: 'System',
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -70,4 +45,36 @@ export const useAppStore = create<AppState>((set) => ({
   setAuthenticated: (val) => set({ isAuthenticated: val }),
   dropCampaigns: [],
   setDropCampaigns: (campaigns) => set({ dropCampaigns: campaigns }),
+  activities: [],
+  addActivity: (event) => set((state) => ({
+    activities: (() => {
+      const nextEvent = {
+        ...event,
+        title: event.title || activityTitles[event.type],
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        timestamp: Date.now(),
+      }
+      const nextActivities = [nextEvent, ...state.activities].slice(0, 25)
+      void activityStorage.save(nextActivities)
+      void activityNotifications.notify(nextEvent)
+      return nextActivities
+    })(),
+  })),
+  setActivities: (events) => set({ activities: events.slice(0, 25) }),
+  loadActivities: async () => {
+    const events = await activityStorage.load()
+    set({ activities: events })
+  },
+  claimedDrops: [],
+  setClaimedDrops: (drops) => set({ claimedDrops: drops }),
+  addClaimedDrop: (drop) => set((state) => ({ claimedDrops: [drop, ...state.claimedDrops] })),
+  loadClaimedDrops: async () => {
+    const { api } = await import('./api')
+    try {
+      const drops = await api.getClaimedDrops()
+      set({ claimedDrops: drops.reverse() }) // Reverse to show newest first
+    } catch (e) {
+      console.error('Failed to load claimed drops', e)
+    }
+  },
 }))

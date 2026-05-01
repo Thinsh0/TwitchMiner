@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Snapshot of a single time-based drop that is currently being mined.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -28,6 +28,7 @@ pub struct MinerStatus {
     pub current_points: String,
     /// Full list of drops currently being mined (may be >1 simultaneous campaigns).
     pub active_drops: Vec<ActiveDropInfo>,
+    pub started_at: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -69,6 +70,7 @@ pub struct StreakMinerStatus {
     pub failed_pings: u64,
     pub cycle_count: u64,
     pub channels_info: Vec<ChannelPointsInfo>,
+    pub started_at: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -134,6 +136,14 @@ pub struct Settings {
     pub notify_active_drop: bool,
     pub notify_claim: bool,
     pub notify_campaign_finish: bool,
+    #[serde(default = "default_true")]
+    pub minimize_to_tray: bool,
+    #[serde(default = "default_true")]
+    pub show_tray_icon: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 // We will add more structs for GQL responses as we implement them.

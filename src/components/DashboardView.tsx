@@ -1,30 +1,17 @@
 import { useState, useEffect } from 'react'
-import { invoke } from '@tauri-apps/api/core'
+import { api } from '@/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { open } from '@tauri-apps/plugin-shell'
 import { useAppStore } from '@/store'
-import type { ActiveDropInfo, MinerStatus } from '@/store'
-import { Play, Square, Activity, Zap, TrendingUp, Clock, ImageOff } from 'lucide-react'
+import type { ActiveDropInfo, MinerStatus, StreakMinerStatus } from '@/types'
+import { Play, Square, Activity, Zap, TrendingUp, Clock, ImageOff, Gamepad2 } from 'lucide-react'
 
 interface DashboardViewProps {
   status: MinerStatus;
-  streakStatus: {
-    status: string;
-    current_channels: string[];
-    total_pings_sent: number;
-    successful_pings: number;
-    failed_pings: number;
-    cycle_count: number;
-    channels_info: Array<{
-      channel_name: string;
-      points: number;
-      has_claim_available: boolean;
-      status: string;
-    }>;
-  };
+  streakStatus: StreakMinerStatus;
   streakRunning: boolean;
   onToggleDropMiner: () => void;
   onToggleStreakMiner: () => void;
@@ -34,9 +21,10 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
   const [configuredChannels, setConfiguredChannels] = useState<string[]>([])
   const [priorityGames, setPriorityGames] = useState<string[]>([])
   const dropCampaigns = useAppStore(state => state.dropCampaigns)
+  const activities = useAppStore(state => state.activities)
 
   useEffect(() => {
-    invoke<any>('get_config').then(cfg => {
+    api.getConfig().then(cfg => {
       const streakChs: string[] = cfg?.bonus?.daily_streaks?.channels ?? []
       const pointsChs: string[] = cfg?.bonus?.points_farming?.channels ?? []
       setConfiguredChannels([...new Set([...streakChs, ...pointsChs])])
@@ -64,21 +52,44 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
     }
   }
 
+  const [uptime, setUptime] = useState<string>('--:--:--')
+  const claimedDrops = useAppStore(state => state.claimedDrops)
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout
+    const startedAt = (status.is_running && status.started_at) || (streakRunning && streakStatus.started_at)
+    
+    if (startedAt) {
+      interval = setInterval(() => {
+        const start = new Date(startedAt).getTime()
+        const now = Date.now()
+        const diff = Math.max(0, Math.floor((now - start) / 1000))
+        const h = Math.floor(diff / 3600)
+        const m = Math.floor((diff % 3600) / 60)
+        const s = diff % 60
+        setUptime(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`)
+      }, 1000)
+    } else {
+      setUptime('--:--:--')
+    }
+    return () => clearInterval(interval)
+  }, [status.is_running, status.started_at, streakRunning, streakStatus.started_at])
+
   return (
     <div className="space-y-6">
       {/* Welcome / Stats */}
       <div className="grid grid-cols-4 gap-4">
         <StatCard
-          icon={<Activity className="w-5 h-5 text-purple-400" />}
-          label="Drop Miner"
-          value={status.is_running ? 'Active' : 'Idle'}
+          icon={<Clock className="w-5 h-5 text-purple-400" />}
+          label="Miner Uptime"
+          value={uptime}
           color={status.is_running ? 'text-green-400' : 'text-zinc-400'}
         />
         <StatCard
-          icon={<Zap className="w-5 h-5 text-blue-400" />}
-          label="Points Miner"
-          value={streakRunning ? 'Active' : 'Idle'}
-          color={streakRunning ? 'text-blue-400' : 'text-zinc-400'}
+          icon={<Gamepad2 className="w-5 h-5 text-purple-400" />}
+          label="Drops Claimed"
+          value={claimedDrops.length.toString()}
+          color="text-purple-400"
         />
         <StatCard
           icon={<TrendingUp className="w-5 h-5 text-yellow-400" />}
@@ -87,10 +98,10 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
           color="text-yellow-400"
         />
         <StatCard
-          icon={<Clock className="w-5 h-5 text-green-400" />}
-          label="Claims Available"
-          value={claimsAvailable.toString()}
-          color={claimsAvailable > 0 ? 'text-green-400' : 'text-zinc-400'}
+          icon={<Zap className="w-5 h-5 text-blue-400" />}
+          label="Points Miner"
+          value={streakRunning ? 'Active' : 'Idle'}
+          color={streakRunning ? 'text-blue-400' : 'text-zinc-400'}
         />
       </div>
 
@@ -194,6 +205,44 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
           </CardContent>
         </Card>
       </div>
+
+      <Card className="bg-black/40 border-white/10 backdrop-blur-xl shadow-xl">
+        <CardHeader>
+          <CardTitle className="text-lg text-white flex items-center gap-2">
+            <Clock className="w-5 h-5 text-green-400" />
+            Recent Activity
+          </CardTitle>
+          <CardDescription className="text-zinc-400">
+            Latest miner, authentication, and system events
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {activities.length > 0 ? (
+            <div className="space-y-2">
+              {activities.slice(0, 6).map((event) => (
+                <div key={event.id} className="flex items-start justify-between gap-3 rounded-lg border border-white/5 bg-white/5 p-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="bg-zinc-800 text-zinc-300 text-xs">
+                        {event.type}
+                      </Badge>
+                      <span className="text-sm font-medium text-white">{event.title}</span>
+                    </div>
+                    <p className="mt-1 text-sm text-zinc-400">{event.description}</p>
+                  </div>
+                  <span className="shrink-0 text-xs text-zinc-500">
+                    {new Date(event.timestamp).toLocaleTimeString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-white/5 bg-white/5 p-4 text-sm text-zinc-500">
+              Activity will appear here when miners start, stop, or report status changes.
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -1,27 +1,11 @@
 import { useState, useEffect } from 'react'
-import { invoke } from '@tauri-apps/api/core'
+import { api } from '@/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tv, Play, Square, Gift, AlertCircle, CheckCircle2, Clock, Eye } from 'lucide-react'
-
-interface ChannelPointsInfo {
-  channel_name: string;
-  points: number;
-  has_claim_available: boolean;
-  status: string;
-}
-
-interface StreakMinerStatus {
-  status: string;
-  current_channels: string[];
-  total_pings_sent: number;
-  successful_pings: number;
-  failed_pings: number;
-  cycle_count: number;
-  channels_info: ChannelPointsInfo[];
-}
+import type { ChannelPointsInfo, StreakMinerStatus } from '@/types'
 
 interface ChannelPointsViewProps {
   streakStatus: StreakMinerStatus;
@@ -33,7 +17,7 @@ export function ChannelPointsView({ streakStatus, streakRunning, onToggle }: Cha
   const [configuredChannels, setConfiguredChannels] = useState<string[]>([])
 
   useEffect(() => {
-    invoke<any>('get_config').then(cfg => {
+    api.getConfig().then(cfg => {
       const streakChs: string[] = cfg?.bonus?.daily_streaks?.channels ?? []
       const pointsChs: string[] = cfg?.bonus?.points_farming?.channels ?? []
       // Merge both lists (unique)

@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import { invoke } from '@tauri-apps/api/core'
+import { api } from '@/api'
+import { activityNotifications } from '@/activity'
+import type { AppConfig } from '@/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,34 +11,7 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { X, Save, RotateCcw, Plus, Gamepad2, Users, Tv, Settings as SettingsIcon } from 'lucide-react'
-
-interface AppConfig {
-  client_id: string;
-  priorities: {
-    games: string[];
-    streamers: string[];
-  };
-  bonus: {
-    daily_streaks: {
-      channels: string[];
-      auto_start: boolean;
-      mode: string;
-    };
-    points_farming: {
-      channels: string[];
-      auto_start: boolean;
-      max_concurrent: number;
-    };
-  };
-  settings: {
-    language: string;
-    check_interval: number;
-    notifications_enabled: boolean;
-    notify_active_drop: boolean;
-    notify_claim: boolean;
-    notify_campaign_finish: boolean;
-  };
-}
+import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
 
 export function SettingsPanel() {
   const [config, setConfig] = useState<AppConfig | null>(null)
@@ -46,6 +21,7 @@ export function SettingsPanel() {
   const [newStreamer, setNewStreamer] = useState('')
   const [newStreakChannel, setNewStreakChannel] = useState('')
   const [newPointsChannel, setNewPointsChannel] = useState('')
+  const [autostartEnabled, setAutostartEnabled] = useState(false)
   
   // Game search autocomplete
   const [gameSearchResults, setGameSearchResults] = useState<[string, string][]>([])
@@ -64,7 +40,7 @@ export function SettingsPanel() {
       saveConfig()
     }, 1000)
     return () => clearTimeout(timeout)
-  }, [config?.priorities.games.length, config?.priorities.streamers.length, config?.bonus.daily_streaks.channels.length, config?.bonus.points_farming.channels.length])
+  }, [config?.priorities.games.length, config?.priorities.streamers.length, config?.bonus.daily_streaks.channels.length, config?.bonus.points_farming.channels.length, config?.settings])
 
   // Debounced game search
   useEffect(() => {
@@ -77,7 +53,7 @@ export function SettingsPanel() {
     const timeout = setTimeout(async () => {
       setIsSearchingGames(true)
       try {
-        const results = await invoke<[string, string][]>('search_games_cmd', { query: newGame })
+        const results = await api.searchGames(newGame)
         setGameSearchResults(results)
         setShowGameDropdown(results.length > 0)
       } catch (err) {
@@ -94,9 +70,15 @@ export function SettingsPanel() {
   const loadConfig = async () => {
     try {
       console.log('Loading config...')
-      const cfg = await invoke<AppConfig>('get_config')
+      const cfg = await api.getConfig()
       console.log('Config loaded:', cfg)
       setConfig(cfg)
+      try {
+        const isAutoStart = await isEnabled()
+        setAutostartEnabled(isAutoStart)
+      } catch (e) {
+        console.error('Failed to get autostart status:', e)
+      }
     } catch (err) {
       console.error('Failed to load config:', err)
     } finally {
@@ -109,7 +91,8 @@ export function SettingsPanel() {
     setSaving(true)
     try {
       console.log('Saving config:', config)
-      await invoke('save_config', { config })
+      await api.saveConfig(config)
+      activityNotifications.setConfig(config)
       console.log('Config saved successfully')
     } catch (err) {
       console.error('Failed to save config:', err)
@@ -120,10 +103,27 @@ export function SettingsPanel() {
 
   const resetConfig = async () => {
     try {
-      const cfg = await invoke<AppConfig>('reset_config')
+      const cfg = await api.resetConfig()
+      activityNotifications.setConfig(cfg)
       setConfig(cfg)
     } catch (err) {
       console.error('Failed to reset config:', err)
+    }
+  }
+
+  const toggleAutostart = async (checked: boolean) => {
+    // Eager update for better UX
+    setAutostartEnabled(checked)
+    try {
+      if (checked) {
+        await enable()
+      } else {
+        await disable()
+      }
+    } catch (err) {
+      console.error('Failed to toggle autostart:', err)
+      // Revert if it actually failed and we want to be strict, but in dev mode it often fails
+      // setAutostartEnabled(!checked)
     }
   }
 
@@ -576,6 +576,57 @@ export function SettingsPanel() {
                 />
                 <Label htmlFor="notif-finish" className="text-zinc-400">Notify Campaign Finish</Label>
               </div>
+
+              <Separator className="bg-white/10 my-4" />
+              
+              <Label className="text-white">System & Tray</Label>
+              
+              <div className="flex items-center space-x-2">
+                <Switch
+                  checked={autostartEnabled}
+                  onCheckedChange={toggleAutostart}
+                  id="system-autostart"
+                />
+                <Label htmlFor="system-autostart" className="text-zinc-400">Launch at system startup</Label>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Switch
+                  checked={config.settings.minimize_to_tray ?? true}
+                  onCheckedChange={(checked) => updateSetting('minimize_to_tray', checked)}
+                  id="tray-minimize"
+                />
+                <Label htmlFor="tray-minimize" className="text-zinc-400">Minimize to tray on close</Label>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Switch
+                  checked={config.settings.show_tray_icon ?? true}
+                  onCheckedChange={(checked) => updateSetting('show_tray_icon', checked)}
+                  id="tray-show"
+                />
+                <Label htmlFor="tray-show" className="text-zinc-400">Show tray icon</Label>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-white">Logs</Label>
+                  <p className="text-xs text-zinc-400">View application log files</p>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="border-white/10 text-zinc-400 hover:text-white hover:bg-white/5"
+                  onClick={async () => {
+                    const { appLogDir } = await import('@tauri-apps/api/path')
+                    const { open } = await import('@tauri-apps/plugin-shell')
+                    const logDir = await appLogDir()
+                    await open(logDir)
+                  }}
+                >
+                  Open Logs Folder
+                </Button>
+              </div>
+
             </div>
           </TabsContent>
         </Tabs>

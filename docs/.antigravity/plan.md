@@ -1,13 +1,13 @@
-# Plan d'Amélioration Global — Twitch Miner V2
+# Plan - Fix Drop Progress & Smart Switching (Refined)
 
-- [x] Phase 4 — Single Instance
-- [x] Phase 1 — System Tray & Minimize to Tray
-- [x] Phase 2 — Autostart avec l'OS
-- [x] Phase 6.2 — Token Refresh Automatique
-- [x] Phase 6.1 — Retry & Backoff sur les appels GQL
-- [x] Phase 3 — Notifications Natives
-- [x] Phase 5.1 — User Profile dans la Sidebar
-- [x] Phase 5.2 — Historique des Drops Claimés
-- [x] Phase 6.3 — Logging structuré
-- [x] Phase 5.3 — Statistiques & Uptime
-- [x] Phase 5.4 — Thème & Apparence
+## Tasks
+- [ ] Update `TargetStream` struct with tracking fields (`last_progress_min`, `last_progress_at`, `failed_streamers`)
+- [ ] Refactor `start_miner` loop to use mutable `active_streams`
+- [ ] Implement event-based sync (emit only on change)
+- [ ] Implement Smart Switch (6-min stagnation threshold, 2 streamers limit)
+- [ ] Implement 1-hour cooldown for stagnant drop campaigns
+- [ ] Implement immediate loop break on 100% completion
+- [ ] Verify fix and auto-switching functionality
+
+## Status
+Analyzing issue... Refined plan with 6-min threshold and 1-hour cooldown created. Serialization safety and state management issues addressed.

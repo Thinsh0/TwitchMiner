@@ -2,6 +2,9 @@ use crate::api::TwitchGQL;
 use crate::models::{ActiveDropInfo, DropCampaign, DropItem, MinerStatus};
 use serde_json::Value;
 use std::sync::Arc;
+use std::collections::HashMap;
+use chrono::{DateTime, Utc};
+use std::time::Instant;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
@@ -23,6 +26,7 @@ pub struct MinerState {
     pub status: MinerStatus,
     pub is_running: bool,
     pub task: Option<JoinHandle<()>>,
+    pub campaign_cooldowns: HashMap<String, DateTime<Utc>>,
 }
 
 impl MinerState {
@@ -34,6 +38,7 @@ impl MinerState {
             },
             is_running: false,
             task: None,
+            campaign_cooldowns: HashMap::new(),
         }
     }
 
@@ -393,6 +398,7 @@ fn build_mineable_candidates(
     inventory: &Value,
     priority_games: &[String],
     mine_all: bool,
+    cooldowns: &HashMap<String, DateTime<Utc>>,
 ) -> Vec<MineableDropCandidate> {
     let mut candidates = Vec::new();
     let campaign_paths = [
@@ -400,10 +406,20 @@ fn build_mineable_candidates(
         "/data/currentUser/inventory/viewerDropCampaigns",
     ];
 
+    let now = Utc::now();
+
     for path in campaign_paths {
         if let Some(campaigns) = inventory.pointer(path).and_then(|v| v.as_array()) {
             for camp in campaigns {
                 let campaign_id = json_id_to_string(camp.get("id")).unwrap_or_default();
+                
+                // Check cooldowns
+                if let Some(expire_at) = cooldowns.get(&campaign_id) {
+                    if expire_at > &now {
+                        log::info!("build_mineable_candidates: skipping campaign {} (cooldown)", campaign_id);
+                        continue;
+                    }
+                }
                 let campaign_name = camp
                     .get("name")
                     .and_then(|v| v.as_str())
@@ -768,6 +784,9 @@ struct TargetStream {
     channel_id: String,
     spade_url: Option<String>,
     active_drop: (String, String, Option<String>, i64, i64, i64),
+    last_progress_min: i64,
+    last_progress_at: Instant,
+    failed_streamers: Vec<String>,
 }
 
 #[tauri::command]
@@ -864,7 +883,12 @@ pub async fn start_miner(
                     continue;
                 }
 
-                let candidates = build_mineable_candidates(&inventory, &priority_games, mine_all);
+                let cooldowns = {
+                    let s = state_clone.lock().await;
+                    s.campaign_cooldowns.clone()
+                };
+
+                let candidates = build_mineable_candidates(&inventory, &priority_games, mine_all, &cooldowns);
 
                 for candidate in candidates {
                     if active_streams
@@ -988,6 +1012,9 @@ pub async fn start_miner(
                                     candidate.required_minutes,
                                     candidate.percent,
                                 ),
+                                last_progress_min: candidate.current_minutes,
+                                last_progress_at: Instant::now(),
+                                failed_streamers: Vec::new(),
                             });
                             break;
                         }
@@ -1025,62 +1052,41 @@ pub async fn start_miner(
                         }
                     }
 
-                    // Combine all streams into status
-                    let streamers_names: Vec<String> = active_streams
-                        .iter()
-                        .map(|s| s.streamer_name.clone().unwrap_or(s.streamer_login.clone()))
-                        .collect();
-                    let status_text = format!("Watching: {}", streamers_names.join(", "));
-
-                    {
-                        let mut s_guard = state_clone.lock().await;
-                        let mut new_status = s_guard.status.clone();
-                        new_status.status = status_text;
-                        // Set primary streamer image to first one for UI
-                        if let Some(first) = active_streams.first() {
-                            new_status.current_streamer = first.streamer_name.clone();
-                            new_status.current_streamer_login = Some(first.streamer_login.clone());
-                            new_status.streamer_image_url = first.streamer_image.clone();
-                        }
-                        s_guard.update_and_notify(&app_clone, new_status.clone());
-                    }
-
-                    // Collect all active drops
+                    // 1. Sync and update from inventory
                     if let Ok(inv) = gql.get_inventory(&store).await {
                         check_and_claim_drops(&gql, &store, &uid, &inv, &app_clone).await;
-                        let mut all_drops = Vec::new();
-                        for stream in &active_streams {
-                            all_drops.push(stream.active_drop.clone());
-                        }
-
-                        if !all_drops.is_empty() {
-                            let (
-                                drop_name,
-                                drop_image,
-                                overall_progress,
-                                _cur_mins,
-                                _req_mins,
-                                _remaining,
-                                drop_infos,
-                            ) = summarize_active_drops(&all_drops);
-                            let mut s_guard = state_clone.lock().await;
-                            let mut new_status = s_guard.status.clone();
-                            new_status.current_drop = drop_name;
-                            new_status.drop_image_url = drop_image;
-                            new_status.progress = overall_progress;
-                            new_status.active_drops = drop_infos;
-                            s_guard.update_and_notify(&app_clone, new_status);
-                        } else {
-                            let mut s_guard = state_clone.lock().await;
-                            let mut new_status = s_guard.status.clone();
-                            new_status.active_drops = Vec::new();
-                            new_status.progress = 0.0;
-                            s_guard.update_and_notify(&app_clone, new_status);
+                        
+                        // Update active_streams info from inventory
+                        for stream in &mut active_streams {
+                            let drop_id = &stream.active_drop.0;
+                            // Search inInProgress campaigns
+                            if let Some(campaigns) = inv.pointer("/data/currentUser/inventory/dropCampaignsInProgress").and_then(|v| v.as_array()) {
+                                for camp in campaigns {
+                                    if let Some(drops) = camp.get("timeBasedDrops").and_then(|v| v.as_array()) {
+                                        for drop in drops {
+                                            if json_id_to_string(drop.get("id")).map_or(false, |id| id == *drop_id) {
+                                                let cur = drop.pointer("/self/currentMinutesWatched").and_then(|v| v.as_i64()).unwrap_or(0);
+                                                let req = drop.get("requiredMinutesWatched").and_then(|v| v.as_i64()).unwrap_or(0);
+                                                stream.active_drop.3 = cur;
+                                                stream.active_drop.4 = req;
+                                                if req > 0 {
+                                                    stream.active_drop.5 = (cur * 100 / req).min(100);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
-                    // Send Pings & Update Session
-                    for stream in &active_streams {
+                    // 2. Pings and Real-time session update
+                    let mut some_drop_finished = false;
+                    let mut some_stream_stagnant = false;
+                    let mut status_updated = false;
+
+                    for stream in &mut active_streams {
+                        // Send spade ping
                         let payload = serde_json::json!({
                             "event": "minute-watched",
                             "properties": {
@@ -1101,68 +1107,104 @@ pub async fn start_miner(
                             let _ = gql.send_spade_minute_watched(spade_url, payload).await;
                         }
 
-                        // Update Realtime Progress
-                        if let Ok(session_res) = gql
-                            .get_drop_current_session(&store, &stream.streamer_login)
-                            .await
-                        {
-                            if let Some(session) =
-                                session_res.pointer("/data/currentUser/dropCurrentSession")
-                            {
-                                let cur = session
-                                    .get("currentMinutesWatched")
-                                    .and_then(|v| v.as_i64())
-                                    .unwrap_or(0);
-                                let req = session
-                                    .get("requiredMinutesWatched")
-                                    .and_then(|v| v.as_i64())
-                                    .unwrap_or(0);
-                                let drop_id_rt = session
-                                    .pointer("/drop/id")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                let drop_name_rt =
-                                    session.pointer("/drop/name").and_then(|v| v.as_str());
-
-                                if req > 0 {
-                                    let pct = (cur as f64 / req as f64 * 100.0).min(100.0);
-                                    let mut s_guard = state_clone.lock().await;
-                                    let mut new_status = s_guard.status.clone();
-                                    if let Some(existing) =
-                                        new_status.active_drops.iter_mut().find(|d| {
-                                            d.id == drop_id_rt
-                                                || drop_name_rt.map_or(false, |n| d.name == n)
-                                        })
-                                    {
-                                        existing.current_minutes = cur;
-                                        existing.progress = pct;
+                        // Get real-time progress
+                        if let Ok(session_res) = gql.get_drop_current_session(&store, &stream.streamer_login).await {
+                            if let Some(session) = session_res.pointer("/data/currentUser/dropCurrentSession") {
+                                let cur = session.get("currentMinutesWatched").and_then(|v| v.as_i64()).unwrap_or(0);
+                                let req = session.get("requiredMinutesWatched").and_then(|v| v.as_i64()).unwrap_or(0);
+                                
+                                if cur > stream.last_progress_min {
+                                    log::info!("Progress update for {}: {}m -> {}m", stream.streamer_login, stream.last_progress_min, cur);
+                                    stream.last_progress_min = cur;
+                                    stream.last_progress_at = Instant::now();
+                                    status_updated = true;
+                                } else if stream.last_progress_at.elapsed().as_secs() > 360 {
+                                    log::warn!("Stream {} seems stagnant (no progress for 6 mins)", stream.streamer_login);
+                                    some_stream_stagnant = true;
+                                    if !stream.failed_streamers.contains(&stream.streamer_login) {
+                                        stream.failed_streamers.push(stream.streamer_login.clone());
                                     }
-                                    s_guard.update_and_notify(&app_clone, new_status);
+                                }
+
+                                stream.active_drop.3 = cur;
+                                stream.active_drop.4 = req;
+                                if req > 0 {
+                                    stream.active_drop.5 = (cur * 100 / req).min(100);
+                                }
+
+                                if req > 0 && cur >= req {
+                                    some_drop_finished = true;
                                 }
                             }
                         }
 
                         // Claim community points occasionally
                         if loop_count % 5 == 0 {
-                            if let Ok(pts_res) = gql
-                                .get_channel_points_context(&store, &stream.streamer_login)
-                                .await
-                            {
-                                if let Some(claim_id) = pts_res
-                                    .pointer("/data/channel/self/communityPoints/availableClaim/id")
-                                    .and_then(|v| v.as_str())
-                                {
-                                    if let Some(ch_id) =
-                                        pts_res.pointer("/data/channel/id").and_then(|v| v.as_str())
-                                    {
-                                        let _ = gql
-                                            .claim_community_points(&store, ch_id, claim_id)
-                                            .await;
+                            if let Ok(pts_res) = gql.get_channel_points_context(&store, &stream.streamer_login).await {
+                                if let Some(claim_id) = pts_res.pointer("/data/channel/self/communityPoints/availableClaim/id").and_then(|v| v.as_str()) {
+                                    if let Some(ch_id) = pts_res.pointer("/data/channel/id").and_then(|v| v.as_str()) {
+                                        let _ = gql.claim_community_points(&store, ch_id, claim_id).await;
                                     }
                                 }
                             }
                         }
+                    }
+
+                    // 3. Summarize and notify UI
+                    let all_drops_tuples: Vec<_> = active_streams.iter().map(|s| s.active_drop.clone()).collect();
+                    let (
+                        drop_name,
+                        drop_image,
+                        overall_progress,
+                        _cur_mins,
+                        _req_mins,
+                        _remaining,
+                        drop_infos,
+                    ) = summarize_active_drops(&all_drops_tuples);
+
+                    {
+                        let mut s_guard = state_clone.lock().await;
+                        let mut new_status = s_guard.status.clone();
+                        
+                        let streamers_names: Vec<String> = active_streams.iter().map(|s| s.streamer_name.clone().unwrap_or(s.streamer_login.clone())).collect();
+                        new_status.status = format!("Watching: {}", streamers_names.join(", "));
+                        
+                        if let Some(first) = active_streams.first() {
+                            new_status.current_streamer = first.streamer_name.clone();
+                            new_status.current_streamer_login = Some(first.streamer_login.clone());
+                            new_status.streamer_image_url = first.streamer_image.clone();
+                        }
+
+                        new_status.current_drop = drop_name;
+                        new_status.drop_image_url = drop_image;
+                        new_status.progress = overall_progress;
+                        new_status.active_drops = drop_infos;
+
+                        // Notify if progress changed or once in a while
+                        if status_updated || loop_count % 3 == 0 || loop_count == 15 {
+                            s_guard.update_and_notify(&app_clone, new_status);
+                        } else {
+                            s_guard.status = new_status;
+                        }
+                    }
+
+                    if some_drop_finished {
+                        log::info!("A drop has been completed, re-evaluating candidates...");
+                        break;
+                    }
+
+                    if some_stream_stagnant {
+                        // Check if we should cooldown the whole campaign
+                        for stream in &active_streams {
+                            if stream.failed_streamers.len() >= 2 {
+                                let campaign_id = stream.active_drop.0.clone();
+                                log::warn!("Campaign {} is stagnant across multiple streamers. Cooling down for 1 hour.", campaign_id);
+                                let mut s_guard = state_clone.lock().await;
+                                s_guard.campaign_cooldowns.insert(campaign_id, Utc::now() + chrono::Duration::hours(1));
+                            }
+                        }
+                        log::info!("Some streams are stagnant, switching channels...");
+                        break;
                     }
 
                     tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;

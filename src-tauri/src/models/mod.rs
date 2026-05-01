@@ -140,6 +140,8 @@ pub struct Settings {
     pub minimize_to_tray: bool,
     #[serde(default = "default_true")]
     pub show_tray_icon: bool,
+    #[serde(default)]
+    pub auto_start_drops: bool,
 }
 
 fn default_true() -> bool {

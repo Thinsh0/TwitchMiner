@@ -590,23 +590,42 @@ export function SettingsPanel() {
                 <Label htmlFor="system-autostart" className="text-zinc-400">Launch at system startup</Label>
               </div>
 
-              <div className="flex items-center space-x-2">
-                <Switch
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-white text-base">Minimize to tray on close</Label>
+                  <p className="text-sm text-zinc-400">Keep running in background when closed</p>
+                </div>
+                <Switch 
                   checked={config.settings.minimize_to_tray ?? true}
                   onCheckedChange={(checked) => updateSetting('minimize_to_tray', checked)}
-                  id="tray-minimize"
+                  className="data-[state=checked]:bg-purple-500" 
                 />
-                <Label htmlFor="tray-minimize" className="text-zinc-400">Minimize to tray on close</Label>
               </div>
 
-              <div className="flex items-center space-x-2">
-                <Switch
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-white text-base">Show tray icon</Label>
+                  <p className="text-sm text-zinc-400">Display icon in system tray</p>
+                </div>
+                <Switch 
                   checked={config.settings.show_tray_icon ?? true}
                   onCheckedChange={(checked) => updateSetting('show_tray_icon', checked)}
-                  id="tray-show"
+                  className="data-[state=checked]:bg-purple-500" 
                 />
-                <Label htmlFor="tray-show" className="text-zinc-400">Show tray icon</Label>
               </div>
+
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-white text-base">Auto-start Drops Miner</Label>
+                  <p className="text-sm text-zinc-400">Start mining drops automatically when app opens</p>
+                </div>
+                <Switch 
+                  checked={config.settings.auto_start_drops ?? false}
+                  onCheckedChange={(checked) => updateSetting('auto_start_drops', checked)}
+                  className="data-[state=checked]:bg-purple-500" 
+                />
+              </div>
+
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label className="text-white">Logs</Label>

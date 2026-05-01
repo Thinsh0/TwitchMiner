@@ -41,6 +41,7 @@ fn default_config() -> AppConfig {
             notify_campaign_finish: true,
             minimize_to_tray: true,
             show_tray_icon: true,
+            auto_start_drops: false,
         },
     }
 }

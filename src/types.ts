@@ -94,6 +94,7 @@ export interface AppConfig {
     notify_campaign_finish: boolean
     minimize_to_tray?: boolean
     show_tray_icon?: boolean
+    auto_start_drops: boolean
   }
 }
 

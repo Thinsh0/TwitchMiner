@@ -135,6 +135,29 @@ function App() {
         .catch(console.error);
 
       useAppStore.getState().loadClaimedDrops();
+
+      // Handle Auto-Start based on configuration
+      api.getConfig().then(async (config) => {
+        if (!config) return;
+        
+        // Auto-start Drops Miner
+        if (config.settings?.auto_start_drops) {
+          const currentStatus = await api.getStatus();
+          if (!currentStatus.is_running) {
+            console.log('Auto-starting Drops Miner');
+            await api.startMiner();
+          }
+        }
+
+        // Auto-start Streak/Points Miner
+        if (config.bonus?.daily_streaks?.auto_start || config.bonus?.points_farming?.auto_start) {
+          const streakStatus = await api.getStreakMinerStatus();
+          if (streakStatus.status === "Idle" || streakStatus.status === "Stopped") {
+            console.log('Auto-starting Streak/Points Miner');
+            await api.startStreakMiner();
+          }
+        }
+      }).catch(console.error);
     }
     
     return () => {

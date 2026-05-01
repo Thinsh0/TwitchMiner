@@ -38,7 +38,7 @@ function App() {
     channels_info: [],
   })
   const [streakRunning, setStreakRunning] = useState(false)
-  const [activeView, setActiveView] = useState<'dashboard' | 'drops' | 'points' | 'settings'>('dashboard')
+  const [activeView, setActiveView] = useState<'dashboard' | 'drops' | 'points' | 'history' | 'settings'>('dashboard')
   const lastMinerStatus = useRef(status.status)
   const lastStreakStatus = useRef(streakStatus.status)
 

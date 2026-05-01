@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { activityNotifications, activityStorage } from './activity'
-import type { ActivityEvent, ActivityEventType, DropCampaign, MinerStatus } from './types'
+import type { ActivityEvent, ActivityEventType, DropCampaign, MinerStatus, DropItem } from './types'
 export type { ActiveDropInfo, DropCampaign, DropItem, MinerStatus } from './types'
 
 interface AppState {

@@ -34,7 +34,6 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
 
   const totalPoints = streakStatus.channels_info?.reduce((sum, ch) => sum + ch.points, 0) || 0;
   const activeChannels = streakStatus.channels_info?.filter(ch => ch.status === 'Watching' || ch.status === 'Ready').length || 0;
-  const claimsAvailable = streakStatus.channels_info?.filter(ch => ch.has_claim_available).length || 0;
   const fallbackDrop = dropCampaigns
     .flatMap(campaign => campaign.drops)
     .find(drop => !drop.is_claimed && drop.current_minutes < drop.required_minutes);
@@ -56,7 +55,7 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
   const claimedDrops = useAppStore(state => state.claimedDrops)
 
   useEffect(() => {
-    let interval: NodeJS.Timeout
+    let interval: ReturnType<typeof setInterval>
     const startedAt = (status.is_running && status.started_at) || (streakRunning && streakStatus.started_at)
     
     if (startedAt) {

@@ -1,13 +1,14 @@
-# Plan - Fix Drop Progress & Smart Switching (Refined)
+# Plan - Port to Android (Background & Autostart)
 
 ## Tasks
-- [ ] Update `TargetStream` struct with tracking fields (`last_progress_min`, `last_progress_at`, `failed_streamers`)
-- [ ] Refactor `start_miner` loop to use mutable `active_streams`
-- [ ] Implement event-based sync (emit only on change)
-- [ ] Implement Smart Switch (6-min stagnation threshold, 2 streamers limit)
-- [ ] Implement 1-hour cooldown for stagnant drop campaigns
-- [ ] Implement immediate loop break on 100% completion
-- [ ] Verify fix and auto-switching functionality
+- [ ] Initialize Android target (`npx tauri android init`)
+- [ ] Implement Foreground Service in Kotlin for background persistence
+- [ ] Implement Autostart BroadcastReceiver (`BOOT_COMPLETED`)
+- [ ] Configure `AndroidManifest.xml` (Permissions & Services)
+- [ ] Bridge Rust mining logic to Native Service
+- [ ] Create Mobile Setup Helper UI (Battery, Notifications, Autostart)
+- [ ] Verify background operation and autostart functionality
+- [ ] Build and test APK
 
 ## Status
-Analyzing issue... Refined plan with 6-min threshold and 1-hour cooldown created. Serialization safety and state management issues addressed.
+Starting Android porting process. Implementation plan created and awaiting user approval.

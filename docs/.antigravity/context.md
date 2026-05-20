@@ -1,16 +1,17 @@
-# Context - Drop Progress & Smart Switching
+# Context - Port to Android
 
-## Decision: Update `active_streams` in-place
-We found that the mining loop was using a stale copy of the `active_streams` metadata, which caused the dashboard to reset to old values every minute. We decided to make `active_streams` mutable and update its internal `active_drop` info whenever new data arrives.
+## Decision: Use Tauri 2.0 Mobile (Android)
+We are using Tauri 2.0's native mobile support to port the application. This allows us to keep the existing Rust mining logic while providing a native Android experience.
 
-## Decision: Smart Stagnation Detection (Smart Switch)
-Following the user's idea, we decided to implement a detection mechanism. 
-- **Threshold**: 6 minutes (to account for Twitch batching).
-- **Strategy**: If no progress, try another streamer.
-- **Cooldown**: If two streamers fail, skip the drop for 1 hour.
+## Decision: Foreground Service for Persistence
+Android's background restrictions require a Foreground Service with a persistent notification to keep the process alive while the UI is closed. This ensures heartbeats continue even when the user isn't looking at the phone.
 
-## Decision: Serialization Safety
-Even if internal, tracking fields like `Instant` or `failed_streamers` will be handled carefully to avoid Serde/Tauri serialization issues.
+## Decision: Autostart via BroadcastReceiver
+To fulfill the "automatic start" requirement, we'll implement a `RECEIVE_BOOT_COMPLETED` listener in Kotlin to launch the background service immediately after device startup.
 
-## Decision: Event-driven Updates
-To optimize performance, the backend will only emit updates when a meaningful change occurs (progress increase, switch, or completion).
+## Decision: Resource Optimization
+We will focus on keeping the background memory footprint low by ensuring the mining logic is efficient and doesn't trigger unnecessary WebView re-renders when in the background.
+
+## Technical Trade-offs
+- **Battery vs. Mining**: Background mining is battery-intensive due to constant network heartbeats. We'll guide the user to disable battery optimization.
+- **Complexity**: Native Kotlin code is required to bridge Tauri with Android's system services (Service, Receiver).

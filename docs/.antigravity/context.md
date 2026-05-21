@@ -1,17 +1,20 @@
-# Context - Port to Android
+# Context - Monorepo Restructuring & Android Port
 
-## Decision: Use Tauri 2.0 Mobile (Android)
-We are using Tauri 2.0's native mobile support to port the application. This allows us to keep the existing Rust mining logic while providing a native Android experience.
+## Decision: Monorepo Directory Structure
+To avoid code duplication while keeping the codebase clean, we decided to restructure the project:
+- `core/`: Common Rust code (API client, configuration, and miner engines).
+- `frontend/`: Shared React + TS + Tailwind frontend, which will be responsive for both desktop and mobile/tablet.
+- `desktop/`: Tauri desktop app backend.
+- `mobile/`: Tauri mobile app backend (Android).
 
-## Decision: Foreground Service for Persistence
-Android's background restrictions require a Foreground Service with a persistent notification to keep the process alive while the UI is closed. This ensures heartbeats continue even when the user isn't looking at the phone.
+## Decision: Background Persistence on Android
+We'll utilize `tauri-plugin-background-service` to run a Foreground Service on Android. This displays a notification and prevents the OS from suspending the Rust process and the socket connections needed for Twitch mining.
 
-## Decision: Autostart via BroadcastReceiver
-To fulfill the "automatic start" requirement, we'll implement a `RECEIVE_BOOT_COMPLETED` listener in Kotlin to launch the background service immediately after device startup.
+## Decision: Auto-start
+We'll implement an Android `BroadcastReceiver` listening to `BOOT_COMPLETED` that triggers the Foreground Service automatically at startup, removing the need for the user to open the app manually.
 
-## Decision: Resource Optimization
-We will focus on keeping the background memory footprint low by ensuring the mining logic is efficient and doesn't trigger unnecessary WebView re-renders when in the background.
-
-## Technical Trade-offs
-- **Battery vs. Mining**: Background mining is battery-intensive due to constant network heartbeats. We'll guide the user to disable battery optimization.
-- **Complexity**: Native Kotlin code is required to bridge Tauri with Android's system services (Service, Receiver).
+## Decision: Idiot-Proof Setup UI
+To prevent background termination by aggressive OS battery managers, we will implement:
+- Dynamic permission checks (programmatic validation of notifications and battery optimization status).
+- Redirect to battery setting details directly using Android intent.
+- Links to manufacturer-specific troubleshooting pages (`dontkillmyapp.com`) with a step-by-step assistant.

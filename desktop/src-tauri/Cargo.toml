@@ -9,6 +9,7 @@ edition = "2021"
 tauri-build = { version = "2.0.0", features = [] }
 
 [dependencies]
+twitch-miner-core = { path = "../../core" }
 tauri = { version = "2.0.0", features = ["tray-icon"] }
 tauri-plugin-opener = "2.0.0"
 tauri-plugin-shell = "2.0.0"

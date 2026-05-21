@@ -1,12 +1,6 @@
-pub mod api;
-pub mod auth;
-pub mod config;
-pub mod miner;
-pub mod models;
-pub mod streak_miner;
-
-use crate::miner::MinerState;
-use crate::streak_miner::StreakMinerState;
+use twitch_miner_core::{auth, config, miner, models, streak_miner};
+use twitch_miner_core::miner::MinerState;
+use twitch_miner_core::streak_miner::StreakMinerState;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_store::StoreExt;

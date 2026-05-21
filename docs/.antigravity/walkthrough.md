@@ -69,3 +69,13 @@
 - Modification de `build_mineable_candidates` dans `miner.rs` pour filtrer strictement selon les `priority_games` (par défaut).
 - Ajout d'un bouton de bascule "Mine all inventory drops" dans `Settings.tsx` pour restaurer l'ancien comportement global si souhaité.
 - Ajout d'une alerte bloquante si `mine_all_inventory` est `false` mais qu'aucun jeu prioritaire n'est défini.
+
+## Restructuring & Android Porting
+- Création d'une copie de sauvegarde / commit de sécurité (`b7aceb6`) pour sécuriser le code fonctionnel.
+- Élaboration du plan d'architecture monorepo : `core` (Rust), `frontend` (responsive React), `desktop` (Tauri Desktop), `mobile` (Tauri Android avec Service et démarrage auto).
+- Ajout de l'assistant de configuration mobile (guides de marques comme `dontkillmyapp.com` et indicateurs de permissions vert/rouge interactifs).
+- Restructuration physique effectuée :
+  - Création du crate partagé `core/` (package `twitch-miner-core`) contenant l'API, les modèles, la config et les mineurs.
+  - Déplacement des fichiers frontend (React/Vite/Tailwind) dans `frontend/`.
+  - Déplacement de l'application desktop dans `desktop/` avec mise à jour des dépendances Cargo et configurations de chemins Tauri.
+  - Vérification de la compilation réussie du package Desktop et du package Core.

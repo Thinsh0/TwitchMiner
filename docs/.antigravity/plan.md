@@ -1,14 +1,15 @@
-# Plan - Port to Android (Background & Autostart)
+# Plan - Monorepo Restructuring & Android Port
 
 ## Tasks
-- [ ] Initialize Android target (`npx tauri android init`)
-- [ ] Implement Foreground Service in Kotlin for background persistence
-- [ ] Implement Autostart BroadcastReceiver (`BOOT_COMPLETED`)
-- [ ] Configure `AndroidManifest.xml` (Permissions & Services)
-- [ ] Bridge Rust mining logic to Native Service
-- [ ] Create Mobile Setup Helper UI (Battery, Notifications, Autostart)
-- [ ] Verify background operation and autostart functionality
-- [ ] Build and test APK
+- [x] Move current frontend files into `frontend/`
+- [x] Create `core/` shared Rust library and move miner logic there
+- [x] Move Tauri desktop files to `desktop/` and link to `core` and `frontend`
+- [ ] Initialize Tauri Android project in `mobile/`
+- [ ] Implement Foreground Service and Auto-start Receiver on Android
+- [ ] Implement programmatic checks for Battery Optimizations & Notifications
+- [ ] Adapt frontend layout to be responsive for mobile/tablet
+- [ ] Add mobile configuration helper UI (idiot-proof guide with live green indicators)
+- [ ] Verify build and functionality on desktop and Android
 
 ## Status
-Starting Android porting process. Implementation plan created and awaiting user approval.
+Safety commit created (`b7aceb6`). Monorepo plan updated to include programmatic checkmarks and brand guides for the mobile setup helper. Awaiting user approval.

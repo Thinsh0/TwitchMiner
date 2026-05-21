@@ -24,8 +24,10 @@ dist-ssr
 *.sw?
 
 # Rust / Tauri
-src-tauri/target/
+target/
+**/target/
 Cargo.lock
+**/Cargo.lock
 *.pdb
 
 # Tauri specific

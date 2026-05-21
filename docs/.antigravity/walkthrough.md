@@ -102,4 +102,4 @@
 - **Tauri path correction**: Replaced relative path `../frontend` with `../../frontend` for `beforeBuildCommand` and `beforeDevCommand` in both `mobile/src-tauri/tauri.conf.json` and `desktop/src-tauri/tauri.conf.json`.
 - **Target folder NPM scripts delegation**: Generated `package.json` with a script entry for `"tauri": "tauri"` in both `mobile/src-tauri` and `desktop/src-tauri`.
 - **Unique Bundle ID**: Configured a unique bundle identifier (`com.twitchminer.desktop`) in `desktop/src-tauri/tauri.conf.json`.
-- **Verification Builds**: Successfully built the Android universal APK/AAB targets and the Desktop MSI/setup EXE installers.
+- **Verification Builds**: Successfully built the Android targets (both unsigned release APK/AAB and signed debug APK) and the Desktop MSI/setup EXE installers.

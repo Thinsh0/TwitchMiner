@@ -79,3 +79,9 @@
   - Déplacement des fichiers frontend (React/Vite/Tailwind) dans `frontend/`.
   - Déplacement de l'application desktop dans `desktop/` avec mise à jour des dépendances Cargo et configurations de chemins Tauri.
   - Vérification de la compilation réussie du package Desktop et du package Core.
+- Configuration du module mobile `mobile/src-tauri` :
+  - Résolution des erreurs macro-commandes Tauri (`__cmd__check_battery_optimizations` et `__cmd__request_battery_optimization` déclarées en `pub` dans le même fichier `lib.rs`) en retirant le mot-clé `pub` et en renommant les variables inutilisées en `_app` pour éviter les warnings.
+  - Configuration de `AndroidManifest.xml` avec les permissions `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC`, `POST_NOTIFICATIONS`, `RECEIVE_BOOT_COMPLETED` et `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`.
+  - Déclaration de `tauri_plugin_background_service.BackgroundService` avec `foregroundServiceType="dataSync"` et `stopWithTask="false"`.
+  - Validation de la compilation réussie du package mobile.
+

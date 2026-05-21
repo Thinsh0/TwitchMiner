@@ -84,4 +84,11 @@
   - Configuration de `AndroidManifest.xml` avec les permissions `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC`, `POST_NOTIFICATIONS`, `RECEIVE_BOOT_COMPLETED` et `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`.
   - Déclaration de `tauri_plugin_background_service.BackgroundService` avec `foregroundServiceType="dataSync"` et `stopWithTask="false"`.
   - Validation de la compilation réussie du package mobile.
+- Adaptation Responsive & Assistant Mobile (`frontend/src/`) :
+  - Création du composant `MobileSetupWizard.tsx` interrogeant à la fois `@tauri-apps/plugin-notification` et notre commande JNI Rust `check_battery_optimizations` toutes les 3 secondes ou à chaque focus.
+  - Ajout de boutons réactifs ouvrant les paramètres du système pour l'exemption de batterie et affichant des instructions adaptées à la marque du téléphone (Xiaomi, Samsung, Huawei, OnePlus, etc.).
+  - Restructuration de `App.tsx` pour cacher la sidebar sur mobile au profit d'un header supérieur et d'une barre de navigation inférieure avec animations d'activité de minage.
+  - Correction de la mise en page des cartes de statistiques sur le tableau de bord (`DashboardView.tsx`) pour éviter les débordements sur écran réduit.
+  - Validation du build de production du frontend (`tsc && vite build`).
+
 

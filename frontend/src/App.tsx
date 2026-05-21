@@ -306,11 +306,29 @@ function App() {
   }
 
   return (
-    <div className="h-screen bg-black/95 text-white flex relative overflow-hidden font-sans">
+    <div className="h-screen bg-black/95 text-white flex flex-col md:flex-row relative overflow-hidden font-sans">
       <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-purple-900/20 to-transparent pointer-events-none" />
 
-      {/* Sidebar Navigation */}
-      <aside className="w-64 bg-black/40 border-r border-white/10 backdrop-blur-xl flex flex-col relative z-10">
+      {/* Top Header for Mobile */}
+      <header className="md:hidden flex h-16 items-center justify-between px-6 bg-black/40 border-b border-white/10 backdrop-blur-xl shrink-0 relative z-10">
+        <h1 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-400">
+          Twitch Miner
+        </h1>
+        {userInfo && (
+          <div className="flex items-center gap-3">
+            <img src={userInfo.profileImageURL} alt={userInfo.displayName} className="w-8 h-8 rounded-full border border-purple-500/50" />
+            <button
+              onClick={handleLogout}
+              className="text-xs text-zinc-400 hover:text-white px-2 py-1 bg-white/5 border border-white/10 rounded-md transition-colors"
+            >
+              Logout
+            </button>
+          </div>
+        )}
+      </header>
+
+      {/* Sidebar Navigation (Desktop) */}
+      <aside className="hidden md:flex w-64 bg-black/40 border-r border-white/10 backdrop-blur-xl flex-col relative z-10">
         {/* Logo */}
         <div className="p-6 border-b border-white/10">
           <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-400">
@@ -384,7 +402,7 @@ function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 p-6 overflow-y-auto relative z-10">
+      <main className="flex-1 p-4 md:p-6 overflow-y-auto relative z-10 pb-24 md:pb-6">
         <div className="max-w-6xl mx-auto">
           <AnimatePresence mode="wait">
             <motion.div
@@ -399,6 +417,32 @@ function App() {
           </AnimatePresence>
         </div>
       </main>
+
+      {/* Bottom Navigation (Mobile) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-zinc-950/80 border-t border-white/10 backdrop-blur-2xl flex justify-around items-center z-20 pb-safe">
+        {navItems.map((item) => {
+          const Icon = item.icon
+          const isActive = activeView === item.id
+          return (
+            <button
+              key={item.id}
+              onClick={() => setActiveView(item.id)}
+              className={`flex flex-col items-center justify-center flex-1 h-full py-1 text-[10px] font-medium transition-colors relative ${
+                isActive ? 'text-purple-400' : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              <Icon className="w-5 h-5 mb-0.5" />
+              <span>{item.label}</span>
+              {item.id === 'drops' && status.is_running && (
+                <span className="absolute top-2 right-[32%] w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              )}
+              {item.id === 'points' && streakRunning && (
+                <span className="absolute top-2 right-[32%] w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+              )}
+            </button>
+          )
+        })}
+      </nav>
 
       {/* Auth Dialog (kept for compatibility) */}
       <Dialog open={authDialog} onOpenChange={setAuthDialog}>

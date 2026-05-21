@@ -8,6 +8,7 @@ import { open } from '@tauri-apps/plugin-shell'
 import { useAppStore } from '@/store'
 import type { ActiveDropInfo, MinerStatus, StreakMinerStatus } from '@/types'
 import { Play, Square, Activity, Zap, TrendingUp, Clock, ImageOff, Gamepad2 } from 'lucide-react'
+import { MobileSetupWizard } from './MobileSetupWizard'
 
 interface DashboardViewProps {
   status: MinerStatus;
@@ -76,8 +77,9 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
 
   return (
     <div className="space-y-6">
+      <MobileSetupWizard />
       {/* Welcome / Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           icon={<Clock className="w-5 h-5 text-purple-400" />}
           label="Miner Uptime"

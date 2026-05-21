@@ -22,4 +22,6 @@ export const api = {
   saveConfig: (config: AppConfig) => invoke<void>('save_config', { config }),
   resetConfig: () => invoke<AppConfig>('reset_config'),
   searchGames: (query: string) => invoke<[string, string][]>('search_games_cmd', { query }),
+  checkBatteryOptimizations: () => invoke<boolean>('check_battery_optimizations'),
+  requestBatteryOptimization: () => invoke<void>('request_battery_optimization'),
 }

@@ -12,6 +12,7 @@
 - [ ] Verify build and functionality on desktop and Android
 
 ## Status
-Safety commit created (`b7aceb6`). Mobile initialization, background service configuration, battery optimization JNI hooks, responsive layout, and interactive Setup Wizard with live indicators successfully implemented and committed (`a2368d0`).
+Safety commit created (`b7aceb6`). Mobile initialization, background service configuration, battery optimization JNI hooks, responsive layout, and interactive Setup Wizard successfully implemented. Fixed JNI Rust closures to return Results using channels, and resolved dependency issues. Android packaging is currently blocked by Windows Developer Mode permissions (symbolic link creation) and spaces in the path.
+
 
 

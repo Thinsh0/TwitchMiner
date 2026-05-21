@@ -18,3 +18,7 @@ To prevent background termination by aggressive OS battery managers, we will imp
 - Dynamic permission checks (programmatic validation of notifications and battery optimization status).
 - Redirect to battery setting details directly using Android intent.
 - Links to manufacturer-specific troubleshooting pages (`dontkillmyapp.com`) with a step-by-step assistant.
+
+## Decision: Channel-based JNI wrappers
+To resolve the Rust closure type mismatches with Tauri's JNI `exec` API, we wrapped the JNI calls in an immediately-invoked closure returning `Result` and transferred the result to the main thread via a `std::sync::mpsc::channel`.
+

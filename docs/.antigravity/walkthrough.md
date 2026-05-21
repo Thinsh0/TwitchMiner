@@ -91,4 +91,8 @@
   - Correction de la mise en page des cartes de statistiques sur le tableau de bord (`DashboardView.tsx`) pour éviter les débordements sur écran réduit.
   - Validation du build de production du frontend (`tsc && vite build`).
 
-
+## JNI Compilation Fixes & Build Blockers
+- **Fix compilation in mobile backend**: Added the `jni` crate dependency to `mobile/src-tauri/Cargo.toml` target `aarch64-linux-android`.
+- **Refactored JNI methods**: Re-implemented `check_battery_optimization` and `request_battery_exemption` inside [lib.rs](file:///d:/Devs/Twitch%20Miner/mobile/src-tauri/src/lib.rs) using a channel-based wrapper (`std::sync::mpsc::channel`) to extract `Result` values from the JNI webview thread.
+- **Frontend Pre-build**: Successfully ran the frontend production build inside the original directory `d:\Devs\Twitch Miner` to bypass Rolldown directory-junction canonicalization restrictions.
+- **Identified Windows environment blockers**: Documented that Windows Developer Mode is required to compile Tauri Android apps to allow symlink creation in the NDK/cargo target pipeline.

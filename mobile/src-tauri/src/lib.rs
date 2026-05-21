@@ -32,72 +32,76 @@ async fn check_auth_status(app: AppHandle) -> Result<bool, String> {
 fn check_battery_optimization(app: &tauri::AppHandle) -> Result<bool, String> {
     let window = app.get_webview_window("main").ok_or("Failed to get main window")?;
     
-    let result = window.with_webview(|webview| {
-        webview.jni_handle().exec(|env, context, _webview| {
-            // 1. Get package name
-            let pkg_name_java = env.call_method(context, "getPackageName", "()Ljava/lang/String;", &[])
-                .map_err(|e| format!("Failed to getPackageName: {:?}", e))?
-                .l()
-                .map_err(|e| format!("Failed to get package name object: {:?}", e))?;
-                
-            // 2. Get PowerManager
-            let power_service = env.get_static_field("android/content/Context", "POWER_SERVICE", "Ljava/lang/String;")
-                .map_err(|e| format!("Failed to get POWER_SERVICE field: {:?}", e))?
-                .l()
-                .map_err(|e| format!("Failed to get POWER_SERVICE object: {:?}", e))?;
-                
-            let pm = env.call_method(context, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", &[(&power_service).into()])
-                .map_err(|e| format!("Failed to getSystemService: {:?}", e))?
-                .l()
-                .map_err(|e| format!("Failed to get service object: {:?}", e))?;
-                
-            // 3. Call isIgnoringBatteryOptimizations
-            let is_ignoring = env.call_method(pm, "isIgnoringBatteryOptimizations", "(Ljava/lang/String;)Z", &[(&pkg_name_java).into()])
-                .map_err(|e| format!("Failed to call isIgnoringBatteryOptimizations: {:?}", e))?
-                .z()
-                .map_err(|e| format!("Failed to get boolean: {:?}", e))?;
-                
-            Ok(is_ignoring)
-        })
-    });
+    let (tx, rx) = std::sync::mpsc::channel();
     
-    match result {
-        Ok(inner_res) => inner_res,
-        Err(e) => Err(format!("Webview error: {:?}", e)),
-    }
+    window.with_webview(move |webview| {
+        webview.jni_handle().exec(move |env, context, _webview| {
+            let res = (|| -> Result<bool, String> {
+                // 1. Get package name
+                let pkg_name_java = env.call_method(context, "getPackageName", "()Ljava/lang/String;", &[])
+                    .map_err(|e| format!("Failed to getPackageName: {:?}", e))?
+                    .l()
+                    .map_err(|e| format!("Failed to get package name object: {:?}", e))?;
+                    
+                // 2. Get PowerManager
+                let power_service = env.get_static_field("android/content/Context", "POWER_SERVICE", "Ljava/lang/String;")
+                    .map_err(|e| format!("Failed to get POWER_SERVICE field: {:?}", e))?
+                    .l()
+                    .map_err(|e| format!("Failed to get POWER_SERVICE object: {:?}", e))?;
+                    
+                let pm = env.call_method(context, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", &[(&power_service).into()])
+                    .map_err(|e| format!("Failed to getSystemService: {:?}", e))?
+                    .l()
+                    .map_err(|e| format!("Failed to get service object: {:?}", e))?;
+                    
+                // 3. Call isIgnoringBatteryOptimizations
+                let is_ignoring = env.call_method(pm, "isIgnoringBatteryOptimizations", "(Ljava/lang/String;)Z", &[(&pkg_name_java).into()])
+                    .map_err(|e| format!("Failed to call isIgnoringBatteryOptimizations: {:?}", e))?
+                    .z()
+                    .map_err(|e| format!("Failed to get boolean: {:?}", e))?;
+                    
+                Ok(is_ignoring)
+            })();
+            let _ = tx.send(res);
+        });
+    }).map_err(|e| format!("Webview error: {:?}", e))?;
+    
+    rx.recv().map_err(|e| format!("Failed to receive JNI result: {:?}", e))?
 }
 
 #[cfg(target_os = "android")]
 fn request_battery_exemption(app: &tauri::AppHandle) -> Result<(), String> {
     let window = app.get_webview_window("main").ok_or("Failed to get main window")?;
     
-    let result = window.with_webview(|webview| {
-        webview.jni_handle().exec(|env, context, _webview| {
-            // 1. Get ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
-            let action_str = env.get_static_field("android/provider/Settings", "ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS", "Ljava/lang/String;")
-                .map_err(|e| format!("Failed to get ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS: {:?}", e))?
-                .l()
-                .map_err(|e| format!("Failed to get action string object: {:?}", e))?;
-                
-            // 2. Create new Intent
-            let intent_class = env.find_class("android/content/Intent")
-                .map_err(|e| format!("Failed to find Intent class: {:?}", e))?;
-                
-            let intent = env.new_object(intent_class, "(Ljava/lang/String;)V", &[(&action_str).into()])
-                .map_err(|e| format!("Failed to create Intent object: {:?}", e))?;
-                
-            // 3. Call context.startActivity(intent)
-            env.call_method(context, "startActivity", "(Landroid/content/Intent;)V", &[(&intent).into()])
-                .map_err(|e| format!("Failed to call startActivity: {:?}", e))?;
-                
-            Ok(())
-        })
-    });
+    let (tx, rx) = std::sync::mpsc::channel();
     
-    match result {
-        Ok(inner_res) => inner_res,
-        Err(e) => Err(format!("Webview error: {:?}", e)),
-    }
+    window.with_webview(move |webview| {
+        webview.jni_handle().exec(move |env, context, _webview| {
+            let res = (|| -> Result<(), String> {
+                // 1. Get ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
+                let action_str = env.get_static_field("android/provider/Settings", "ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS", "Ljava/lang/String;")
+                    .map_err(|e| format!("Failed to get ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS: {:?}", e))?
+                    .l()
+                    .map_err(|e| format!("Failed to get action string object: {:?}", e))?;
+                    
+                // 2. Create new Intent
+                let intent_class = env.find_class("android/content/Intent")
+                    .map_err(|e| format!("Failed to find Intent class: {:?}", e))?;
+                    
+                let intent = env.new_object(intent_class, "(Ljava/lang/String;)V", &[(&action_str).into()])
+                    .map_err(|e| format!("Failed to create Intent object: {:?}", e))?;
+                    
+                // 3. Call context.startActivity(intent)
+                env.call_method(context, "startActivity", "(Landroid/content/Intent;)V", &[(&intent).into()])
+                    .map_err(|e| format!("Failed to call startActivity: {:?}", e))?;
+                    
+                Ok(())
+            })();
+            let _ = tx.send(res);
+        });
+    }).map_err(|e| format!("Webview error: {:?}", e))?;
+    
+    rx.recv().map_err(|e| format!("Failed to receive JNI result: {:?}", e))?
 }
 
 #[tauri::command]

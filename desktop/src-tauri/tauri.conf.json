@@ -2,12 +2,12 @@
   "$schema": "../../frontend/node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "twitch-miner",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.twitchminer.desktop",
   "build": {
     "frontendDist": "../../frontend/dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "npm --prefix ../frontend run dev",
-    "beforeBuildCommand": "npm --prefix ../frontend run build"
+    "beforeDevCommand": "npm --prefix ../../frontend run dev",
+    "beforeBuildCommand": "npm --prefix ../../frontend run build"
   },
   "app": {
     "windows": [

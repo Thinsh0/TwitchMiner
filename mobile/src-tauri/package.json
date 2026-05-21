@@ -1,0 +1,7 @@
+{
+  "name": "twitch-miner-mobile-backend",
+  "private": true,
+  "scripts": {
+    "tauri": "tauri"
+  }
+}

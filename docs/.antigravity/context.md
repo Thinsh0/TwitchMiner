@@ -22,3 +22,8 @@ To prevent background termination by aggressive OS battery managers, we will imp
 ## Decision: Channel-based JNI wrappers
 To resolve the Rust closure type mismatches with Tauri's JNI `exec` API, we wrapped the JNI calls in an immediately-invoked closure returning `Result` and transferred the result to the main thread via a `std::sync::mpsc::channel`.
 
+## Decision: Monorepo NPM Routing & Paths
+- Created a root `package.json` with scripts targeting `--prefix frontend`.
+- Placed target-specific `package.json` files in `mobile/src-tauri/` and `desktop/src-tauri/` containing a `"tauri": "tauri"` script to allow Gradle and local CLI calls to execute from the proper context directory while resolving binaries upward.
+- Changed `tauri.conf.json` build/dev commands to use `../../frontend` instead of `../frontend` to match relative path structures from within backend subfolders.
+

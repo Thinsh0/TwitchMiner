@@ -96,3 +96,10 @@
 - **Refactored JNI methods**: Re-implemented `check_battery_optimization` and `request_battery_exemption` inside [lib.rs](file:///d:/Devs/Twitch%20Miner/mobile/src-tauri/src/lib.rs) using a channel-based wrapper (`std::sync::mpsc::channel`) to extract `Result` values from the JNI webview thread.
 - **Frontend Pre-build**: Successfully ran the frontend production build inside the original directory `d:\Devs\Twitch Miner` to bypass Rolldown directory-junction canonicalization restrictions.
 - **Identified Windows environment blockers**: Documented that Windows Developer Mode is required to compile Tauri Android apps to allow symlink creation in the NDK/cargo target pipeline.
+
+## Monorepo Build and Configuration Fixes
+- **Root NPM scripts delegate**: Created `package.json` in the workspace root mapping commands to the frontend folder.
+- **Tauri path correction**: Replaced relative path `../frontend` with `../../frontend` for `beforeBuildCommand` and `beforeDevCommand` in both `mobile/src-tauri/tauri.conf.json` and `desktop/src-tauri/tauri.conf.json`.
+- **Target folder NPM scripts delegation**: Generated `package.json` with a script entry for `"tauri": "tauri"` in both `mobile/src-tauri` and `desktop/src-tauri`.
+- **Unique Bundle ID**: Configured a unique bundle identifier (`com.twitchminer.desktop`) in `desktop/src-tauri/tauri.conf.json`.
+- **Verification Builds**: Successfully built the Android universal APK/AAB targets and the Desktop MSI/setup EXE installers.

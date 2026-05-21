@@ -1,0 +1,9 @@
+{
+  "name": "twitch-miner-monorepo",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix frontend run build",
+    "dev": "npm --prefix frontend run dev",
+    "tauri": "tauri"
+  }
+}

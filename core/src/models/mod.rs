@@ -94,12 +94,56 @@ pub struct TokenResponse {
     pub token_type: String,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ScheduleDay {
+    pub enabled: bool,
+    pub start_time: String,
+    pub end_time: String,
+}
+
+impl Default for ScheduleDay {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            start_time: "08:00".to_string(),
+            end_time: "18:00".to_string(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub struct AppConfig {
-    pub client_id: String,
-    pub priorities: Priorities,
-    pub bonus: BonusConfig,
-    pub settings: Settings,
+pub struct ScheduleException {
+    pub date: String,
+    pub is_allowed: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct WorkSchedule {
+    pub enabled: bool,
+    pub monday: ScheduleDay,
+    pub tuesday: ScheduleDay,
+    pub wednesday: ScheduleDay,
+    pub thursday: ScheduleDay,
+    pub friday: ScheduleDay,
+    pub saturday: ScheduleDay,
+    pub sunday: ScheduleDay,
+    pub exceptions: Vec<ScheduleException>,
+}
+
+impl Default for WorkSchedule {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            monday: ScheduleDay::default(),
+            tuesday: ScheduleDay::default(),
+            wednesday: ScheduleDay::default(),
+            thursday: ScheduleDay::default(),
+            friday: ScheduleDay::default(),
+            saturday: ScheduleDay::default(),
+            sunday: ScheduleDay::default(),
+            exceptions: Vec::new(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -150,4 +194,45 @@ fn default_true() -> bool {
     true
 }
 
-// We will add more structs for GQL responses as we implement them.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct AppConfig {
+    pub client_id: String,
+    pub priorities: Priorities,
+    pub bonus: BonusConfig,
+    pub settings: Settings,
+    #[serde(default)]
+    pub schedule: WorkSchedule,
+}
+
+pub fn is_mining_allowed(schedule: &WorkSchedule) -> bool {
+    if !schedule.enabled {
+        return true;
+    }
+    let local_time = chrono::Local::now();
+    let date_str = local_time.format("%Y-%m-%d").to_string();
+
+    // Check exceptions first
+    if let Some(exception) = schedule.exceptions.iter().find(|e| e.date == date_str) {
+        return exception.is_allowed;
+    }
+
+    // Check day configuration
+    use chrono::Datelike;
+    let weekday = local_time.weekday();
+    let day_config = match weekday {
+        chrono::Weekday::Mon => &schedule.monday,
+        chrono::Weekday::Tue => &schedule.tuesday,
+        chrono::Weekday::Wed => &schedule.wednesday,
+        chrono::Weekday::Thu => &schedule.thursday,
+        chrono::Weekday::Fri => &schedule.friday,
+        chrono::Weekday::Sat => &schedule.saturday,
+        chrono::Weekday::Sun => &schedule.sunday,
+    };
+
+    if day_config.enabled {
+        let current_hm = local_time.format("%H:%M").to_string();
+        current_hm >= day_config.start_time && current_hm <= day_config.end_time
+    } else {
+        false
+    }
+}

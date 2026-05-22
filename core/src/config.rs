@@ -38,6 +38,7 @@ fn default_config() -> AppConfig {
             auto_start_drops: false,
             mine_all_inventory: false,
         },
+        schedule: Default::default(),
     }
 }
 

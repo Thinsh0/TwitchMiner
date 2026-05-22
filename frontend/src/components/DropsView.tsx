@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { Gamepad2, Play, Square, Clock, Package, CheckCircle2, Gift, ChevronDown, ChevronRight } from 'lucide-react'
+import { Gamepad2, Play, Square, Clock, Package, CheckCircle2, Gift, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 
 type DropSortKey = 'name' | 'date' | 'duration';
 type SortDirection = 'asc' | 'desc';
@@ -170,6 +170,7 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
               sortDirection={groupSorts[gameName]?.direction ?? globalSortDirection}
               onSortKeyChange={(key) => updateGroupSort(gameName, key)}
               onSortDirectionToggle={() => toggleGroupSortDirection(gameName)}
+              onClaimSuccess={fetchCampaigns}
             />
           ))
         ) : priorityGames.length > 0 ? (
@@ -255,6 +256,7 @@ function GameCampaignGroup({
   sortDirection,
   onSortKeyChange,
   onSortDirectionToggle,
+  onClaimSuccess,
 }: {
   gameName: string;
   campaigns: DropCampaign[];
@@ -264,6 +266,7 @@ function GameCampaignGroup({
   sortDirection: SortDirection;
   onSortKeyChange: (key: DropSortKey) => void;
   onSortDirectionToggle: () => void;
+  onClaimSuccess?: () => void;
 }) {
   const gameImage = campaigns.find(c => c.image_url)?.image_url;
   const totalDrops = campaigns.reduce((sum, campaign) => sum + campaign.drops.length, 0);
@@ -350,7 +353,7 @@ function GameCampaignGroup({
           </div>
           <div className="max-h-[400px] overflow-y-auto pr-2 space-y-3">
             {sortedCampaigns.map((campaign) => (
-              <CampaignCard key={campaign.id} campaign={campaign} compact />
+              <CampaignCard key={campaign.id} campaign={campaign} compact onClaimSuccess={onClaimSuccess} />
             ))}
           </div>
         </CardContent>
@@ -359,7 +362,7 @@ function GameCampaignGroup({
   );
 }
 
-function CampaignCard({ campaign, compact = false }: { campaign: DropCampaign; compact?: boolean }) {
+function CampaignCard({ campaign, compact = false, onClaimSuccess }: { campaign: DropCampaign; compact?: boolean; onClaimSuccess?: () => void }) {
   const totalDrops = campaign.drops.length;
   const claimedDrops = campaign.drops.filter(d => d.is_claimed).length;
   const endDate = formatDropDate(campaign.end_date);
@@ -421,7 +424,7 @@ function CampaignCard({ campaign, compact = false }: { campaign: DropCampaign; c
         )}
         <div className="space-y-3">
           {campaign.drops.map((drop) => (
-            <DropItemCard key={drop.id} drop={drop} />
+            <DropItemCard key={drop.id} drop={drop} onClaimSuccess={onClaimSuccess} />
           ))}
         </div>
       </CardContent>
@@ -429,10 +432,26 @@ function CampaignCard({ campaign, compact = false }: { campaign: DropCampaign; c
   );
 }
 
-function DropItemCard({ drop }: { drop: DropItem }) {
+function DropItemCard({ drop, onClaimSuccess }: { drop: DropItem; onClaimSuccess?: () => void }) {
+  const [isClaiming, setIsClaiming] = useState(false);
   const progress = drop.required_minutes > 0
     ? Math.min(100, (drop.current_minutes / drop.required_minutes) * 100)
     : 0;
+
+  const handleClaim = async () => {
+    if (isClaiming) return;
+    setIsClaiming(true);
+    try {
+      await api.claimDrop(drop.id);
+      if (onClaimSuccess) {
+        onClaimSuccess();
+      }
+    } catch (err) {
+      console.error("Failed to claim drop:", err);
+    } finally {
+      setIsClaiming(false);
+    }
+  };
 
   return (
     <div className="flex items-center gap-3 p-3 rounded-lg bg-white/5 border border-white/5">
@@ -458,9 +477,18 @@ function DropItemCard({ drop }: { drop: DropItem }) {
           Claimed
         </Badge>
       ) : progress >= 100 ? (
-        <Button size="sm" className="bg-yellow-600 hover:bg-yellow-700 text-white">
-          <Gift className="w-3 h-3 mr-1" />
-          Claim
+        <Button 
+          size="sm" 
+          className="bg-yellow-600 hover:bg-yellow-700 text-white"
+          onClick={handleClaim}
+          disabled={isClaiming}
+        >
+          {isClaiming ? (
+            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+          ) : (
+            <Gift className="w-3 h-3 mr-1" />
+          )}
+          {isClaiming ? 'Claiming...' : 'Claim'}
         </Button>
       ) : (
         <Badge variant="secondary" className="bg-zinc-800 text-zinc-400">

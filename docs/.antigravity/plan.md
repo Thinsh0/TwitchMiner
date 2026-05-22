@@ -11,12 +11,10 @@
 - [x] Add mobile configuration helper UI (idiot-proof guide with live green indicators)
 - [x] Fix Android startup crash (state management race and plugin ordering)
 
+- [x] Fix startup drop notifications
+- [x] Shorten configuration status messages
+- [x] Fix manual and automatic drop claiming
+- [x] Implement work schedule system with exceptions
+
 ## Status
-The Android app now starts successfully without crashing. The fix for the `tauri-plugin-background-service` configuration and plugin ordering resolved the initialization issues.
-
-
-
-
-- [x] Fix Android black screen crash via stable plugins & windows config.
-- [x] Mobile QoL updates (Opener, Clipboard, Onboarding, Safe Area, Settings cleanup).
-- [x] Implement dynamic Android foreground service label updates and suppress simple status popup alerts.
+Completed the fixes for startup notifications, shortening status strings, resolving manual/automatic claiming, and implementing the work schedule system.

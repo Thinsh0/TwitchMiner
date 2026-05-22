@@ -149,3 +149,8 @@
 - Enabled native user-visible notifications only for critical events: claiming a drop and starting a new drop/campaign.
 - Successfully built, deployed, and launched the updated app on the connected test device.
 
+## Session: Startup Notifications, Short Status, Claim Fix, Work Schedule (Completed)
+- **Startup Notification Suppression**: Added a `justStartedMiner` ref in `frontend/src/App.tsx` that blocks active drop notifications during the initial startup phase (until statuses like `"Starting..."` or `"Checking Configuration..."` clear) to prevent alerts for drops that were already active before starting the miner.
+- **Short Statuses**: Shortened warning statuses when configuration is missing (no priority games or channels) to a concise `"No config"` in `core/src/miner.rs` and `core/src/streak_miner.rs`.
+- **Manual and Auto-Claim Fix**: Fixed the User-Agent header in `core/src/api.rs` (setting it to desktop Chrome) and updated the query hash for `DropsPage_ClaimDropRewards` to resolve Twitch API blocks. Exposed `claim_drop_cmd` in backends and wired it with a loading state/spinner to the "Claim" button in `frontend/src/components/DropsView.tsx`.
+- **Work Schedule System**: Defined `WorkSchedule`, `ScheduleDay`, and `ScheduleException` in Rust (`core/src/models/mod.rs`), implemented schedule validity checks in mining loops (suspends with `"Suspended by schedule"` status), updated TS types, and created a premium "Schedule" tab in `frontend/src/components/Settings.tsx` to configure weekly intervals and date exceptions.

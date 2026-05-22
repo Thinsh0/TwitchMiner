@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
-import { X, Save, RotateCcw, Plus, Gamepad2, Users, Tv, Settings as SettingsIcon } from 'lucide-react'
+import { X, Save, RotateCcw, Plus, Gamepad2, Users, Tv, Settings as SettingsIcon, Clock, Calendar, Trash2 } from 'lucide-react'
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
 import { type as osType } from '@tauri-apps/plugin-os'
 
@@ -24,6 +24,8 @@ export function SettingsPanel() {
   const [newStreakChannel, setNewStreakChannel] = useState('')
   const [newPointsChannel, setNewPointsChannel] = useState('')
   const [autostartEnabled, setAutostartEnabled] = useState(false)
+  const [newExceptionDate, setNewExceptionDate] = useState('')
+  const [newExceptionAllowed, setNewExceptionAllowed] = useState(false)
   
   // Game search autocomplete
   const [gameSearchResults, setGameSearchResults] = useState<[string, string][]>([])
@@ -42,7 +44,7 @@ export function SettingsPanel() {
       saveConfig()
     }, 1000)
     return () => clearTimeout(timeout)
-  }, [config?.priorities.games.length, config?.priorities.streamers.length, config?.bonus.daily_streaks.channels.length, config?.bonus.points_farming.channels.length, config?.settings])
+  }, [config?.priorities.games.length, config?.priorities.streamers.length, config?.bonus.daily_streaks.channels.length, config?.bonus.points_farming.channels.length, config?.settings, JSON.stringify(config?.schedule)])
 
   // Debounced game search
   useEffect(() => {
@@ -127,6 +129,94 @@ export function SettingsPanel() {
       // Revert if it actually failed and we want to be strict, but in dev mode it often fails
       // setAutostartEnabled(!checked)
     }
+  }
+
+  const updateScheduleDay = (dayKey: string, field: 'enabled' | 'start_time' | 'end_time', value: any) => {
+    if (!config) return
+    const schedule = config.schedule || {
+      enabled: false,
+      monday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      tuesday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      wednesday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      thursday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      friday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      saturday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      sunday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      exceptions: []
+    }
+    const updatedDay = {
+      ...(schedule[dayKey as keyof typeof schedule] as any || { enabled: false, start_time: '08:00', end_time: '18:00' }),
+      [field]: value
+    }
+    setConfig({
+      ...config,
+      schedule: {
+        ...schedule,
+        [dayKey]: updatedDay
+      }
+    })
+  }
+
+  const toggleScheduleEnabled = (checked: boolean) => {
+    if (!config) return
+    const schedule = config.schedule || {
+      enabled: false,
+      monday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      tuesday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      wednesday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      thursday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      friday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      saturday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      sunday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      exceptions: []
+    }
+    setConfig({
+      ...config,
+      schedule: {
+        ...schedule,
+        enabled: checked
+      }
+    })
+  }
+
+  const addException = () => {
+    if (!config || !newExceptionDate) return
+    const schedule = config.schedule || {
+      enabled: false,
+      monday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      tuesday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      wednesday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      thursday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      friday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      saturday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      sunday: { enabled: false, start_time: '08:00', end_time: '18:00' },
+      exceptions: []
+    }
+    if (schedule.exceptions.some(e => e.date === newExceptionDate)) {
+      return
+    }
+    setConfig({
+      ...config,
+      schedule: {
+        ...schedule,
+        exceptions: [
+          ...schedule.exceptions,
+          { date: newExceptionDate, is_allowed: newExceptionAllowed }
+        ]
+      }
+    })
+    setNewExceptionDate('')
+  }
+
+  const removeException = (index: number) => {
+    if (!config || !config.schedule) return
+    setConfig({
+      ...config,
+      schedule: {
+        ...config.schedule,
+        exceptions: config.schedule.exceptions.filter((_, i) => i !== index)
+      }
+    })
   }
 
   const addGame = () => {
@@ -300,7 +390,7 @@ export function SettingsPanel() {
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="priorities" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 bg-white/5">
+          <TabsList className="grid w-full grid-cols-5 bg-white/5">
             <TabsTrigger value="priorities" className="text-xs">
               <Gamepad2 className="w-3 h-3 mr-1" />
               Priorities
@@ -312,6 +402,10 @@ export function SettingsPanel() {
             <TabsTrigger value="points" className="text-xs">
               <Users className="w-3 h-3 mr-1" />
               Points
+            </TabsTrigger>
+            <TabsTrigger value="schedule" className="text-xs">
+              <Clock className="w-3 h-3 mr-1" />
+              Schedule
             </TabsTrigger>
             <TabsTrigger value="settings" className="text-xs">
               <SettingsIcon className="w-3 h-3 mr-1" />
@@ -653,6 +747,140 @@ export function SettingsPanel() {
                 </>
               )}
 
+            </div>
+          </TabsContent>
+
+          {/* Schedule Tab */}
+          <TabsContent value="schedule" className="space-y-4 mt-4 text-white">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-lg">
+                <div className="space-y-0.5">
+                  <Label className="text-white text-base">Enable Work Schedule</Label>
+                  <p className="text-sm text-zinc-400">Suspend mining automatically outside configured working hours</p>
+                </div>
+                <Switch 
+                  checked={config?.schedule?.enabled ?? false}
+                  onCheckedChange={toggleScheduleEnabled}
+                  className="data-[state=checked]:bg-purple-500" 
+                />
+              </div>
+
+              {(config?.schedule?.enabled) && (
+                <div className="space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                  {/* Weekly Days Grid */}
+                  <Card className="bg-black/40 border-white/10">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm text-purple-400 font-medium">Weekly Schedule</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => {
+                        const daySched = config?.schedule?.[day as keyof typeof config.schedule] as any || { enabled: false, start_time: '08:00', end_time: '18:00' };
+                        return (
+                          <div key={day} className="flex flex-wrap items-center justify-between gap-4 p-2 rounded-lg hover:bg-white/[0.02] transition-colors border border-transparent hover:border-white/5">
+                            <div className="flex items-center gap-3 w-32">
+                              <Switch 
+                                checked={daySched.enabled}
+                                onCheckedChange={(checked) => updateScheduleDay(day, 'enabled', checked)}
+                                className="data-[state=checked]:bg-purple-500" 
+                              />
+                              <Label className="capitalize text-zinc-300 font-medium">{day}</Label>
+                            </div>
+                            {daySched.enabled ? (
+                              <div className="flex items-center gap-2 animate-in fade-in duration-200">
+                                <Input 
+                                  type="time" 
+                                  value={daySched.start_time}
+                                  onChange={(e) => updateScheduleDay(day, 'start_time', e.target.value)}
+                                  className="w-28 bg-zinc-900 border-white/10 text-white"
+                                />
+                                <span className="text-zinc-500">to</span>
+                                <Input 
+                                  type="time" 
+                                  value={daySched.end_time}
+                                  onChange={(e) => updateScheduleDay(day, 'end_time', e.target.value)}
+                                  className="w-28 bg-zinc-900 border-white/10 text-white"
+                                />
+                              </div>
+                            ) : (
+                              <span className="text-xs text-zinc-500 italic pr-8">Mining allowed 24h</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </CardContent>
+                  </Card>
+
+                  {/* Exceptions Card */}
+                  <Card className="bg-black/40 border-white/10">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm text-purple-400 font-medium flex items-center gap-2">
+                        <Calendar className="w-4 h-4" />
+                        Date Exceptions
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex items-end gap-3">
+                        <div className="flex-1 space-y-1.5">
+                          <Label className="text-xs text-zinc-400">Select Date</Label>
+                          <Input 
+                            type="date" 
+                            value={newExceptionDate}
+                            onChange={(e) => setNewExceptionDate(e.target.value)}
+                            className="bg-zinc-900 border-white/10 text-white w-full"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-zinc-400">Mining Allowed?</Label>
+                          <select
+                            value={newExceptionAllowed ? 'true' : 'false'}
+                            onChange={(e) => setNewExceptionAllowed(e.target.value === 'true')}
+                            className="h-10 bg-zinc-900 border border-white/10 rounded-md px-3 text-sm text-white"
+                          >
+                            <option value="false">Blocked</option>
+                            <option value="true">Allowed</option>
+                          </select>
+                        </div>
+                        <Button 
+                          onClick={addException}
+                          className="bg-purple-600 hover:bg-purple-700 text-white h-10 px-4"
+                        >
+                          <Plus className="w-4 h-4 mr-1" /> Add
+                        </Button>
+                      </div>
+
+                      {/* Exceptions List */}
+                      <div className="space-y-2 mt-2">
+                        {config?.schedule?.exceptions && config.schedule.exceptions.length > 0 ? (
+                          config.schedule.exceptions.map((exc, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/5">
+                              <div className="flex items-center gap-2">
+                                <Badge className={exc.is_allowed ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30"}>
+                                  {exc.is_allowed ? 'Allowed' : 'Blocked'}
+                                </Badge>
+                                <span className="text-sm font-medium text-zinc-300">
+                                  {exc.date}
+                                </span>
+                              </div>
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
+                                onClick={() => removeException(idx)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-center py-6 text-zinc-500 text-sm italic">
+                            No schedule exceptions defined.
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
             </div>
           </TabsContent>
         </Tabs>

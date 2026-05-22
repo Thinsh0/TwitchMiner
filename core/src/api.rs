@@ -21,7 +21,7 @@ impl TwitchGQL {
         );
 
         let client = Client::builder()
-            .user_agent("Dalvik/2.1.0 (Linux; U; Android 16; SM-S911B Build/TP1A.220624.014) tv.twitch.android.app/25.3.0/2503006")
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
             .build()
             .unwrap_or_default();
 
@@ -253,7 +253,7 @@ impl TwitchGQL {
         store: &Arc<Store<tauri::Wry>>,
         drop_id: &str,
     ) -> Result<Value, String> {
-        let sha256 = "a455deea71bdc9015b78eb49f4acfbce8baa7ccbedd28e549bb025bd0f751930";
+        let sha256 = "2f884fa187b8fadb2a49db0adc033e636f7b6aaee6e76de1e2bba9a7baf0daf6";
         let vars = json!({
             "input": {
                 "dropInstanceID": drop_id

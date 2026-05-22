@@ -82,6 +82,26 @@ pub async fn start_streak_miner(
                 }
             }
 
+            let app_config = store
+                .get("app_config")
+                .and_then(|value| {
+                    serde_json::from_value::<crate::models::AppConfig>(value).ok()
+                })
+                .unwrap_or_default();
+
+            if !crate::models::is_mining_allowed(&app_config.schedule) {
+                {
+                    let mut s_guard = state_clone.lock().await;
+                    let mut new_status = s_guard.status.clone();
+                    new_status.status = "Suspended by schedule".to_string();
+                    new_status.current_channels = Vec::new();
+                    new_status.channels_info = Vec::new();
+                    s_guard.update_and_notify(&app_clone, new_status);
+                }
+                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                continue;
+            }
+
             {
                 let mut s_guard = state_clone.lock().await;
                 let mut new_status = s_guard.status.clone();
@@ -99,7 +119,7 @@ pub async fn start_streak_miner(
                 {
                     let mut s_guard = state_clone.lock().await;
                     let mut new_status = s_guard.status.clone();
-                    new_status.status = "No channels configured for streak mining".to_string();
+                    new_status.status = "No config".to_string();
                     s_guard.update_and_notify(&app_clone, new_status);
                 }
                 tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;

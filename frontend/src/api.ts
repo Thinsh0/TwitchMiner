@@ -13,6 +13,7 @@ export const api = {
   stopMiner: () => invoke<void>('stop_miner'),
   getDropCampaigns: () => invoke<DropCampaign[]>('get_drop_campaigns'),
   getClaimedDrops: () => invoke<DropItem[]>('get_claimed_drops'),
+  claimDrop: (dropId: string) => invoke<any>('claim_drop_cmd', { dropId }),
 
   getStreakMinerStatus: () => invoke<StreakMinerStatus>('get_streak_miner_status'),
   startStreakMiner: () => invoke<void>('start_streak_miner'),

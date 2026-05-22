@@ -46,3 +46,12 @@ To prevent cluttering the user's notification drawer with alerts for simple stat
 - Created a custom JNI/Rust bridge command `update_foreground_label` to update the persistent foreground service notification's label on Android.
 - Introduced a `silent` attribute to `ActivityEvent` so that normal state transitions are only written to the in-app log and persistent notification, but are filtered out from triggering native system popups.
 - Configured native alerts (popups) to only trigger for critical events: claiming a drop or starting a new active drop/campaign.
+
+## Decision: Suppress Startup Drop Notifications
+To prevent notification spam when launching the app or starting the miner, we suppress drop alerts if the miner was not previously running. We also filter out any drops that are already at 100% progress.
+
+## Decision: Claiming Command and Frontend Binding
+We expose a `claim_drop_cmd` Tauri command that calls Twitch's GQL `claim_drop` using the verified sha256 hash `2f884fa187b8fadb2a49db0adc033e636f7b6aaee6e76de1e2bba9a7baf0daf6`. We bind the manual "Claim" button in `DropsView.tsx` to this command, showing a loading indicator during the API call.
+
+## Decision: Work Schedule System
+We implement a local-time based work schedule system. The weekly intervals (Monday-Sunday) and exceptions (specific YYYY-MM-DD dates) are stored in the global configuration and checked in both Drop Miner and Streak Miner loop runs to suspend mining when outside allowed hours.

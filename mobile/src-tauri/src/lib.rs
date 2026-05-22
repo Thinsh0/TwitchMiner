@@ -258,6 +258,7 @@ pub fn run() {
             miner::stop_miner,
             miner::get_drop_campaigns,
             miner::get_claimed_drops,
+            miner::claim_drop_cmd,
             streak_miner::start_streak_miner,
             streak_miner::stop_streak_miner,
             streak_miner::get_streak_miner_status,

@@ -97,6 +97,30 @@ export interface AppConfig {
     auto_start_drops: boolean
     mine_all_inventory?: boolean
   }
+  schedule?: WorkSchedule
+}
+
+export interface ScheduleDay {
+  enabled: boolean
+  start_time: string
+  end_time: string
+}
+
+export interface ScheduleException {
+  date: string
+  is_allowed: boolean
+}
+
+export interface WorkSchedule {
+  enabled: boolean
+  monday: ScheduleDay
+  tuesday: ScheduleDay
+  wednesday: ScheduleDay
+  thursday: ScheduleDay
+  friday: ScheduleDay
+  saturday: ScheduleDay
+  sunday: ScheduleDay
+  exceptions: ScheduleException[]
 }
 
 export type ActivityEventType = 'drop' | 'points' | 'auth' | 'system'

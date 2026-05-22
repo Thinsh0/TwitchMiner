@@ -48,6 +48,9 @@ function App() {
   const statusRef = useRef<MinerStatus>(status)
   const streakStatusRef = useRef<StreakMinerStatus>(streakStatus)
   const prevActiveDropIds = useRef<string[]>([])
+  const hasInitializedDrops = useRef(false)
+  const justStartedMiner = useRef(true)
+
 
   useEffect(() => {
     statusRef.current = status
@@ -138,22 +141,38 @@ function App() {
 
         // Detect new drops/campaigns
         const currentActiveDropIds = event.payload.active_drops?.map(d => d.id) || []
-        const newDrops = currentActiveDropIds.filter(id => !prevActiveDropIds.current.includes(id))
         
-        if (newDrops.length > 0) {
-          newDrops.forEach(id => {
-            const dropDetail = event.payload.active_drops.find(d => d.id === id)
-            if (dropDetail) {
-              addActivity({
-                type: 'drop',
-                title: 'New Drop Campaign Active',
-                description: `Started mining drop: ${dropDetail.name}`,
-                silent: false,
+        if (!event.payload.is_running) {
+          justStartedMiner.current = true
+          prevActiveDropIds.current = []
+        } else {
+          if (justStartedMiner.current) {
+            prevActiveDropIds.current = currentActiveDropIds
+            if (event.payload.status !== "Starting..." && event.payload.status !== "Checking Configuration...") {
+              justStartedMiner.current = false
+            }
+          } else {
+            const wasRunning = statusRef.current?.is_running ?? false
+            const newDrops = currentActiveDropIds.filter(id => !prevActiveDropIds.current.includes(id))
+            
+            if (newDrops.length > 0) {
+              newDrops.forEach(id => {
+                const dropDetail = event.payload.active_drops.find(d => d.id === id)
+                if (dropDetail) {
+                  const isFinished = dropDetail.progress >= 100 || dropDetail.current_minutes >= dropDetail.required_minutes
+                  const shouldAlert = wasRunning && !isFinished
+                  addActivity({
+                    type: 'drop',
+                    title: 'New Drop Campaign Active',
+                    description: `Started mining drop: ${dropDetail.name}`,
+                    silent: !shouldAlert,
+                  })
+                }
               })
             }
-          })
+            prevActiveDropIds.current = currentActiveDropIds
+          }
         }
-        prevActiveDropIds.current = currentActiveDropIds
 
         if (event.payload.status !== lastMinerStatus.current) {
           lastMinerStatus.current = event.payload.status
@@ -208,6 +227,7 @@ function App() {
           if (s.active_drops) {
             prevActiveDropIds.current = s.active_drops.map(d => d.id);
           }
+          hasInitializedDrops.current = true;
           updateForegroundServiceLabel(s, streakStatusRef.current);
         })
         .catch(console.error);

@@ -44,6 +44,51 @@ function App() {
   const [codeCopied, setCodeCopied] = useState(false)
   const lastMinerStatus = useRef(status.status)
   const lastStreakStatus = useRef(streakStatus.status)
+  
+  const statusRef = useRef<MinerStatus>(status)
+  const streakStatusRef = useRef<StreakMinerStatus>(streakStatus)
+  const prevActiveDropIds = useRef<string[]>([])
+
+  useEffect(() => {
+    statusRef.current = status
+  }, [status])
+
+  useEffect(() => {
+    streakStatusRef.current = streakStatus
+  }, [streakStatus])
+
+  const updateForegroundServiceLabel = (drops: MinerStatus, streak: StreakMinerStatus) => {
+    let dropsText = "Drops: "
+    if (!drops.is_running) {
+      dropsText += "Idle"
+    } else {
+      if (drops.current_streamer) {
+        dropsText += `Mining ${drops.current_streamer}`
+        if (drops.current_drop) {
+          dropsText += ` (${drops.current_drop})`
+        }
+      } else {
+        dropsText += drops.status || "Running"
+      }
+    }
+
+    let streakText = "Points: "
+    const isStreakRunning = streak.status !== "Idle" && streak.status !== "Stopped"
+    if (!isStreakRunning) {
+      streakText += "Idle"
+    } else {
+      if (streak.current_channels && streak.current_channels.length > 0) {
+        streakText += `Watching ${streak.current_channels.join(', ')}`
+      } else {
+        streakText += streak.status || "Running"
+      }
+    }
+
+    const label = `${dropsText} | ${streakText}`
+    api.updateForegroundLabel(label).catch(err => {
+      console.error('Failed to update foreground label:', err)
+    })
+  }
 
   useEffect(() => {
     if (!localStorage.getItem('has_seen_tutorial')) {
@@ -90,14 +135,37 @@ function App() {
       // Listen for real-time updates from backend
       listen<MinerStatus>('miner-status-update', (event) => {
         setStatus(event.payload);
+
+        // Detect new drops/campaigns
+        const currentActiveDropIds = event.payload.active_drops?.map(d => d.id) || []
+        const newDrops = currentActiveDropIds.filter(id => !prevActiveDropIds.current.includes(id))
+        
+        if (newDrops.length > 0) {
+          newDrops.forEach(id => {
+            const dropDetail = event.payload.active_drops.find(d => d.id === id)
+            if (dropDetail) {
+              addActivity({
+                type: 'drop',
+                title: 'New Drop Campaign Active',
+                description: `Started mining drop: ${dropDetail.name}`,
+                silent: false,
+              })
+            }
+          })
+        }
+        prevActiveDropIds.current = currentActiveDropIds
+
         if (event.payload.status !== lastMinerStatus.current) {
           lastMinerStatus.current = event.payload.status
           addActivity({
             type: 'drop',
             title: 'Drop miner',
             description: event.payload.status,
+            silent: true,
           })
         }
+
+        updateForegroundServiceLabel(event.payload, streakStatusRef.current)
       }).then((unlistenFn) => {
         unlisten = unlistenFn;
       }).catch(console.error);
@@ -112,27 +180,43 @@ function App() {
             type: 'points',
             title: 'Points miner',
             description: event.payload.status,
+            silent: true,
           })
         }
+
+        updateForegroundServiceLabel(statusRef.current, event.payload)
       }).then((unlistenFn) => {
         streakUnlisten = unlistenFn;
       }).catch(console.error);
 
       listen<any>('drop-claimed', (event) => {
         useAppStore.getState().addClaimedDrop(event.payload);
+        addActivity({
+          type: 'drop',
+          title: 'Drop Claimed!',
+          description: `Successfully claimed drop: ${event.payload.name || 'Unknown Drop'}`,
+          silent: false,
+        })
       }).then((unlistenFn) => {
         claimUnlisten = unlistenFn;
       }).catch(console.error);
 
       // Get initial status
       api.getStatus()
-        .then(setStatus)
+        .then((s) => {
+          setStatus(s);
+          if (s.active_drops) {
+            prevActiveDropIds.current = s.active_drops.map(d => d.id);
+          }
+          updateForegroundServiceLabel(s, streakStatusRef.current);
+        })
         .catch(console.error);
       
       api.getStreakMinerStatus()
         .then((status) => {
           setStreakStatus(status);
           setStreakRunning(status.status !== "Idle" && status.status !== "Stopped");
+          updateForegroundServiceLabel(statusRef.current, status);
         })
         .catch(console.error);
 

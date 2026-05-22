@@ -138,3 +138,14 @@
 ## Session Update (Fresh Reinstall)
 - Performed fresh reinstallation of the latest build after device data reset (uninstall).
 - Deployed and launched successfully via ADB.
+
+## Session Update (Dynamic Notifications)
+- Formulated plan to prevent notification spam by making simple status changes update the permanent Android notification instead of generating separate popup alerts.
+- Planned addition of the `update_foreground_label` custom Rust command and frontend changes (`silent` property on activities).
+- Implemented `update_foreground_label` command in Rust backend (`mobile/src-tauri/src/lib.rs`).
+- Added `silent` property to `ActivityEvent` interface and updated `shouldNotify` to honor it in `frontend/src/activity.ts`.
+- Integrated state ref tracking to prevent React hooks stale closure issues in Tauri listener events inside `frontend/src/App.tsx`.
+- Implemented dynamic label updating of the Android foreground service notifications based on drop and channel point miners' states.
+- Enabled native user-visible notifications only for critical events: claiming a drop and starting a new drop/campaign.
+- Successfully built, deployed, and launched the updated app on the connected test device.
+

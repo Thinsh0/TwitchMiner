@@ -107,4 +107,5 @@ export interface ActivityEvent {
   title: string
   description: string
   timestamp: number
+  silent?: boolean
 }

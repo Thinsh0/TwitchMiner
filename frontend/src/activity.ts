@@ -49,6 +49,7 @@ const getNotificationPermission = async () => {
 }
 
 const shouldNotify = (event: ActivityEvent, config: AppConfig) => {
+  if (event.silent) return false
   if (!config.settings.notifications_enabled) return false
   if (event.type === 'drop') return config.settings.notify_active_drop
   if (event.type === 'points') return config.settings.notify_claim

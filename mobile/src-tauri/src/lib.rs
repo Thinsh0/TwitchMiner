@@ -6,8 +6,7 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 
-#[cfg(target_os = "android")]
-use jni::objects::JObject;
+
 
 #[tauri::command]
 async fn get_status(
@@ -128,6 +127,41 @@ async fn request_battery_optimization(_app: AppHandle) -> Result<(), String> {
     }
 }
 
+#[tauri::command]
+async fn update_foreground_label(app: AppHandle, label: String) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    {
+        use tauri_plugin_background_service::mobile::MobileLifecycle;
+        if let Some(lifecycle) = app.try_state::<Arc<MobileLifecycle<tauri::Wry>>>() {
+            log::info!("Updating foreground service notification label to: {}", label);
+            lifecycle
+                .start_keepalive(
+                    &label,
+                    "dataSync",
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .map(|_| ())
+                .map_err(|e| {
+                    log::error!("Failed to update keepalive label: {:?}", e);
+                    e.to_string()
+                })?;
+        } else {
+            log::warn!("MobileLifecycle state not found in AppHandle");
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        let _ = label;
+    }
+    Ok(())
+}
+
 pub struct TwitchMinerService;
 
 #[async_trait::async_trait]
@@ -215,6 +249,7 @@ pub fn run() {
             check_auth_status,
             check_battery_optimizations,
             request_battery_optimization,
+            update_foreground_label,
             auth::get_user_info,
             auth::start_auth,
             auth::poll_for_token,

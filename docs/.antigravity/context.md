@@ -40,3 +40,9 @@ To prevent the app from crashing on start when `tauri-plugin-background-service`
 - Fixed MobileSetupWizard z-index clipping by moving it to App.tsx root.
 - Replaced separate copy button with clickable verification code.
 - Added clipboard-manager and opener capabilities to default.json to fix link opening.
+
+## Decision: Dynamic Notifications and Foreground Service Label Updates
+To prevent cluttering the user's notification drawer with alerts for simple state changes:
+- Created a custom JNI/Rust bridge command `update_foreground_label` to update the persistent foreground service notification's label on Android.
+- Introduced a `silent` attribute to `ActivityEvent` so that normal state transitions are only written to the in-app log and persistent notification, but are filtered out from triggering native system popups.
+- Configured native alerts (popups) to only trigger for critical events: claiming a drop or starting a new active drop/campaign.

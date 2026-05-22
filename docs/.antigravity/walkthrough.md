@@ -103,3 +103,12 @@
 - **Target folder NPM scripts delegation**: Generated `package.json` with a script entry for `"tauri": "tauri"` in both `mobile/src-tauri` and `desktop/src-tauri`.
 - **Unique Bundle ID**: Configured a unique bundle identifier (`com.twitchminer.desktop`) in `desktop/src-tauri/tauri.conf.json`.
 - **Verification Builds**: Successfully built the Android targets (both unsigned release APK/AAB and signed debug APK) and the Desktop MSI/setup EXE installers.
+
+## Startup Crash Remediation Plan (Android)
+- **Problem**: Instant crash on start due to `tauri-plugin-background-service` running before states are managed in `.setup()`, leading to panic on `app.state()`. Also, missing `plugins.background-service` in `tauri.conf.json` causing deserialization panic.
+- **Proposed Solution**: 
+  - Manage state directly on `tauri::Builder` before plugin initialization.
+  - Reorder store and other utility plugins to load before the background service plugin.
+  - Implement defensive `app.try_state()` checks in the background service thread.
+  - Add missing plugin configuration to `tauri.conf.json`.
+- **Resolution**: Fixes applied. Re-compiled and installed debug APK via ADB. App now launches successfully and process is running.

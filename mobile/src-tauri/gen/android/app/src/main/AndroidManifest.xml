@@ -38,11 +38,5 @@
             android:name="android.support.FILE_PROVIDER_PATHS"
             android:resource="@xml/file_paths" />
         </provider>
-
-        <service
-            android:name="tauri_plugin_background_service.BackgroundService"
-            android:foregroundServiceType="dataSync"
-            android:stopWithTask="false"
-            android:exported="false" />
     </application>
 </manifest>

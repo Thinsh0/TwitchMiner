@@ -142,9 +142,21 @@ impl tauri_plugin_background_service::BackgroundService<tauri::Wry> for TwitchMi
         
         let app = ctx.app.clone();
         
-        // Retrieve our managed states
-        let miner_state = app.state::<Arc<Mutex<MinerState>>>();
-        let streak_miner_state = app.state::<Arc<Mutex<StreakMinerState>>>();
+        // Retrieve our managed states defensively
+        let miner_state = match app.try_state::<Arc<Mutex<MinerState>>>() {
+            Some(state) => state,
+            None => {
+                log::error!("MinerState is not managed yet, aborting background service.");
+                return Err(tauri_plugin_background_service::ServiceError::Init("MinerState not managed".into()));
+            }
+        };
+        let streak_miner_state = match app.try_state::<Arc<Mutex<StreakMinerState>>>() {
+            Some(state) => state,
+            None => {
+                log::error!("StreakMinerState is not managed yet, aborting background service.");
+                return Err(tauri_plugin_background_service::ServiceError::Init("StreakMinerState not managed".into()));
+            }
+        };
         
         // Auto-refresh token and start background mining if authenticated
         let is_authed = match check_auth_status(app.clone()).await {
@@ -188,18 +200,15 @@ pub fn run() {
     let streak_miner_state = Arc::new(Mutex::new(StreakMinerState::new()));
 
     tauri::Builder::default()
+        .manage(miner_state)
+        .manage(streak_miner_state)
         .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_background_service::init_with_service(|| TwitchMinerService))
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
-        .setup(move |app| {
-            app.manage(miner_state.clone());
-            app.manage(streak_miner_state.clone());
-            Ok(())
-        })
+        .plugin(tauri_plugin_background_service::init_with_service(|| TwitchMinerService))
         .invoke_handler(tauri::generate_handler![
             get_status,
             check_auth_status,

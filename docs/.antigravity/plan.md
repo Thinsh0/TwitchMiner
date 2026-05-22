@@ -9,10 +9,10 @@
 - [x] Implement programmatic checks for Battery Optimizations & Notifications
 - [x] Adapt frontend layout to be responsive for mobile/tablet
 - [x] Add mobile configuration helper UI (idiot-proof guide with live green indicators)
-- [x] Verify build and functionality on desktop and Android
+- [x] Fix Android startup crash (state management race and plugin ordering)
 
 ## Status
-Verification builds for both Desktop and Android packages are fully successful. Created delegate package.json files in the root and backend folders to handle monorepo path routing correctly during Gradle/Tauri cli execution. Verified that Android compiles to APK/AAB (both unsigned release and signed debug APK) and Desktop compiles to MSI/setup EXE.
+The Android app now starts successfully without crashing. The fix for the `tauri-plugin-background-service` configuration and plugin ordering resolved the initialization issues.
 
 
 

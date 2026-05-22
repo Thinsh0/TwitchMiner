@@ -27,3 +27,9 @@ To resolve the Rust closure type mismatches with Tauri's JNI `exec` API, we wrap
 - Placed target-specific `package.json` files in `mobile/src-tauri/` and `desktop/src-tauri/` containing a `"tauri": "tauri"` script to allow Gradle and local CLI calls to execute from the proper context directory while resolving binaries upward.
 - Changed `tauri.conf.json` build/dev commands to use `../../frontend` instead of `../frontend` to match relative path structures from within backend subfolders.
 
+## Decision: Startup Crash Resolution (State Management & Plugin Ordering)
+To prevent the app from crashing on start when `tauri-plugin-background-service` runs before Tauri's `.setup()` block executes:
+1. Registered `MinerState` and `StreakMinerState` directly on `tauri::Builder` (using `.manage(...)`).
+2. Reordered all utility plugins (store, logs, etc.) to register before the background service.
+3. Implemented defensive `app.try_state()` checks in the background service thread.
+

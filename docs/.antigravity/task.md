@@ -1,9 +1,10 @@
 # Tasks - Startup Notifications, Status Shortening, Claiming Fix, and Work Schedule
 
-- `[x]` Fix startup notifications in `frontend/src/App.tsx`
+- `[x]` Fix startup notifications in `frontend/src/App.tsx` (Handled background restart synchronization)
 - `[x]` Shorten warning status strings in `core/src/miner.rs` and `core/src/streak_miner.rs`
 - `[x]` Claiming Fixes:
   - `[x]` Update query hash for `DropsPage_ClaimDropRewards` in `core/src/api.rs`
+  - `[x]` Fix GQL error swallowing silently for auto/manual claim in `api.rs` and `miner.rs`
   - `[x]` Add `claim_drop_cmd` in `core/src/miner.rs`
   - `[x]` Register `claim_drop_cmd` in `desktop/src-tauri/src/lib.rs` and `mobile/src-tauri/src/lib.rs`
   - `[x]` Bind `claimDrop` in `frontend/src/api.ts`
@@ -13,6 +14,8 @@
   - `[x]` Add schedule checks to loops in `core/src/miner.rs` and `core/src/streak_miner.rs`
   - `[x]` Update TS interfaces in `frontend/src/types.ts`
   - `[x]` Implement "Schedule" tab in `frontend/src/components/Settings.tsx`
+- `[x]` Inventory Config:
+  - `[x]` Read `mine_all_inventory` correctly from `app_config` in `core/src/miner.rs`
 - `[x]` Verification:
   - `[x]` Build check for all projects (Core, Desktop, Mobile, Frontend)
   - `[x]` Test schedule logic and manual claiming

@@ -200,7 +200,15 @@ async fn check_and_claim_drops(
                 }
 
                 if let Some(c_id) = claim_id {
-                    let _ = gql.claim_drop(store, &c_id).await;
+                    match gql.claim_drop(store, &c_id).await {
+                        Ok(res) => {
+                            log::info!("check_and_claim_drops: claim response: {:?}", res);
+                        }
+                        Err(e) => {
+                            log::error!("check_and_claim_drops: claim failed for {}: {}", c_id, e);
+                            continue;
+                        }
+                    }
                     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
                     if let Some(mut item) = parse_drop_item(drop) {
@@ -256,7 +264,15 @@ async fn check_and_claim_drops(
                         }
 
                         if let Some(c_id) = claim_id {
-                            let _ = gql.claim_drop(store, &c_id).await;
+                            match gql.claim_drop(store, &c_id).await {
+                                Ok(res) => {
+                                    log::info!("check_and_claim_drops: claim response: {:?}", res);
+                                }
+                                Err(e) => {
+                                    log::error!("check_and_claim_drops: claim failed for {}: {}", c_id, e);
+                                    continue;
+                                }
+                            }
                             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
                             if let Some(mut item) = parse_drop_item(drop) {
@@ -974,7 +990,7 @@ pub async fn start_miner(
                     }
                 };
 
-                let mine_all = false; // Forced to false per user request
+                let mine_all = app_config.settings.mine_all_inventory;
 
                 if !mine_all && priority_games.is_empty() {
                     let mut s_guard = state_clone.lock().await;

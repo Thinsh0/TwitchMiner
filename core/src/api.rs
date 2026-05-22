@@ -259,8 +259,26 @@ impl TwitchGQL {
                 "dropInstanceID": drop_id
             }
         });
-        self.post_persisted(store, "DropsPage_ClaimDropRewards", sha256, vars)
-            .await
+        let result = self.post_persisted(store, "DropsPage_ClaimDropRewards", sha256, vars).await;
+        
+        match result {
+            Ok(val) => {
+                log::info!("claim_drop response for {}: {:?}", drop_id, val);
+                if let Some(errors) = val.get("errors") {
+                    return Err(format!("GraphQL errors in response: {}", errors));
+                }
+                if let Some(status) = val.pointer("/data/claimDropRewards/status").and_then(|s| s.as_str()) {
+                    if status != "SUCCESS" {
+                        return Err(format!("Claim failed with status: {}", status));
+                    }
+                }
+                Ok(val)
+            }
+            Err(e) => {
+                log::error!("claim_drop error for {}: {}", drop_id, e);
+                Err(e)
+            }
+        }
     }
 
     pub async fn get_live_streams(

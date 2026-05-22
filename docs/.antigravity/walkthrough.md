@@ -112,3 +112,25 @@
   - Implement defensive `app.try_state()` checks in the background service thread.
   - Add missing plugin configuration to `tauri.conf.json`.
 - **Resolution**: Fixes applied. Re-compiled and installed debug APK via ADB. App now launches successfully and process is running.
+
+## Session: Mobile QoL and Onboarding
+- Implemented OnboardingTutorial for first-time users.
+- Hidden desktop settings (System Tray, Startup) on Android using @tauri-apps/plugin-os.
+- Handled Android safe area with custom padding styles.
+- Enabled one-click clipboard copy and native link opener for authentication.
+- Removed hardcoded fallback channels for Streak Miner.
+- Built and deployed APK to device.
+
+## Session Update
+- Installed new APK on connected device.
+- App launched successfully via ADB.
+
+## Session Update (Fixes)
+- Fixed MobileSetupWizard layout and clipping issues.
+- Added notification capabilities.
+- Deployed updated APK to phone.
+
+## Session Update (Inventory Fixes)
+- Removed fallback streamers.
+- Disabled auto-farming for unconfigured inventory drops.
+- Deployed updated APK to phone.

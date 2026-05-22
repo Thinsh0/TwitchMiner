@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"enables the default permissions","local":true,"windows":["main"],"permissions":["core:default","shell:default","shell:allow-open","os:default","store:default","background-service:default"]}}
+{"default":{"identifier":"default","description":"enables the default permissions","local":true,"windows":["main"],"permissions":["core:default","shell:default","shell:allow-open","opener:default","clipboard-manager:default","notification:default","os:default","store:default","background-service:default"]}}

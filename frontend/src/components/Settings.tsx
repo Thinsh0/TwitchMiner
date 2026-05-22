@@ -12,8 +12,10 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { X, Save, RotateCcw, Plus, Gamepad2, Users, Tv, Settings as SettingsIcon } from 'lucide-react'
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
+import { type as osType } from '@tauri-apps/plugin-os'
 
 export function SettingsPanel() {
+  const isMobile = osType() === 'android' || osType() === 'ios';
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -577,86 +579,79 @@ export function SettingsPanel() {
                 <Label htmlFor="notif-finish" className="text-zinc-400">Notify Campaign Finish</Label>
               </div>
 
-              <Separator className="bg-white/10 my-4" />
-              
-              <Label className="text-white">System & Tray</Label>
-              
-              <div className="flex items-center space-x-2">
-                <Switch
-                  checked={autostartEnabled}
-                  onCheckedChange={toggleAutostart}
-                  id="system-autostart"
-                />
-                <Label htmlFor="system-autostart" className="text-zinc-400">Launch at system startup</Label>
-              </div>
+              {/* Only show System & Tray settings on Desktop */}
+              {!isMobile && (
+                <>
+                  <Separator className="bg-white/10 my-4" />
+                  
+                  <Label className="text-white">System & Tray</Label>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={autostartEnabled}
+                      onCheckedChange={toggleAutostart}
+                      id="system-autostart"
+                    />
+                    <Label htmlFor="system-autostart" className="text-zinc-400">Launch at system startup</Label>
+                  </div>
 
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-white text-base">Minimize to tray on close</Label>
-                  <p className="text-sm text-zinc-400">Keep running in background when closed</p>
-                </div>
-                <Switch 
-                  checked={config.settings.minimize_to_tray ?? true}
-                  onCheckedChange={(checked) => updateSetting('minimize_to_tray', checked)}
-                  className="data-[state=checked]:bg-purple-500" 
-                />
-              </div>
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-white text-base">Minimize to tray on close</Label>
+                      <p className="text-sm text-zinc-400">Keep running in background when closed</p>
+                    </div>
+                    <Switch 
+                      checked={config.settings.minimize_to_tray ?? true}
+                      onCheckedChange={(checked) => updateSetting('minimize_to_tray', checked)}
+                      className="data-[state=checked]:bg-purple-500" 
+                    />
+                  </div>
 
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-white text-base">Show tray icon</Label>
-                  <p className="text-sm text-zinc-400">Display icon in system tray</p>
-                </div>
-                <Switch 
-                  checked={config.settings.show_tray_icon ?? true}
-                  onCheckedChange={(checked) => updateSetting('show_tray_icon', checked)}
-                  className="data-[state=checked]:bg-purple-500" 
-                />
-              </div>
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-white text-base">Show tray icon</Label>
+                      <p className="text-sm text-zinc-400">Display icon in system tray</p>
+                    </div>
+                    <Switch 
+                      checked={config.settings.show_tray_icon ?? true}
+                      onCheckedChange={(checked) => updateSetting('show_tray_icon', checked)}
+                      className="data-[state=checked]:bg-purple-500" 
+                    />
+                  </div>
 
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-white text-base">Auto-start Drops Miner</Label>
-                  <p className="text-sm text-zinc-400">Start mining drops automatically when app opens</p>
-                </div>
-                <Switch 
-                  checked={config.settings.auto_start_drops ?? false}
-                  onCheckedChange={(checked) => updateSetting('auto_start_drops', checked)}
-                  className="data-[state=checked]:bg-purple-500" 
-                />
-              </div>
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-white text-base">Auto-start Drops Miner</Label>
+                      <p className="text-sm text-zinc-400">Start mining drops automatically when app opens</p>
+                    </div>
+                    <Switch 
+                      checked={config.settings.auto_start_drops ?? false}
+                      onCheckedChange={(checked) => updateSetting('auto_start_drops', checked)}
+                      className="data-[state=checked]:bg-purple-500" 
+                    />
+                  </div>
 
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-white text-base">Mine all inventory drops</Label>
-                  <p className="text-sm text-zinc-400">Mine all in-progress drops, not just priority games</p>
-                </div>
-                <Switch 
-                  checked={config.settings.mine_all_inventory ?? false}
-                  onCheckedChange={(checked) => updateSetting('mine_all_inventory', checked)}
-                  className="data-[state=checked]:bg-purple-500" 
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-white">Logs</Label>
-                  <p className="text-xs text-zinc-400">View application log files</p>
-                </div>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="border-white/10 text-zinc-400 hover:text-white hover:bg-white/5"
-                  onClick={async () => {
-                    const { appLogDir } = await import('@tauri-apps/api/path')
-                    const { open } = await import('@tauri-apps/plugin-shell')
-                    const logDir = await appLogDir()
-                    await open(logDir)
-                  }}
-                >
-                  Open Logs Folder
-                </Button>
-              </div>
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-white">Logs</Label>
+                      <p className="text-xs text-zinc-400">View application log files</p>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="border-white/10 text-zinc-400 hover:text-white hover:bg-white/5"
+                      onClick={async () => {
+                        const { appLogDir } = await import('@tauri-apps/api/path')
+                        const { open } = await import('@tauri-apps/plugin-shell')
+                        const logDir = await appLogDir()
+                        await open(logDir)
+                      }}
+                    >
+                      Open Logs Folder
+                    </Button>
+                  </div>
+                </>
+              )}
 
             </div>
           </TabsContent>

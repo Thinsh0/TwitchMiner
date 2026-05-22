@@ -10,6 +10,12 @@
     "beforeBuildCommand": "npm --prefix ../../frontend run build"
   },
   "app": {
+    "windows": [
+      {
+        "title": "Twitch Miner Mobile",
+        "url": "/"
+      }
+    ],
     "security": {
       "csp": null
     }

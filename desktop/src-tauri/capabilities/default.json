@@ -9,6 +9,8 @@
     "core:default",
     "shell:default",
     "shell:allow-open",
+    "opener:default",
+    "clipboard-manager:default",
     "os:default",
     "store:default"
   ]

@@ -6,10 +6,10 @@ import { api } from './api'
 import { activityNotifications } from './activity'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { open } from '@tauri-apps/plugin-shell'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { 
   Loader2, Settings, LayoutDashboard, 
-  Gamepad2, Tv, History
+  Gamepad2, Tv, History, Copy, Check
 } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { SettingsPanel } from '@/components/Settings'
@@ -17,6 +17,7 @@ import { ChannelPointsView } from '@/components/ChannelPointsView'
 import { DropsView } from '@/components/DropsView'
 import { DashboardView } from '@/components/DashboardView'
 import { HistoryView } from '@/components/HistoryView'
+import { OnboardingTutorial } from '@/components/OnboardingTutorial'
 import { motion, AnimatePresence } from 'framer-motion'
 
 function App() {
@@ -39,8 +40,16 @@ function App() {
   })
   const [streakRunning, setStreakRunning] = useState(false)
   const [activeView, setActiveView] = useState<'dashboard' | 'drops' | 'points' | 'history' | 'settings'>('dashboard')
+  const [showTutorial, setShowTutorial] = useState(false)
+  const [codeCopied, setCodeCopied] = useState(false)
   const lastMinerStatus = useRef(status.status)
   const lastStreakStatus = useRef(streakStatus.status)
+
+  useEffect(() => {
+    if (!localStorage.getItem('has_seen_tutorial')) {
+      setShowTutorial(true)
+    }
+  }, [])
 
   useEffect(() => {
     loadActivities().catch(console.error)
@@ -217,6 +226,17 @@ function App() {
     }
   }
 
+  const handleCopyCode = async () => {
+    try {
+      const { writeText } = await import('@tauri-apps/plugin-clipboard-manager')
+      await writeText(userCode)
+    } catch (e) {
+      await navigator.clipboard.writeText(userCode)
+    }
+    setCodeCopied(true)
+    setTimeout(() => setCodeCopied(false), 2000)
+  }
+
   const handleLogout = async () => {
     try {
       if (status.is_running) {
@@ -263,11 +283,19 @@ function App() {
             <DialogHeader>
               <DialogTitle>Link your Account</DialogTitle>
               <DialogDescription className="text-zinc-400">
-                Go to <a href="#" onClick={() => open(authUri)} className="text-purple-400 hover:underline">{authUri}</a> and enter the code below:
+                Go to <a href="#" onClick={(e) => { e.preventDefault(); openUrl(authUri); }} className="text-purple-400 hover:underline">{authUri}</a> and enter the code below:
               </DialogDescription>
             </DialogHeader>
-            <div className="flex items-center justify-center space-x-2 py-6">
-              <span className="text-4xl font-mono tracking-[0.3em] font-bold text-purple-400">{userCode}</span>
+            <div 
+              className="flex flex-col items-center justify-center space-y-2 py-6 cursor-pointer group"
+              onClick={handleCopyCode}
+            >
+              <span className="text-4xl font-mono tracking-[0.3em] font-bold text-purple-400 group-hover:text-purple-300 transition-colors">
+                {userCode}
+              </span>
+              <span className={`text-sm transition-opacity ${codeCopied ? 'text-green-400 opacity-100' : 'text-zinc-500 opacity-0 group-hover:opacity-100'}`}>
+                {codeCopied ? <><Check className="w-4 h-4 inline mr-1" /> Copied!</> : <><Copy className="w-4 h-4 inline mr-1" /> Click to copy</>}
+              </span>
             </div>
             <DialogFooter className="sm:justify-start">
               <p className="text-sm text-zinc-500 flex items-center">
@@ -310,7 +338,7 @@ function App() {
       <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-purple-900/20 to-transparent pointer-events-none" />
 
       {/* Top Header for Mobile */}
-      <header className="md:hidden flex h-16 items-center justify-between px-6 bg-black/40 border-b border-white/10 backdrop-blur-xl shrink-0 relative z-10">
+      <header className="md:hidden flex h-16 items-center justify-between px-6 bg-black/40 border-b border-white/10 backdrop-blur-xl shrink-0 relative z-10" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <h1 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-400">
           Twitch Miner
         </h1>
@@ -419,7 +447,7 @@ function App() {
       </main>
 
       {/* Bottom Navigation (Mobile) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-zinc-950/80 border-t border-white/10 backdrop-blur-2xl flex justify-around items-center z-20 pb-safe">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-zinc-950/80 border-t border-white/10 backdrop-blur-2xl flex justify-around items-center z-20 pb-safe" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         {navItems.map((item) => {
           const Icon = item.icon
           const isActive = activeView === item.id
@@ -450,11 +478,19 @@ function App() {
           <DialogHeader>
             <DialogTitle>Link your Account</DialogTitle>
             <DialogDescription className="text-zinc-400">
-              Go to <a href="#" onClick={() => open(authUri)} className="text-purple-400 hover:underline">{authUri}</a> and enter the code below:
+              Go to <a href="#" onClick={(e) => { e.preventDefault(); openUrl(authUri); }} className="text-purple-400 hover:underline">{authUri}</a> and enter the code below:
             </DialogDescription>
           </DialogHeader>
-          <div className="flex items-center justify-center space-x-2 py-6">
-            <span className="text-4xl font-mono tracking-[0.3em] font-bold text-purple-400">{userCode}</span>
+          <div 
+            className="flex flex-col items-center justify-center space-y-2 py-6 cursor-pointer group"
+            onClick={handleCopyCode}
+          >
+            <span className="text-4xl font-mono tracking-[0.3em] font-bold text-purple-400 group-hover:text-purple-300 transition-colors">
+              {userCode}
+            </span>
+            <span className={`text-sm transition-opacity ${codeCopied ? 'text-green-400 opacity-100' : 'text-zinc-500 opacity-0 group-hover:opacity-100'}`}>
+              {codeCopied ? <><Check className="w-4 h-4 inline mr-1" /> Copied!</> : <><Copy className="w-4 h-4 inline mr-1" /> Click to copy</>}
+            </span>
           </div>
           <DialogFooter className="sm:justify-start">
             <p className="text-sm text-zinc-500 flex items-center">
@@ -463,6 +499,7 @@ function App() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {showTutorial && <OnboardingTutorial onComplete={() => setShowTutorial(false)} />}
     </div>
   )
 }

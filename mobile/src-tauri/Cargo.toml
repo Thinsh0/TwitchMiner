@@ -28,14 +28,15 @@ rand = "0.8"
 base64 = "0.22"
 uuid = { version = "1.11", features = ["v4"] }
 regex = "1.12.3"
-tauri-plugin-notification = "2.0.0-rc"
-tauri-plugin-log = "2.0.0-rc"
+tauri-plugin-notification = "2.0.0"
+tauri-plugin-log = "2.0.0"
 log = "0.4.29"
 chrono = "0.4.44"
 async-trait = "0.1"
 
 # Mobile plugins
 tauri-plugin-background-service = "0.7.1"
+tauri-plugin-clipboard-manager = "2.0.0"
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = { version = "0.21.1", default-features = false }

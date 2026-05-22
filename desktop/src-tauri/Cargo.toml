@@ -28,6 +28,7 @@ tauri-plugin-notification = "2.0.0-rc"
 tauri-plugin-log = "2.0.0-rc"
 log = "0.4.29"
 chrono = "0.4.44"
+tauri-plugin-clipboard-manager = "2.0.0"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2.0.0-rc"

@@ -9,6 +9,9 @@
     "core:default",
     "shell:default",
     "shell:allow-open",
+    "opener:default",
+    "clipboard-manager:default",
+    "notification:default",
     "os:default",
     "store:default",
     "background-service:default"

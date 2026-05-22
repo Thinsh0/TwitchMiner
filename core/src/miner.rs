@@ -849,11 +849,7 @@ pub async fn start_miner(
                     }
                 };
 
-                let mine_all = store
-                    .get("app_config")
-                    .and_then(|value| serde_json::from_value::<crate::models::AppConfig>(value).ok())
-                    .map(|config| config.settings.mine_all_inventory)
-                    .unwrap_or(false);
+                let mine_all = false; // Forced to false per user request
 
                 if !mine_all && priority_games.is_empty() {
                     let mut s_guard = state_clone.lock().await;

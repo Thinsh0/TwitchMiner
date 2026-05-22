@@ -16,3 +16,6 @@ The Android app now starts successfully without crashing. The fix for the `tauri
 
 
 
+
+- [x] Fix Android black screen crash via stable plugins & windows config.
+- [x] Mobile QoL updates (Opener, Clipboard, Onboarding, Safe Area, Settings cleanup).

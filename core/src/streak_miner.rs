@@ -573,14 +573,8 @@ fn get_streak_channels(store: &Arc<tauri_plugin_store::Store<tauri::Wry>>) -> Ve
         }
     }
 
-    // Fallback to defaults
-    vec![
-        "shroud".to_string(),
-        "summit1g".to_string(),
-        "lirik".to_string(),
-        "pokimane".to_string(),
-        "ninja".to_string(),
-    ]
+    // Return empty list if no channels are configured
+    vec![]
 }
 
 fn get_streak_mode(store: &Arc<tauri_plugin_store::Store<tauri::Wry>>) -> String {

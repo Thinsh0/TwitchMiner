@@ -33,3 +33,10 @@ To prevent the app from crashing on start when `tauri-plugin-background-service`
 2. Reordered all utility plugins (store, logs, etc.) to register before the background service.
 3. Implemented defensive `app.try_state()` checks in the background service thread.
 
+
+- Added @tauri-apps/plugin-opener and @tauri-apps/plugin-clipboard-manager to replace shell.open and document.execCommand for Android compatibility.
+- Handled Android safe area with custom padding classes.
+
+- Fixed MobileSetupWizard z-index clipping by moving it to App.tsx root.
+- Replaced separate copy button with clickable verification code.
+- Added clipboard-manager and opener capabilities to default.json to fix link opening.

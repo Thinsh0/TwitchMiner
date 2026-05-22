@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { isPermissionGranted, requestPermission } from '@tauri-apps/plugin-notification'
 import { platform } from '@tauri-apps/plugin-os'
 import { api } from '@/api'
@@ -172,10 +173,10 @@ export function MobileSetupWizard() {
       )}
 
       {/* Main Setup Dialog */}
-      {isOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-lg flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <Card className="w-full max-w-xl bg-zinc-950 border-white/10 text-white shadow-2xl my-8">
-            <CardHeader className="border-b border-white/5 pb-4">
+      {isOpen && createPortal(
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-lg flex items-start justify-center p-4 sm:p-6 z-[100] overflow-y-auto" style={{ paddingTop: 'env(safe-area-inset-top, 2rem)', paddingBottom: 'env(safe-area-inset-bottom, 2rem)' }}>
+          <Card className="w-full max-w-xl bg-zinc-950 border-white/10 text-white shadow-2xl my-auto flex flex-col max-h-[90vh]">
+            <CardHeader className="border-b border-white/5 pb-4 shrink-0">
               <div className="flex justify-between items-start">
                 <div>
                   <CardTitle className="text-2xl font-bold flex items-center gap-2">
@@ -196,7 +197,7 @@ export function MobileSetupWizard() {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="p-6 space-y-6">
+            <CardContent className="p-6 space-y-6 overflow-y-auto flex-1">
               
               {/* Notifications Card */}
               <div className="p-4 rounded-xl bg-white/5 border border-white/5 space-y-3">
@@ -330,7 +331,8 @@ export function MobileSetupWizard() {
               </div>
             </CardContent>
           </Card>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )

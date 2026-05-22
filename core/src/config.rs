@@ -16,13 +16,7 @@ fn default_config() -> AppConfig {
         },
         bonus: BonusConfig {
             daily_streaks: DailyStreaksConfig {
-                channels: vec![
-                    "shroud".to_string(),
-                    "summit1g".to_string(),
-                    "lirik".to_string(),
-                    "pokimane".to_string(),
-                    "ninja".to_string(),
-                ],
+                channels: vec![],
                 auto_start: true,
                 mode: "sequential".to_string(),
             },

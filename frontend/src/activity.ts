@@ -67,7 +67,12 @@ export const activityNotifications = {
       if (!config || !shouldNotify(event, config)) return
       const permission = await getNotificationPermission()
       if (permission !== 'granted') return
-      sendNotification({ title: event.title, body: event.description })
+      sendNotification({ 
+        title: event.title, 
+        body: event.description,
+        icon: event.image_url || undefined,
+        attachments: event.image_url ? [{ id: 'drop_image', url: event.image_url }] : undefined 
+      })
     } catch (err) {
       console.error('Failed to send activity notification:', err)
     }

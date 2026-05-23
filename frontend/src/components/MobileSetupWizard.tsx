@@ -159,18 +159,7 @@ export function MobileSetupWizard() {
         </div>
       )}
 
-      {/* Settings section shortcut */}
-      {isSetupComplete && (
-        <div className="mb-6 p-4 rounded-xl bg-green-500/10 border border-green-500/20 text-green-300 flex items-center gap-3 backdrop-blur-md">
-          <CheckCircle2 className="w-5 h-5 text-green-400" />
-          <div className="text-xs">
-            <span className="font-semibold">Mobile Background configuration OK!</span> Twitch Miner is fully optimized to run non-stop.
-          </div>
-          <Button size="sm" variant="ghost" className="ml-auto text-green-400 hover:bg-green-500/10 hover:text-green-300" onClick={() => setIsOpen(true)}>
-            View Settings
-          </Button>
-        </div>
-      )}
+
 
       {/* Main Setup Dialog */}
       {isOpen && createPortal(

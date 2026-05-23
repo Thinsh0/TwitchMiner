@@ -169,6 +169,7 @@ function App() {
                   title: 'New Drop Campaign Active',
                   description: `Started mining drop: ${dropDetail.name}`,
                   silent: isFinished,
+                  image_url: dropDetail.image_url,
                 })
               }
             })
@@ -217,6 +218,7 @@ function App() {
           title: 'Drop Claimed!',
           description: `Successfully claimed drop: ${event.payload.name || 'Unknown Drop'}`,
           silent: false,
+          image_url: event.payload.image_url,
         })
       }).then((unlistenFn) => {
         claimUnlisten = unlistenFn;

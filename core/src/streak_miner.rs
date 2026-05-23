@@ -2,6 +2,7 @@ use crate::api::TwitchGQL;
 use crate::models::ChannelPointsInfo;
 use crate::models::StreakMinerStatus;
 use serde_json::Value;
+use rand::Rng;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_store::StoreExt;
@@ -98,7 +99,7 @@ pub async fn start_streak_miner(
                     new_status.channels_info = Vec::new();
                     s_guard.update_and_notify(&app_clone, new_status);
                 }
-                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                { let jitter = rand::thread_rng().gen_range(1..=10); tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await; }
                 continue;
             }
 
@@ -136,7 +137,7 @@ pub async fn start_streak_miner(
                         new_status.status = format!("Auth error: {}", e);
                         s_guard.update_and_notify(&app_clone, new_status);
                     }
-                    tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                    { let jitter = rand::thread_rng().gen_range(1..=10); tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await; }
                     continue;
                 }
             };
@@ -150,7 +151,7 @@ pub async fn start_streak_miner(
                         new_status.status = "Failed to get user ID".to_string();
                         s_guard.update_and_notify(&app_clone, new_status);
                     }
-                    tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                    { let jitter = rand::thread_rng().gen_range(1..=10); tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await; }
                     continue;
                 }
             };
@@ -526,7 +527,7 @@ async fn process_single_channel(
         Some(s) => s,
         None => {
             log::info!("[process_single_channel] {}: Stream is offline", channel);
-            return Ok(false);
+            return Err("Stream is offline".to_string());
         }
     };
 
@@ -626,3 +627,4 @@ fn get_max_concurrent(store: &Arc<tauri_plugin_store::Store<tauri::Wry>>) -> usi
     }
     3
 }
+

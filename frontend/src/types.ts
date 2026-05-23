@@ -132,4 +132,5 @@ export interface ActivityEvent {
   description: string
   timestamp: number
   silent?: boolean
+  image_url?: string | null
 }

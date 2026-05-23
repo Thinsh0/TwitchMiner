@@ -1,6 +1,7 @@
 use crate::api::TwitchGQL;
 use crate::models::{ActiveDropInfo, DropCampaign, DropItem, MinerStatus};
 use serde_json::Value;
+use rand::Rng;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_store::StoreExt;
@@ -944,7 +945,7 @@ pub async fn start_miner(
                     new_status.active_drops = Vec::new();
                     s_guard.update_and_notify(&app_clone, new_status);
                 }
-                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                { let jitter = rand::thread_rng().gen_range(1..=10); tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await; }
                 continue;
             }
 
@@ -985,7 +986,7 @@ pub async fn start_miner(
                     }
                     Err(e) => {
                         log::info!("start_miner: inventory error: {}", e);
-                        tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                        { let jitter = rand::thread_rng().gen_range(1..=10); tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await; }
                         continue;
                     }
                 };
@@ -997,7 +998,7 @@ pub async fn start_miner(
                     let mut new_status = s_guard.status.clone();
                     new_status.status = "No config".to_string();
                     s_guard.update_and_notify(&app_clone, new_status);
-                    tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                    { let jitter = rand::thread_rng().gen_range(1..=10); tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await; }
                     continue;
                 }
 
@@ -1148,7 +1149,7 @@ pub async fn start_miner(
                         new_status.active_drops = Vec::new();
                         s_guard.update_and_notify(&app_clone, new_status);
                     }
-                    tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                    { let jitter = rand::thread_rng().gen_range(1..=10); tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await; }
                     continue;
                 }
 
@@ -1302,7 +1303,7 @@ pub async fn start_miner(
                         }
                     }
 
-                    tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                    { let jitter = rand::thread_rng().gen_range(1..=10); tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await; }
                     loop_count -= 1;
                 }
             } else {
@@ -1312,7 +1313,7 @@ pub async fn start_miner(
                     new_status.status = "Authentication Error".to_string();
                     s_guard.update_and_notify(&app_clone, new_status);
                 }
-                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                { let jitter = rand::thread_rng().gen_range(1..=10); tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await; }
             }
         }
 
@@ -1352,3 +1353,4 @@ pub async fn stop_miner(
     }
     Ok(())
 }
+

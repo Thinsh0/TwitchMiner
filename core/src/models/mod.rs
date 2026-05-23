@@ -51,6 +51,9 @@ pub struct DropItem {
     pub current_minutes: u64,
     pub is_claimed: bool,
     pub image_url: Option<String>,
+    /// RFC3339 timestamp of when the drop was claimed (None for legacy entries).
+    #[serde(default)]
+    pub claimed_at: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

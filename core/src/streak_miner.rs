@@ -1,6 +1,7 @@
 use crate::api::TwitchGQL;
 use crate::models::ChannelPointsInfo;
 use crate::models::StreakMinerStatus;
+use crate::utils::json_id_to_string;
 use serde_json::Value;
 use rand::Rng;
 use std::sync::Arc;
@@ -37,14 +38,6 @@ impl StreakMinerState {
         // Send real-time update to frontend
         let _ = app.emit("streak-miner-status-update", new_status);
     }
-}
-
-fn json_id_to_string(value: Option<&Value>) -> Option<String> {
-    value.and_then(|v| {
-        v.as_str()
-            .map(|s| s.to_string())
-            .or_else(|| v.as_u64().map(|n| n.to_string()))
-    })
 }
 
 #[tauri::command]
@@ -441,9 +434,9 @@ async fn process_channels_parallel(
 
     // Wait for all tasks and collect results
     for (i, task) in tasks.into_iter().enumerate() {
+        let channel_name = channels.get(i).cloned().unwrap_or_default();
         match task.await {
             Ok(Ok(success)) => {
-                log::info!("[parallel] Task {} completed: success={}", i, success);
                 let mut s_guard = state.lock().await;
                 let mut new_status = s_guard.status.clone();
                 new_status.total_pings_sent += 1;
@@ -452,29 +445,47 @@ async fn process_channels_parallel(
                 } else {
                     new_status.failed_pings += 1;
                 }
+                for info in &mut new_status.channels_info {
+                    if info.channel_name.to_lowercase() == channel_name.to_lowercase() {
+                        info.status = if success { "Watching" } else { "Ping failed" }.to_string();
+                    }
+                }
                 s_guard.update_and_notify(app, new_status);
             }
             Ok(Err(e)) => {
-                log::info!("[parallel] Task {} error: {}", i, e);
+                let error_msg = e.clone();
                 let mut s_guard = state.lock().await;
                 let mut new_status = s_guard.status.clone();
                 new_status.total_pings_sent += 1;
                 new_status.failed_pings += 1;
-                new_status.status = format!("Error in parallel task {}: {}", i, e);
+                for info in &mut new_status.channels_info {
+                    if info.channel_name.to_lowercase() == channel_name.to_lowercase() {
+                        info.status = if error_msg.contains("offline") {
+                            "Offline"
+                        } else {
+                            "Error"
+                        }
+                        .to_string();
+                    }
+                }
                 s_guard.update_and_notify(app, new_status);
             }
             Err(e) => {
-                log::info!("[parallel] Task {} panicked: {}", i, e);
+                log::warn!("[parallel] Task {} panicked: {}", i, e);
                 let mut s_guard = state.lock().await;
                 let mut new_status = s_guard.status.clone();
                 new_status.total_pings_sent += 1;
                 new_status.failed_pings += 1;
-                new_status.status = format!("Task panicked: {}", e);
+                for info in &mut new_status.channels_info {
+                    if info.channel_name.to_lowercase() == channel_name.to_lowercase() {
+                        info.status = "Error".to_string();
+                    }
+                }
                 s_guard.update_and_notify(app, new_status);
             }
         }
     }
-    log::info!("[parallel] All tasks completed");
+
 }
 
 async fn process_single_channel(
@@ -483,42 +494,29 @@ async fn process_single_channel(
     channel: &str,
     user_id: &str,
 ) -> Result<bool, String> {
-    log::info!("[process_single_channel] Starting {}", channel);
+    log::debug!("[process_single_channel] Starting {}", channel);
 
     // Get Spade URL
     let spade_url = match gql.get_spade_url(channel).await {
         Ok(url) => url,
         Err(e) => {
-            log::info!(
-                "[process_single_channel] {}: Spade URL error: {}",
-                channel, e
-            );
+            log::debug!("[process_single_channel] {}: Spade URL error: {}", channel, e);
             return Ok(false); // Not a fatal error, streamer may be offline
         }
     };
-    log::info!(
-        "[process_single_channel] {}: Spade URL = {}...",
-        channel,
-        &spade_url[..spade_url.len().min(50)]
-    );
 
     // Get stream info
     let stream_info = match gql.get_stream_info(store, channel).await {
         Ok(info) => info,
         Err(e) => {
-            log::info!(
-                "[process_single_channel] {}: Stream info error: {}",
-                channel, e
-            );
+            log::debug!("[process_single_channel] {}: Stream info error: {}", channel, e);
             return Ok(false);
         }
     };
-    log::info!("[process_single_channel] {}: Got stream info", channel);
 
     let user_data = match stream_info.pointer("/data/user") {
         Some(u) => u,
         None => {
-            log::info!("[process_single_channel] {}: No user data", channel);
             return Ok(false);
         }
     };
@@ -526,7 +524,6 @@ async fn process_single_channel(
     let stream_data = match user_data.pointer("/stream") {
         Some(s) => s,
         None => {
-            log::info!("[process_single_channel] {}: Stream is offline", channel);
             return Err("Stream is offline".to_string());
         }
     };
@@ -534,7 +531,6 @@ async fn process_single_channel(
     let broadcast_id = match json_id_to_string(stream_data.get("id")) {
         Some(id) => id,
         None => {
-            log::info!("[process_single_channel] {}: No broadcast ID", channel);
             return Ok(false);
         }
     };
@@ -542,12 +538,11 @@ async fn process_single_channel(
     let channel_id = match json_id_to_string(user_data.get("id")) {
         Some(id) => id,
         None => {
-            log::info!("[process_single_channel] {}: No channel ID", channel);
             return Ok(false);
         }
     };
 
-    log::info!(
+    log::debug!(
         "[process_single_channel] {}: broadcast_id={}, channel_id={}",
         channel, broadcast_id, channel_id
     );
@@ -572,11 +567,8 @@ async fn process_single_channel(
     let result = gql.send_spade_minute_watched(&spade_url, payload).await;
     match &result {
         Ok(true) => log::info!("[process_single_channel] {}: Ping OK", channel),
-        Ok(false) => log::info!(
-            "[process_single_channel] {}: Ping returned non-success",
-            channel
-        ),
-        Err(e) => log::info!("[process_single_channel] {}: Ping error: {}", channel, e),
+        Ok(false) => log::warn!("[process_single_channel] {}: Ping returned non-success", channel),
+        Err(e) => log::error!("[process_single_channel] {}: Ping error: {}", channel, e),
     }
     result
 }

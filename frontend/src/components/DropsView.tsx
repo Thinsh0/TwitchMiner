@@ -1,28 +1,19 @@
 import { useState, useEffect } from 'react'
 import { api } from '@/api'
 import { useAppStore } from '@/store'
-import type { DropCampaign, DropItem } from '@/types'
+import type { DropCampaign, DropItem, MinerStatus } from '@/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { Gamepad2, Play, Square, Clock, Package, CheckCircle2, Gift, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Gamepad2, Play, Square, Clock, Package, CheckCircle2, Gift, ChevronDown, ChevronRight, Loader2, Search, Zap } from 'lucide-react'
 
 type DropSortKey = 'name' | 'date' | 'duration';
 type SortDirection = 'asc' | 'desc';
 
 interface DropsViewProps {
-  dropStatus: {
-    status: string;
-    is_running: boolean;
-    current_streamer: string | null;
-    current_streamer_login: string | null;
-    current_drop: string | null;
-    drop_image_url: string | null;
-    streamer_image_url: string | null;
-    progress: number;
-    current_points: string;
-  };
+  dropStatus: MinerStatus;
   onToggleMiner: () => void;
 }
 
@@ -33,13 +24,18 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
   const [globalSortKey, setGlobalSortKey] = useState<DropSortKey>('date');
   const [globalSortDirection, setGlobalSortDirection] = useState<SortDirection>('asc');
   const [groupSorts, setGroupSorts] = useState<Record<string, { key: DropSortKey; direction: SortDirection }>>({});
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState('');
 
   const fetchCampaigns = async () => {
+    setLoading(true);
     try {
       const result = await api.getDropCampaigns().catch(() => []);
       setDropCampaigns(result);
     } catch (err) {
       console.error('Failed to fetch campaigns:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -62,7 +58,13 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
   }, [dropStatus.is_running])
 
   const sortedCampaigns = sortCampaigns(dropCampaigns, globalSortKey, globalSortDirection);
-  const campaignsByGame = sortedCampaigns.reduce<Record<string, DropCampaign[]>>((acc, campaign) => {
+  const filteredSorted = search.trim()
+    ? sortedCampaigns.filter(c =>
+        c.game_name.toLowerCase().includes(search.toLowerCase()) ||
+        c.name.toLowerCase().includes(search.toLowerCase())
+      )
+    : sortedCampaigns;
+  const campaignsByGame = filteredSorted.reduce<Record<string, DropCampaign[]>>((acc, campaign) => {
     const gameName = campaign.game_name || 'Unknown Game';
     if (!acc[gameName]) acc[gameName] = [];
     acc[gameName].push(campaign);
@@ -101,8 +103,7 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
 
   return (
     <div className="space-y-4">
-      {/* Header - Fixed */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row gap-2 justify-between items-start sm:items-center">
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <Gamepad2 className="w-5 h-5 text-purple-400" />
@@ -112,13 +113,15 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
             Available drops for your selected games
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Button
             variant="outline"
             size="sm"
             onClick={fetchCampaigns}
+            disabled={loading}
             className="border-white/10 text-zinc-400"
           >
+            {loading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
             Refresh
           </Button>
           <Button
@@ -127,10 +130,42 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
             onClick={onToggleMiner}
             className={!dropStatus.is_running ? "bg-purple-600 hover:bg-purple-700 text-white" : ""}
           >
-            {dropStatus.is_running ? <><Square className="mr-2 h-4 w-4 fill-current" /> Stop Mining</> : <><Play className="mr-2 h-4 w-4 fill-current" /> Start Mining</>}
+            {dropStatus.is_running ? <><Square className="mr-2 h-4 w-4 fill-current" />Stop Mining</> : <><Play className="mr-2 h-4 w-4 fill-current" />Start Mining</>}
           </Button>
         </div>
       </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+        <Input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by game or campaign name..."
+          className="pl-9 bg-white/5 border-white/10 text-white placeholder:text-zinc-500"
+        />
+      </div>
+
+      {/* Current mining highlight */}
+      {dropStatus.is_running && dropStatus.current_drop && (
+        <Card className="bg-purple-900/30 border-purple-500/40">
+          <CardContent className="p-3 flex items-center gap-3">
+            {dropStatus.drop_image_url && <img src={dropStatus.drop_image_url} alt="" className="w-10 h-10 rounded" />}
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-purple-300 font-semibold uppercase tracking-wide flex items-center gap-1">
+                <Zap className="w-3 h-3" /> Currently mining
+              </p>
+              <p className="text-white font-medium truncate">{dropStatus.current_drop}</p>
+              {dropStatus.current_streamer && (
+                <p className="text-xs text-zinc-400">on {dropStatus.current_streamer}</p>
+              )}
+            </div>
+            <div className="text-right shrink-0">
+              <span className="text-purple-400 font-bold">{Math.round(dropStatus.progress)}%</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="bg-black/40 border-white/10">
         <CardContent className="p-3 flex flex-wrap items-center gap-3">
@@ -156,9 +191,16 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
         </CardContent>
       </Card>
 
-      {/* Active Campaigns */}
-      <div className="space-y-4">
-        {dropCampaigns.length > 0 ? (
+      {/* Loading state */}
+      {loading ? (
+        <Card className="bg-black/40 border-white/10">
+          <CardContent className="p-10 flex items-center justify-center gap-3 text-zinc-400">
+            <Loader2 className="w-6 h-6 animate-spin" />
+            Loading campaigns...
+          </CardContent>
+        </Card>
+      ) : dropCampaigns.length > 0 ? (
+        Object.keys(campaignsByGame).length > 0 ? (
           Object.entries(campaignsByGame).map(([gameName, gameCampaigns]) => (
             <GameCampaignGroup
               key={gameName}
@@ -171,11 +213,19 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
               onSortKeyChange={(key) => updateGroupSort(gameName, key)}
               onSortDirectionToggle={() => toggleGroupSortDirection(gameName)}
               onClaimSuccess={fetchCampaigns}
+              currentDropName={dropStatus.current_drop}
             />
           ))
-        ) : priorityGames.length > 0 ? (
+        ) : (
+          <Card className="bg-black/40 border-white/10">
+            <CardContent className="p-8 text-center text-zinc-500">
+              <Search className="w-10 h-10 mx-auto mb-3 opacity-20" />
+              No campaigns match your search.
+            </CardContent>
+          </Card>
+        )
+      ) : priorityGames.length > 0 ? (
             <>
-              {/* Show configured games waiting for drop campaigns */}
               {priorityGames.map((game, i) => (
                 <Card key={i} className="bg-black/40 border-white/10">
                   <CardContent className="p-4 flex items-center justify-between">
@@ -207,7 +257,6 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
             </Card>
           )}
       </div>
-    </div>
   );
 }
 
@@ -257,6 +306,7 @@ function GameCampaignGroup({
   onSortKeyChange,
   onSortDirectionToggle,
   onClaimSuccess,
+  currentDropName,
 }: {
   gameName: string;
   campaigns: DropCampaign[];
@@ -267,6 +317,7 @@ function GameCampaignGroup({
   onSortKeyChange: (key: DropSortKey) => void;
   onSortDirectionToggle: () => void;
   onClaimSuccess?: () => void;
+  currentDropName?: string | null;
 }) {
   const gameImage = campaigns.find(c => c.image_url)?.image_url;
   const totalDrops = campaigns.reduce((sum, campaign) => sum + campaign.drops.length, 0);
@@ -353,7 +404,7 @@ function GameCampaignGroup({
           </div>
           <div className="max-h-[400px] overflow-y-auto pr-2 space-y-3">
             {sortedCampaigns.map((campaign) => (
-              <CampaignCard key={campaign.id} campaign={campaign} compact onClaimSuccess={onClaimSuccess} />
+              <CampaignCard key={campaign.id} campaign={campaign} compact onClaimSuccess={onClaimSuccess} currentDropName={currentDropName} />
             ))}
           </div>
         </CardContent>
@@ -362,13 +413,16 @@ function GameCampaignGroup({
   );
 }
 
-function CampaignCard({ campaign, compact = false, onClaimSuccess }: { campaign: DropCampaign; compact?: boolean; onClaimSuccess?: () => void }) {
+function CampaignCard({ campaign, compact = false, onClaimSuccess, currentDropName }: { campaign: DropCampaign; compact?: boolean; onClaimSuccess?: () => void; currentDropName?: string | null }) {
   const totalDrops = campaign.drops.length;
   const claimedDrops = campaign.drops.filter(d => d.is_claimed).length;
   const endDate = formatDropDate(campaign.end_date);
+  const isCurrentlyMining = currentDropName
+    ? campaign.drops.some(d => d.name === currentDropName)
+    : false;
 
   return (
-    <Card className={`${compact ? 'bg-white/[0.03]' : 'bg-black/40'} border-white/10 overflow-hidden`}>
+    <Card className={`${isCurrentlyMining ? 'bg-purple-950/30 border-purple-500/60' : compact ? 'bg-white/[0.03]' : 'bg-black/40'} border-white/10 overflow-hidden transition-colors`}>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">

@@ -4,7 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Tv, Play, Square, Gift, AlertCircle, CheckCircle2, Clock, Eye } from 'lucide-react'
+import { Tv, Play, Square, Gift, AlertCircle, CheckCircle2, Clock, Eye, ExternalLink } from 'lucide-react'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import type { ChannelPointsInfo, StreakMinerStatus } from '@/types'
 
 interface ChannelPointsViewProps {
@@ -60,7 +61,7 @@ export function ChannelPointsView({ streakStatus, streakRunning, onToggle }: Cha
       </div>
 
       {/* Stats Overview */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="bg-black/40 border-white/10">
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-blue-400">{totalPoints.toLocaleString()}</div>
@@ -118,7 +119,16 @@ export function ChannelPointsView({ streakStatus, streakRunning, onToggle }: Cha
                         {channel.channel_name.charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <div className="text-white font-medium">{channel.channel_name}</div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-white font-medium">{channel.channel_name}</div>
+                          <button
+                            onClick={() => openUrl(`https://www.twitch.tv/${channel.channel_name.toLowerCase()}`)}
+                            className="text-zinc-500 hover:text-blue-400 transition-colors"
+                            title="Open on Twitch"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                          </button>
+                        </div>
                         <div className="flex items-center gap-2 text-xs">
                           <StatusBadge status={channel.status} />
                         </div>

@@ -9,6 +9,7 @@ import { useAppStore } from '@/store'
 import type { ActiveDropInfo, MinerStatus, StreakMinerStatus } from '@/types'
 import { Play, Square, Activity, Zap, TrendingUp, Clock, ImageOff, Gamepad2 } from 'lucide-react'
 import { MobileSetupWizard } from './MobileSetupWizard'
+import { type as osType } from '@tauri-apps/plugin-os'
 
 interface DashboardViewProps {
   status: MinerStatus;
@@ -19,6 +20,7 @@ interface DashboardViewProps {
 }
 
 export function DashboardView({ status, streakStatus, streakRunning, onToggleDropMiner, onToggleStreakMiner }: DashboardViewProps) {
+  const isAndroid = osType() === 'android'
   const [configuredChannels, setConfiguredChannels] = useState<string[]>([])
   const [priorityGames, setPriorityGames] = useState<string[]>([])
   const dropCampaigns = useAppStore(state => state.dropCampaigns)
@@ -77,7 +79,7 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
 
   return (
     <div className="space-y-6">
-      <MobileSetupWizard />
+      {isAndroid && <MobileSetupWizard />}
       {/* Welcome / Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard

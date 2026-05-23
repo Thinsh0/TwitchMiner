@@ -28,6 +28,7 @@ export interface DropItem {
   current_minutes: number
   is_claimed: boolean
   image_url: string | null
+  claimed_at?: string | null
 }
 
 export interface DropCampaign {

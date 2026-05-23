@@ -3,6 +3,8 @@ import { activityNotifications, activityStorage } from './activity'
 import type { ActivityEvent, ActivityEventType, DropCampaign, MinerStatus, DropItem } from './types'
 export type { ActiveDropInfo, DropCampaign, DropItem, MinerStatus } from './types'
 
+type BackendStatus = 'connected' | 'disconnected' | 'unknown'
+
 interface AppState {
   status: MinerStatus
   setStatus: (status: MinerStatus) => void
@@ -18,6 +20,8 @@ interface AppState {
   setClaimedDrops: (drops: DropItem[]) => void
   addClaimedDrop: (drop: DropItem) => void
   loadClaimedDrops: () => Promise<void>
+  backendStatus: BackendStatus
+  setBackendStatus: (status: BackendStatus) => void
 }
 
 const activityTitles: Record<ActivityEventType, string> = {
@@ -54,13 +58,13 @@ export const useAppStore = create<AppState>((set) => ({
         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         timestamp: Date.now(),
       }
-      const nextActivities = [nextEvent, ...state.activities].slice(0, 25)
+      const nextActivities = [nextEvent, ...state.activities].slice(0, 100)
       void activityStorage.save(nextActivities)
       void activityNotifications.notify(nextEvent)
       return nextActivities
     })(),
   })),
-  setActivities: (events) => set({ activities: events.slice(0, 25) }),
+  setActivities: (events) => set({ activities: events.slice(0, 100) }),
   loadActivities: async () => {
     const events = await activityStorage.load()
     set({ activities: events })
@@ -72,9 +76,11 @@ export const useAppStore = create<AppState>((set) => ({
     const { api } = await import('./api')
     try {
       const drops = await api.getClaimedDrops()
-      set({ claimedDrops: drops.reverse() }) // Reverse to show newest first
+      set({ claimedDrops: drops.reverse() })
     } catch (e) {
       console.error('Failed to load claimed drops', e)
     }
   },
+  backendStatus: 'unknown',
+  setBackendStatus: (status) => set({ backendStatus: status }),
 }))

@@ -37,14 +37,15 @@ export function SettingsPanel() {
   }, [])
 
   // Auto-save config when it changes (debounced)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!config || loading) return
     const timeout = setTimeout(() => {
-      console.log('Auto-saving config...')
       saveConfig()
-    }, 1000)
+    }, 800)
     return () => clearTimeout(timeout)
-  }, [config?.priorities.games.length, config?.priorities.streamers.length, config?.bonus.daily_streaks.channels.length, config?.bonus.points_farming.channels.length, config?.settings, JSON.stringify(config?.schedule)])
+  }, [JSON.stringify(config)])
+
 
   // Debounced game search
   useEffect(() => {
@@ -73,9 +74,7 @@ export function SettingsPanel() {
 
   const loadConfig = async () => {
     try {
-      console.log('Loading config...')
       const cfg = await api.getConfig()
-      console.log('Config loaded:', cfg)
       setConfig(cfg)
       try {
         const isAutoStart = await isEnabled()
@@ -94,10 +93,8 @@ export function SettingsPanel() {
     if (!config) return
     setSaving(true)
     try {
-      console.log('Saving config:', config)
       await api.saveConfig(config)
       activityNotifications.setConfig(config)
-      console.log('Config saved successfully')
     } catch (err) {
       console.error('Failed to save config:', err)
     } finally {

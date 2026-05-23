@@ -77,38 +77,26 @@ fn sanitize_config(mut config: AppConfig) -> AppConfig {
     config
 }
 
+/// Simple health check command used by the frontend to detect if the backend is reachable.
+#[tauri::command]
+pub async fn ping() -> Result<(), String> {
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn get_config(app: AppHandle) -> Result<AppConfig, String> {
     let store = app
         .store("config.json")
         .map_err(|e: tauri_plugin_store::Error| e.to_string())?;
 
-    // Try to load existing config
     if let Some(config_json) = store.get("app_config") {
-        log::info!("get_config: Found stored config: {:?}", config_json);
-        match serde_json::from_value::<AppConfig>(config_json.clone()) {
-            Ok(config) => {
-                let sanitized = sanitize_config(config);
-                log::info!(
-                    "get_config: Parsed config successfully. Games: {:?}, Streamers: {:?}",
-                    sanitized.priorities.games, sanitized.priorities.streamers
-                );
-                return Ok(sanitized);
-            }
-            Err(e) => {
-                log::info!(
-                    "get_config: Failed to parse config: {}. Raw: {:?}",
-                    e, config_json
-                );
-            }
+        match serde_json::from_value::<AppConfig>(config_json) {
+            Ok(config) => return Ok(sanitize_config(config)),
+            Err(e) => log::warn!("get_config: Failed to parse stored config: {}", e),
         }
-    } else {
-        log::info!("get_config: No stored config found, returning default");
     }
 
-    // Return default config if none exists
-    let default = default_config();
-    Ok(default)
+    Ok(default_config())
 }
 
 #[tauri::command]
@@ -117,18 +105,10 @@ pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String
         .store("config.json")
         .map_err(|e: tauri_plugin_store::Error| e.to_string())?;
     let config = sanitize_config(config);
-
-    log::info!(
-        "save_config: Saving config with games={:?}, streamers={:?}, streak_channels={:?}",
-        config.priorities.games, config.priorities.streamers, config.bonus.daily_streaks.channels
-    );
-
     store.set("app_config", json!(config));
     store
         .save()
         .map_err(|e: tauri_plugin_store::Error| e.to_string())?;
-
-    log::info!("save_config: Config saved successfully");
     Ok(())
 }
 

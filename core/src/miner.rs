@@ -1,5 +1,6 @@
 use crate::api::TwitchGQL;
 use crate::models::{ActiveDropInfo, DropCampaign, DropItem, MinerStatus};
+use crate::utils::json_id_to_string;
 use serde_json::Value;
 use rand::Rng;
 use std::sync::Arc;
@@ -101,6 +102,7 @@ pub async fn claim_drop_cmd(
     if let Some(node) = drop_node {
         if let Some(mut item) = parse_drop_item(&node) {
             item.is_claimed = true;
+            item.claimed_at = Some(chrono::Utc::now().to_rfc3339());
             let mut claimed_history: Vec<DropItem> = store
                 .get("claimed_drops")
                 .and_then(|v| serde_json::from_value(v).ok())
@@ -112,8 +114,8 @@ pub async fn claim_drop_cmd(
                     serde_json::to_value(&claimed_history).unwrap(),
                 );
                 let _ = store.save();
+                let _ = app.emit("drop-claimed", item);
             }
-            let _ = app.emit("drop-claimed", item);
         }
     }
 
@@ -214,18 +216,20 @@ async fn check_and_claim_drops(
 
                     if let Some(mut item) = parse_drop_item(drop) {
                         item.is_claimed = true;
+                        item.claimed_at = Some(chrono::Utc::now().to_rfc3339());
                         let mut claimed_history: Vec<DropItem> = store
                             .get("claimed_drops")
                             .and_then(|v| serde_json::from_value(v).ok())
                             .unwrap_or_default();
-                        claimed_history.push(item.clone());
-                        let _ = store.set(
-                            "claimed_drops",
-                            serde_json::to_value(&claimed_history).unwrap(),
-                        );
-                        let _ = store.save();
-
-                        let _ = app.emit("drop-claimed", item);
+                        if !claimed_history.iter().any(|d| d.id == item.id) {
+                            claimed_history.push(item.clone());
+                            let _ = store.set(
+                                "claimed_drops",
+                                serde_json::to_value(&claimed_history).unwrap(),
+                            );
+                            let _ = store.save();
+                            let _ = app.emit("drop-claimed", item);
+                        }
                     }
                 }
             }
@@ -278,18 +282,20 @@ async fn check_and_claim_drops(
 
                             if let Some(mut item) = parse_drop_item(drop) {
                                 item.is_claimed = true;
+                                item.claimed_at = Some(chrono::Utc::now().to_rfc3339());
                                 let mut claimed_history: Vec<DropItem> = store
                                     .get("claimed_drops")
                                     .and_then(|v| serde_json::from_value(v).ok())
                                     .unwrap_or_default();
-                                claimed_history.push(item.clone());
-                                let _ = store.set(
-                                    "claimed_drops",
-                                    serde_json::to_value(&claimed_history).unwrap(),
-                                );
-                                let _ = store.save();
-
-                                let _ = app.emit("drop-claimed", item);
+                                if !claimed_history.iter().any(|d| d.id == item.id) {
+                                    claimed_history.push(item.clone());
+                                    let _ = store.set(
+                                        "claimed_drops",
+                                        serde_json::to_value(&claimed_history).unwrap(),
+                                    );
+                                    let _ = store.save();
+                                    let _ = app.emit("drop-claimed", item);
+                                }
                             }
                         }
                     }
@@ -297,14 +303,6 @@ async fn check_and_claim_drops(
             }
         }
     }
-}
-
-fn json_id_to_string(value: Option<&Value>) -> Option<String> {
-    value.and_then(|v| {
-        v.as_str()
-            .map(|s| s.to_string())
-            .or_else(|| v.as_u64().map(|n| n.to_string()))
-    })
 }
 
 fn extract_image_url(drop: &Value) -> Option<String> {
@@ -349,6 +347,7 @@ fn parse_drop_item(drop: &Value) -> Option<DropItem> {
         current_minutes,
         is_claimed,
         image_url: extract_image_url(drop),
+        claimed_at: None,
     })
 }
 

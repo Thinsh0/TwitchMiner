@@ -265,7 +265,8 @@ pub fn run() {
             config::get_config,
             config::save_config,
             config::reset_config,
-            config::search_games_cmd
+            config::search_games_cmd,
+            config::ping
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

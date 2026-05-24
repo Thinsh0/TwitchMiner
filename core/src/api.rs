@@ -463,43 +463,14 @@ mutation SendEvents($input: SendSpadeEventsInput!) {
     pub async fn get_drop_current_session(
         &self,
         store: &Arc<Store<tauri::Wry>>,
-        channel_login: &str,
+        channel_id: &str,
     ) -> Result<Value, String> {
-        let query = "
-        query DropCurrentSessionContext($channelLogin: String!) {
-            currentUser {
-                id
-                dropCurrentSession(channelLogin: $channelLogin) {
-                    dropID
-                    currentMinutesWatched
-                    requiredMinutesWatched
-                    drop {
-                        id
-                        name
-                        requiredMinutesWatched
-                        benefitEdges {
-                            benefit {
-                                id
-                                name
-                                imageAssetURL
-                            }
-                        }
-                        campaign {
-                            id
-                            name
-                            game {
-                                id
-                                displayName
-                                boxArtURL
-                            }
-                        }
-                    }
-                }
-            }
-        }";
-        let vars = json!({ "channelLogin": channel_login });
-        self.post(store, "DropCurrentSessionContext", query, vars)
-            .await
+        let sha256 = "4d06b702d25d652afb9ef835d2a550031f1cf762b193523a92166f40ea3d142b";
+        let vars = json!({ 
+            "channelID": channel_id,
+            "channelLogin": ""
+        });
+        self.post_persisted(store, "DropCurrentSessionContext", sha256, vars).await
     }
 
     pub async fn get_channel_points_context(

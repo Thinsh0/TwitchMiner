@@ -1239,7 +1239,7 @@ pub async fn start_miner(
 
                         // Update Realtime Progress
                         if let Ok(session_res) = gql
-                            .get_drop_current_session(&store, &stream.streamer_login)
+                            .get_drop_current_session(&store, &stream.channel_id)
                             .await
                         {
                             if let Some(session) =

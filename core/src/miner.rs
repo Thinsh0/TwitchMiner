@@ -1274,6 +1274,14 @@ pub async fn start_miner(
                                         existing.current_minutes = cur;
                                         existing.progress = pct;
                                     }
+
+                                    // Recalculate overall progress
+                                    let total_req: i64 = new_status.active_drops.iter().map(|d| d.required_minutes).sum();
+                                    let total_cur: i64 = new_status.active_drops.iter().map(|d| d.current_minutes).sum();
+                                    if total_req > 0 {
+                                        new_status.progress = (total_cur as f64 / total_req as f64 * 100.0).min(100.0);
+                                    }
+
                                     s_guard.update_and_notify(&app_clone, new_status);
                                 }
                             }

@@ -541,27 +541,22 @@ async fn process_single_channel(
     );
 
     // Prepare and send minute-watched payload
-    let session_id = uuid::Uuid::new_v4().simple().to_string()[..16].to_string();
-    let client_time = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let client_time = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let payload = serde_json::json!([{
         "event": "minute-watched",
         "properties": {
             "broadcast_id": broadcast_id,
             "channel_id": channel_id,
             "channel": channel,
-            "client_id": "kimne78kx3ncx6brgo4mv6wki5h1ko",
             "client_time": client_time,
             "game": "",
             "game_id": "",
-            "session_id": session_id,
             "hidden": false,
             "is_live": true,
             "live": true,
-            "location": "channel",
             "logged_in": true,
             "minutes_logged": 1,
             "muted": false,
-            "player": "site",
             "user_id": user_id,
         }
     }]);

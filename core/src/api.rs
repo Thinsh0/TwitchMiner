@@ -46,6 +46,12 @@ impl TwitchGQL {
         headers.insert("Client-ID", self.client_id.parse().unwrap());
         headers.insert("X-Device-Id", self.device_id.parse().unwrap());
         headers.insert("Content-Type", "application/json".parse().unwrap());
+        headers.insert("Origin", "https://www.twitch.tv".parse().unwrap());
+        headers.insert("Referer", "https://www.twitch.tv/".parse().unwrap());
+        headers.insert("Accept", "*/*".parse().unwrap());
+        headers.insert("Accept-Language", "en-US".parse().unwrap());
+        headers.insert("Pragma", "no-cache".parse().unwrap());
+        headers.insert("Cache-Control", "no-cache".parse().unwrap());
 
         if let Some(t) = token {
             if let Ok(auth_header) = format!("OAuth {}", t).parse() {

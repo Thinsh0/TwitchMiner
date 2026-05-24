@@ -496,14 +496,7 @@ async fn process_single_channel(
 ) -> Result<bool, String> {
     log::debug!("[process_single_channel] Starting {}", channel);
 
-    // Get Spade URL
-    let spade_url = match gql.get_spade_url(channel).await {
-        Ok(url) => url,
-        Err(e) => {
-            log::debug!("[process_single_channel] {}: Spade URL error: {}", channel, e);
-            return Ok(false); // Not a fatal error, streamer may be offline
-        }
-    };
+    // (get_spade_url logic removed because we now use send_watch_gql)
 
     // Get stream info
     let stream_info = match gql.get_stream_info(store, channel).await {
@@ -548,23 +541,32 @@ async fn process_single_channel(
     );
 
     // Prepare and send minute-watched payload
-    let payload = serde_json::json!({
+    let session_id = uuid::Uuid::new_v4().simple().to_string()[..16].to_string();
+    let client_time = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let payload = serde_json::json!([{
         "event": "minute-watched",
         "properties": {
             "broadcast_id": broadcast_id,
             "channel_id": channel_id,
             "channel": channel,
+            "client_id": "kimne78kx3ncx6brgo4mv6wki5h1ko",
+            "client_time": client_time,
+            "game": "",
+            "game_id": "",
+            "session_id": session_id,
             "hidden": false,
+            "is_live": true,
             "live": true,
             "location": "channel",
             "logged_in": true,
+            "minutes_logged": 1,
             "muted": false,
             "player": "site",
             "user_id": user_id,
         }
-    });
+    }]);
 
-    let result = gql.send_spade_minute_watched(&spade_url, payload).await;
+    let result = gql.send_watch_gql(store, payload).await;
     match &result {
         Ok(true) => log::info!("[process_single_channel] {}: Ping OK", channel),
         Ok(false) => log::warn!("[process_single_channel] {}: Ping returned non-success", channel),

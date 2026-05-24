@@ -17,4 +17,5 @@ uuid = { version = "1.11", features = ["v4"] }
 regex = "1.12.3"
 log = "0.4.29"
 chrono = { version = "0.4.44", features = ["serde"] }
+flate2 = "1.1.9"
 

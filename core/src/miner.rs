@@ -882,7 +882,6 @@ struct TargetStream {
     streamer_image: Option<String>,
     stream_id: String,
     channel_id: String,
-    spade_url: Option<String>,
     active_drop: (String, String, Option<String>, i64, i64, i64),
 }
 
@@ -1107,7 +1106,6 @@ pub async fn start_miner(
                                 json_id_to_string(edge.pointer("/node/id")).unwrap_or_default();
 
                             let _ = gql.get_playback_access_token(&store, &streamer_login).await;
-                            let spade_url = gql.get_spade_url(&streamer_login).await.ok();
 
                             active_streams.push(TargetStream {
                                 game_id: candidate.game_id.clone(),
@@ -1116,7 +1114,6 @@ pub async fn start_miner(
                                 streamer_image,
                                 stream_id,
                                 channel_id,
-                                spade_url,
                                 active_drop: (
                                     candidate.drop_id.clone(),
                                     candidate.drop_name.clone(),
@@ -1218,25 +1215,32 @@ pub async fn start_miner(
 
                     // Send Pings & Update Session
                     for stream in &active_streams {
-                        let payload = serde_json::json!({
+                        let session_id = uuid::Uuid::new_v4().simple().to_string()[..16].to_string();
+                        let client_time = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+                        let payload = serde_json::json!([{
                             "event": "minute-watched",
                             "properties": {
                                 "broadcast_id": stream.stream_id,
                                 "channel_id": stream.channel_id,
                                 "channel": stream.streamer_login,
+                                "client_id": "kimne78kx3ncx6brgo4mv6wki5h1ko",
+                                "client_time": client_time,
+                                "game": "",
+                                "game_id": "",
+                                "session_id": session_id,
                                 "hidden": false,
+                                "is_live": true,
                                 "live": true,
                                 "location": "channel",
                                 "logged_in": true,
+                                "minutes_logged": 1,
                                 "muted": false,
                                 "player": "site",
                                 "user_id": uid
                             }
-                        });
+                        }]);
 
-                        if let Some(spade_url) = &stream.spade_url {
-                            let _ = gql.send_spade_minute_watched(spade_url, payload).await;
-                        }
+                        let _ = gql.send_watch_gql(&store, payload).await;
 
                         // Update Realtime Progress
                         if let Ok(session_res) = gql

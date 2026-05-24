@@ -1,8 +1,11 @@
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use regex::Regex;
 use reqwest::{header, Client};
 use serde_json::{json, Value};
+use std::io::Write;
 use std::sync::Arc;
 use tauri_plugin_store::Store;
 use uuid::Uuid;
@@ -403,157 +406,50 @@ impl TwitchGQL {
         self.post(store, "SearchFor", query, vars).await
     }
 
-    pub async fn get_spade_url(&self, streamer_login: &str) -> Result<String, String> {
-        // Retry logic with exponential backoff
-        for attempt in 1..=3 {
-            match self._get_spade_url_internal(streamer_login).await {
-                Ok(url) => return Ok(url),
-                Err(e) => {
-                    if attempt == 3 {
-                        return Err(format!("Failed after 3 attempts: {}", e));
-                    }
-                    // Wait with jitter before retry
-                    let delay = (1000 * attempt) + rand::random::<u64>() % 500;
-                    tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
-                }
-            }
-        }
-        Err("Spade URL not found".to_string())
-    }
-
-    async fn _get_spade_url_internal(&self, streamer_login: &str) -> Result<String, String> {
-        let url = format!("https://www.twitch.tv/{}", streamer_login);
-        log::info!("get_spade_url: Fetching {}", url);
-
-        // Use a full desktop browser User-Agent — Twitch serves different HTML for mobile
-        let desktop_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-
-        let res = self
-            .client
-            .get(&url)
-            .header(
-                "Accept",
-                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            )
-            .header("Accept-Language", "en-US,en;q=0.5")
-            .header("User-Agent", desktop_ua)
-            .send()
-            .await
-            .map_err(|e| format!("Failed to fetch page: {}", e))?;
-
-        log::info!("get_spade_url: HTTP status {}", res.status());
-
-        if !res.status().is_success() {
-            return Err(format!(
-                "HTTP {}: Failed to fetch streamer page",
-                res.status()
-            ));
-        }
-
-        let text = res
-            .text()
-            .await
-            .map_err(|e| format!("Failed to read response: {}", e))?;
-        log::info!("get_spade_url: Got {} bytes of HTML", text.len());
-
-        // Patterns ordered from broadest (TwitchDropsMiner style) to most specific
-        let patterns: Vec<&str> = vec![
-            // TDM-style broad pattern — matches current Twitch format
-            r#""spade_?url": ?"(https://[.\w\-/]+)""#,
-            // Legacy beacon patterns
-            r#""beacon_?url": ?"(https://[.\w\-/]+)""#,
-            r#""beacon_url": ?"(https://video-edge-[.\w\-/]+\.ts\?[^"]*)"#,
-            r#""beacon-url": ?"(https://video-edge-[.\w\-/]+\.ts\?[^"]*)"#,
-        ];
-
-        // Try main page first
-        if let Some(found) = Self::try_extract_spade(&text, &patterns) {
-            log::info!(
-                "get_spade_url: Found spade URL in main page: {}",
-                &found[..found.len().min(80)]
-            );
-            return Ok(found);
-        }
-        log::info!("get_spade_url: No spade URL in main page, trying settings.js...");
-
-        // Fallback: extract from settings.js
-        let re_settings = Regex::new(r#"src="(https://[\w.]+/config/settings\.[0-9a-f]{32}\.js)""#)
-            .map_err(|e| format!("Settings regex error: {}", e))?;
-
-        if let Some(caps) = re_settings.captures(&text) {
-            let settings_url = &caps[1];
-            log::info!("get_spade_url: Found settings.js: {}", settings_url);
-            match self
-                .client
-                .get(settings_url)
-                .header("User-Agent", desktop_ua)
-                .send()
-                .await
-            {
-                Ok(res_js) => {
-                    if res_js.status().is_success() {
-                        if let Ok(text_js) = res_js.text().await {
-                            if let Some(found) = Self::try_extract_spade(&text_js, &patterns) {
-                                log::info!(
-                                    "get_spade_url: Found spade URL in settings.js: {}",
-                                    &found[..found.len().min(80)]
-                                );
-                                return Ok(found);
-                            }
-                            // Log a snippet of settings.js for debugging
-                            let snippet: String = text_js.chars().take(500).collect();
-                            log::info!("get_spade_url: settings.js snippet (no match): {}", snippet);
-                        }
-                    }
-                }
-                Err(e) => return Err(format!("Failed to fetch settings.js: {}", e)),
-            }
-        }
-
-        Err("Spade URL not found in any pattern".to_string())
-    }
-
-    fn try_extract_spade(text: &str, patterns: &[&str]) -> Option<String> {
-        for pattern in patterns {
-            if let Ok(re) = Regex::new(pattern) {
-                if let Some(caps) = re.captures(text) {
-                    return Some(caps[1].to_string());
-                }
-            }
-        }
-        None
-    }
-
-    pub async fn send_spade_minute_watched(
+    pub async fn send_watch_gql(
         &self,
-        spade_url: &str,
+        store: &Arc<Store<tauri::Wry>>,
         payload_data: Value,
     ) -> Result<bool, String> {
         let json_str = serde_json::to_string(&payload_data).map_err(|e| e.to_string())?;
-        let b64_data = STANDARD.encode(json_str);
 
-        let res = self
-            .client
-            .post(spade_url)
-            .form(&[("data", b64_data)])
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(json_str.as_bytes()).map_err(|e| e.to_string())?;
+        let compressed_data = encoder.finish().map_err(|e| e.to_string())?;
 
-        let status = res.status().as_u16();
-        let success = status == 204 || status == 200;
+        let b64_data = STANDARD.encode(compressed_data);
 
-        if success {
-            log::info!("spade_ping: OK ({})", status);
-        } else {
-            log::info!(
-                "spade_ping: FAILED status {} for url {}",
-                status,
-                &spade_url[..spade_url.len().min(80)]
-            );
+        let query = "
+mutation SendEvents($input: SendSpadeEventsInput!) {
+    sendSpadeEvents(input: $input) {
+        statusCode
+    }
+}
+";
+        let vars = json!({
+            "input": {
+                "data": b64_data,
+                "repository": "twilight",
+                "encoding": "GZIP_B64"
+            }
+        });
+
+        match self.post(store, "SendEvents", query, vars).await {
+            Ok(res) => {
+                if let Some(status) = res.pointer("/data/sendSpadeEvents/statusCode") {
+                    if status.as_i64() == Some(204) {
+                        log::info!("send_watch_gql: OK (204)");
+                        return Ok(true);
+                    }
+                }
+                log::info!("send_watch_gql: Unexpected response {:?}", res);
+                Ok(false)
+            }
+            Err(e) => {
+                log::info!("send_watch_gql: FAILED with error {}", e);
+                Err(e)
+            }
         }
-
-        Ok(success)
     }
 
     /// Fetch real-time drop session progress for the current channel.

@@ -400,103 +400,50 @@ fn parse_campaign_node(camp: &Value, status: &str) -> Option<DropCampaign> {
     })
 }
 
-fn parse_drop_campaigns(inventory: &Value) -> Vec<DropCampaign> {
+fn parse_all_campaigns(global_campaigns: &Value, inventory: &Value) -> Vec<DropCampaign> {
     let mut parsed: Vec<DropCampaign> = Vec::new();
     let mut by_id: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
 
-    // 1. In-progress campaigns
-    if let Some(campaigns) = inventory
-        .pointer("/data/currentUser/inventory/dropCampaignsInProgress")
+    if let Some(campaigns) = global_campaigns
+        .pointer("/data/currentUser/dropCampaigns")
         .and_then(|v| v.as_array())
     {
         for camp in campaigns {
-            if let Some(campaign) = parse_campaign_node(camp, "ACTIVE") {
+            let status = camp.get("status").and_then(|v| v.as_str()).unwrap_or("UNKNOWN");
+            if let Some(campaign) = parse_campaign_node(camp, status) {
                 by_id.insert(campaign.id.clone(), parsed.len());
                 parsed.push(campaign);
             }
         }
     }
 
-    // 2. Available campaigns (not yet started)
-    if let Some(campaigns) = inventory
-        .pointer("/data/currentUser/inventory/viewerDropCampaigns")
-        .and_then(|v| v.as_array())
-    {
-        for camp in campaigns {
-            if let Some(campaign) = parse_campaign_node(camp, "AVAILABLE") {
-                if let Some(idx) = by_id.get(&campaign.id) {
-                    // Merge drops into existing campaign
-                    for drop in campaign.drops {
-                        if !parsed[*idx].drops.iter().any(|d| d.id == drop.id) {
-                            parsed[*idx].drops.push(drop);
+    let campaign_paths = [
+        "/data/currentUser/inventory/dropCampaignsInProgress",
+        "/data/currentUser/inventory/viewerDropCampaigns",
+    ];
+
+    for path in campaign_paths {
+        if let Some(campaigns) = inventory.pointer(path).and_then(|v| v.as_array()) {
+            for camp in campaigns {
+                let camp_id = json_id_to_string(camp.get("id")).unwrap_or_default();
+                if let Some(idx) = by_id.get(&camp_id) {
+                    if let Some(time_drops) = camp.get("timeBasedDrops").and_then(|v| v.as_array()) {
+                        for drop_json in time_drops {
+                            if let Some(parsed_drop) = parse_drop_item(drop_json) {
+                                if let Some(target_drop) = parsed[*idx].drops.iter_mut().find(|d| d.id == parsed_drop.id) {
+                                    target_drop.current_minutes = parsed_drop.current_minutes;
+                                    target_drop.is_claimed = parsed_drop.is_claimed;
+                                } else {
+                                    parsed[*idx].drops.push(parsed_drop);
+                                }
+                            }
                         }
                     }
                 } else {
-                    by_id.insert(campaign.id.clone(), parsed.len());
-                    parsed.push(campaign);
-                }
-            }
-        }
-    }
-
-    // 3. Completed drops from inventory.drops (may have been removed from inProgress)
-    if let Some(drops) = inventory
-        .pointer("/data/currentUser/inventory/drops")
-        .and_then(|v| v.as_array())
-    {
-        for drop in drops {
-            let is_claimed = drop
-                .pointer("/self/isClaimed")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let pct = drop
-                .get("percentAwarded")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0);
-            if !is_claimed && pct < 100 {
-                // Not completed yet, already handled by campaign parsing above
-                continue;
-            }
-
-            let camp_id = json_id_to_string(drop.pointer("/campaign/id")).unwrap_or_default();
-            let camp_name = drop
-                .pointer("/campaign/name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Completed Drops")
-                .to_string();
-            let game_name = drop
-                .pointer("/campaign/game/displayName")
-                .and_then(|v| v.as_str())
-                .or_else(|| drop.pointer("/campaign/game/name").and_then(|v| v.as_str()))
-                .unwrap_or("Unknown Game")
-                .to_string();
-            let game_image = drop
-                .pointer("/campaign/game/boxArtURL")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-
-            if let Some(item) = parse_drop_item(drop) {
-                if let Some(idx) = by_id.get(&camp_id) {
-                    if !parsed[*idx].drops.iter().any(|d| d.id == item.id) {
-                        parsed[*idx].drops.push(item);
+                    if let Some(campaign) = parse_campaign_node(camp, "ACTIVE") {
+                        by_id.insert(campaign.id.clone(), parsed.len());
+                        parsed.push(campaign);
                     }
-                } else {
-                    let campaign = DropCampaign {
-                        id: camp_id.clone(),
-                        name: camp_name,
-                        game_name,
-                        image_url: game_image,
-                        status: if is_claimed {
-                            "COMPLETED".to_string()
-                        } else {
-                            "READY".to_string()
-                        },
-                        start_date: String::new(),
-                        end_date: String::new(),
-                        drops: vec![item],
-                    };
-                    by_id.insert(camp_id, parsed.len());
-                    parsed.push(campaign);
                 }
             }
         }
@@ -506,118 +453,63 @@ fn parse_drop_campaigns(inventory: &Value) -> Vec<DropCampaign> {
 }
 
 fn build_mineable_candidates(
-    inventory: &Value,
+    campaigns: &[DropCampaign],
     priority_games: &[String],
     mine_all: bool,
 ) -> Vec<MineableDropCandidate> {
     let mut candidates = Vec::new();
-    let campaign_paths = [
-        "/data/currentUser/inventory/dropCampaignsInProgress",
-        "/data/currentUser/inventory/viewerDropCampaigns",
-    ];
 
-    for path in campaign_paths {
-        if let Some(campaigns) = inventory.pointer(path).and_then(|v| v.as_array()) {
-            for camp in campaigns {
-                let campaign_id = json_id_to_string(camp.get("id")).unwrap_or_default();
-                let campaign_name = camp
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Drop Campaign")
-                    .to_string();
-                let game_id = json_id_to_string(camp.pointer("/game/id")).unwrap_or_default();
-                let game_name = camp
-                    .pointer("/game/displayName")
-                    .and_then(|v| v.as_str())
-                    .or_else(|| camp.pointer("/game/name").and_then(|v| v.as_str()))
-                    .unwrap_or("Unknown Game")
-                    .to_string();
-                let end_at = camp
-                    .get("endAt")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_string();
+    for camp in campaigns {
+        if camp.id.is_empty() {
+            continue;
+        }
 
-                if campaign_id.is_empty() || game_id.is_empty() {
-                    continue;
-                }
-
-                if let Some(drops) = camp.get("timeBasedDrops").and_then(|v| v.as_array()) {
-                    for drop in drops {
-                        let is_claimed = drop
-                            .pointer("/self/isClaimed")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
-                        let current_minutes = drop
-                            .pointer("/self/currentMinutesWatched")
-                            .and_then(|v| v.as_i64())
-                            .unwrap_or(0);
-                        let required_minutes = drop
-                            .get("requiredMinutesWatched")
-                            .and_then(|v| v.as_i64())
-                            .unwrap_or(0);
-                        if is_claimed
-                            || required_minutes <= 0
-                            || current_minutes >= required_minutes
-                        {
-                            continue;
-                        }
-
-                        let drop_id = json_id_to_string(drop.get("id")).unwrap_or_else(|| {
-                            drop.get("name")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("Drop Reward")
-                                .to_string()
-                        });
-                        let drop_name = drop
-                            .get("name")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("Drop Reward")
-                            .to_string();
-                        let remaining_minutes = required_minutes - current_minutes;
-                        let percent = if required_minutes > 0 {
-                            (current_minutes * 100 / required_minutes).clamp(0, 100)
-                        } else {
-                            drop.get("percentAwarded")
-                                .and_then(|v| v.as_i64())
-                                .unwrap_or(0)
-                        };
-
-                        let mut score = 0;
-                        if priority_games
-                            .iter()
-                            .any(|game| game.eq_ignore_ascii_case(&game_name))
-                        {
-                            score += 100;
-                        }
-                        if current_minutes > 0 {
-                            score += 80;
-                        }
-                        score += (100 - remaining_minutes.min(100)).max(0);
-                        score += percent.min(100) / 2;
-
-                        if !mine_all && !priority_games.iter().any(|game| game.eq_ignore_ascii_case(&game_name)) {
-                            continue;
-                        }
-
-                        candidates.push(MineableDropCandidate {
-                            campaign_id: campaign_id.clone(),
-                            campaign_name: campaign_name.clone(),
-                            game_id: game_id.clone(),
-                            game_name: game_name.clone(),
-                            drop_id,
-                            drop_name,
-                            image_url: extract_image_url(drop),
-                            current_minutes,
-                            required_minutes,
-                            remaining_minutes,
-                            percent,
-                            end_at: end_at.clone(),
-                            score,
-                        });
-                    }
-                }
+        for drop in &camp.drops {
+            if drop.is_claimed || (drop.required_minutes > 0 && drop.current_minutes >= drop.required_minutes) {
+                continue;
             }
+
+            let remaining_minutes = if drop.required_minutes > 0 {
+                drop.required_minutes.saturating_sub(drop.current_minutes)
+            } else {
+                0
+            };
+
+            let percent = if drop.required_minutes > 0 {
+                (drop.current_minutes * 100 / drop.required_minutes).clamp(0, 100)
+            } else {
+                0
+            };
+
+            let mut score = 0;
+            if priority_games.iter().any(|game| game.eq_ignore_ascii_case(&camp.game_name)) {
+                score += 100;
+            }
+            if drop.current_minutes > 0 {
+                score += 80;
+            }
+            score += (100 - remaining_minutes.min(100)).max(0) as i64;
+            score += percent.min(100) as i64 / 2;
+
+            if !mine_all && !priority_games.iter().any(|game| game.eq_ignore_ascii_case(&camp.game_name)) {
+                continue;
+            }
+
+            candidates.push(MineableDropCandidate {
+                campaign_id: camp.id.clone(),
+                campaign_name: camp.name.clone(),
+                game_id: camp.id.clone(), // We might not have the true game ID here if game is just name, but actually global response gives game.id
+                game_name: camp.game_name.clone(),
+                drop_id: drop.id.clone(),
+                drop_name: drop.name.clone(),
+                image_url: drop.image_url.clone(),
+                current_minutes: drop.current_minutes as i64,
+                required_minutes: drop.required_minutes as i64,
+                remaining_minutes: remaining_minutes as i64,
+                percent: percent as i64,
+                end_at: camp.end_date.clone(),
+                score,
+            });
         }
     }
 
@@ -759,120 +651,42 @@ pub async fn get_drop_campaigns(app: AppHandle) -> Result<Vec<DropCampaign>, Str
         .store("config.json")
         .map_err(|e: tauri_plugin_store::Error| e.to_string())?;
     let gql = TwitchGQL::new();
+    let global_campaigns = gql.get_all_campaigns(&store).await?;
     let inventory = gql.get_inventory(&store).await?;
-    let mut campaigns = parse_drop_campaigns(&inventory);
+    let mut campaigns = parse_all_campaigns(&global_campaigns, &inventory);
 
-    let priority_games = store
+    let now = chrono::Utc::now();
+    campaigns.retain(|camp| {
+        if let Ok(end_date) = chrono::DateTime::parse_from_rfc3339(&camp.end_date) {
+            if now > end_date.with_timezone(&chrono::Utc) {
+                return false;
+            }
+        }
+        if camp.status != "ACTIVE" && camp.status != "AVAILABLE" && camp.status != "UPCOMING" {
+            return false;
+        }
+        let all_completed = !camp.drops.is_empty() && camp.drops.iter().all(|d| d.is_claimed || (d.required_minutes > 0 && d.current_minutes >= d.required_minutes));
+        if all_completed {
+            return false;
+        }
+        true
+    });
+
+    let app_config = store
         .get("app_config")
         .and_then(|value| serde_json::from_value::<crate::models::AppConfig>(value).ok())
-        .map(|config| config.priorities.games)
         .unwrap_or_default();
 
-    for game_name in priority_games {
-        let already_has_game = campaigns
-            .iter()
-            .any(|campaign| campaign.game_name.eq_ignore_ascii_case(&game_name));
-        if already_has_game {
-            continue;
-        }
+    let priority_games = app_config.priorities.games;
+    let mine_all = app_config.settings.mine_all_inventory;
 
-        log::info!("get_drop_campaigns: checking configured game {}", game_name);
-        let search = match gql.search_games(&store, &game_name).await {
-            Ok(value) => value,
-            Err(e) => {
-                log::info!(
-                    "get_drop_campaigns: game search failed for {}: {}",
-                    game_name, e
-                );
-                continue;
-            }
-        };
-
-        let game_id = json_id_to_string(search.pointer("/data/searchFor/games/edges/0/item/id"));
-        let Some(ref game_id) = game_id else {
-            log::info!("get_drop_campaigns: no game id found for {}", game_name);
-            continue;
-        };
-
-        let streams = match gql.get_live_streams(&store, game_id).await {
-            Ok(value) => value,
-            Err(e) => {
-                log::info!(
-                    "get_drop_campaigns: live streams failed for {}: {}",
-                    game_name, e
-                );
-                continue;
-            }
-        };
-
-        if let Some(edges) = streams
-            .pointer("/data/game/streams/edges")
-            .and_then(|v| v.as_array())
-        {
-            for edge in edges {
-                let tags = edge.pointer("/node/tags").and_then(|v| v.as_array());
-                let freeform_tags = edge
-                    .pointer("/node/freeformTags")
-                    .and_then(|v| v.as_array());
-                let has_drops_tag = tags
-                    .map(|t| {
-                        t.iter().any(|tag| {
-                            tag.get("id").and_then(|id| id.as_str())
-                                == Some("c2542d6d-cd10-4532-919b-3d19f30a768b")
-                        })
-                    })
-                    .unwrap_or(false)
-                    || freeform_tags
-                        .map(|t| {
-                            t.iter().any(|tag| {
-                                tag.get("name").and_then(|name| name.as_str())
-                                    == Some("DropsEnabled")
-                            })
-                        })
-                        .unwrap_or(false);
-
-                if !has_drops_tag {
-                    continue;
-                }
-
-                let channel_id = json_id_to_string(edge.pointer("/node/broadcaster/id"));
-                let Some(ref channel_id) = channel_id else {
-                    continue;
-                };
-
-                let available = match gql.get_available_drops(&store, channel_id).await {
-                    Ok(value) => value,
-                    Err(e) => {
-                        log::info!(
-                            "get_drop_campaigns: available drops failed for {}: {}",
-                            game_name, e
-                        );
-                        continue;
-                    }
-                };
-
-                let found = parse_available_campaigns(&available, &game_name);
-                for campaign in found {
-                    if campaign.game_name.eq_ignore_ascii_case(&game_name)
-                        && !campaign_exists(&campaigns, &campaign)
-                    {
-                        campaigns.push(campaign);
-                    }
-                }
-
-                if campaigns
-                    .iter()
-                    .any(|campaign| campaign.game_name.eq_ignore_ascii_case(&game_name))
-                {
-                    break;
-                }
-            }
-        }
+    if !mine_all {
+        campaigns.retain(|c| priority_games.iter().any(|g| g.eq_ignore_ascii_case(&c.game_name)));
     }
 
-    log::info!("get_drop_campaigns: found {} campaigns", campaigns.len());
     Ok(campaigns)
 }
+
 
 #[derive(Clone)]
 struct TargetStream {
@@ -889,6 +703,7 @@ struct TargetStream {
 pub async fn start_miner(
     app: AppHandle,
     state: tauri::State<'_, Arc<Mutex<MinerState>>>,
+    auto_start_check: Option<bool>,
 ) -> Result<(), String> {
     let mut s = state.lock().await;
     if s.is_running {
@@ -911,7 +726,9 @@ pub async fn start_miner(
     };
 
     let handle = tokio::spawn(async move {
+        let mut current_auto_start = auto_start_check.unwrap_or(false);
         let gql = TwitchGQL::new();
+        log::info!("start_miner: background thread started");
         let mut active_streams: Vec<TargetStream> = Vec::new();
 
         loop {
@@ -977,6 +794,15 @@ pub async fn start_miner(
 
                 active_streams.clear();
 
+                let global_campaigns = match gql.get_all_campaigns(&store).await {
+                    Ok(val) => val,
+                    Err(e) => {
+                        log::info!("start_miner: global campaigns error: {}", e);
+                        { let jitter = rand::thread_rng().gen_range(1..=10); tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await; }
+                        continue;
+                    }
+                };
+
                 let inventory = match gql.get_inventory(&store).await {
                     Ok(inventory) => {
                         check_and_claim_drops(&gql, &store, &uid, &inventory, &app_clone).await;
@@ -989,18 +815,49 @@ pub async fn start_miner(
                     }
                 };
 
+                let mut campaigns = parse_all_campaigns(&global_campaigns, &inventory);
+
+                let now = chrono::Utc::now();
+                campaigns.retain(|camp| {
+                    if let Ok(end_date) = chrono::DateTime::parse_from_rfc3339(&camp.end_date) {
+                        if now > end_date.with_timezone(&chrono::Utc) {
+                            return false;
+                        }
+                    }
+                    if camp.status != "ACTIVE" && camp.status != "AVAILABLE" && camp.status != "UPCOMING" {
+                        return false;
+                    }
+                    let all_completed = !camp.drops.is_empty() && camp.drops.iter().all(|d| d.is_claimed || (d.required_minutes > 0 && d.current_minutes >= d.required_minutes));
+                    if all_completed {
+                        return false;
+                    }
+                    true
+                });
+
                 let mine_all = app_config.settings.mine_all_inventory;
 
                 if !mine_all && priority_games.is_empty() {
+                    log::info!("start_miner: No priority games configured.");
                     let mut s_guard = state_clone.lock().await;
-                    let mut new_status = s_guard.status.clone();
-                    new_status.status = "No config".to_string();
-                    s_guard.update_and_notify(&app_clone, new_status);
-                    { let jitter = rand::thread_rng().gen_range(1..=10); tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await; }
+                    s_guard.status.status = "No priority games configured.".to_string();
+                    
+                    if current_auto_start {
+                        s_guard.status.status = "Idle (Auto-start: No priority games)".to_string();
+                        s_guard.status.is_running = false;
+                        s_guard.is_running = false;
+                        let s = s_guard.status.clone();
+                        s_guard.update_and_notify(&app_clone, s);
+                        break;
+                    }
+                    
+                    let s = s_guard.status.clone();
+                    s_guard.update_and_notify(&app_clone, s);
+                    drop(s_guard);
+                    tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
                     continue;
                 }
 
-                let candidates = build_mineable_candidates(&inventory, &priority_games, mine_all);
+                let candidates = build_mineable_candidates(&campaigns, &priority_games, mine_all);
 
                 for candidate in candidates {
                     if active_streams
@@ -1136,8 +993,14 @@ pub async fn start_miner(
                     {
                         let mut s_guard = state_clone.lock().await;
                         let mut new_status = s_guard.status.clone();
-                        new_status.status =
-                            "No eligible live channel for active drops.".to_string();
+                        
+                        if current_auto_start {
+                            new_status.status = "Idle (Auto-start: Nothing to mine)".to_string();
+                            new_status.is_running = false;
+                            s_guard.is_running = false;
+                        } else {
+                            new_status.status = "No eligible live channel for active drops.".to_string();
+                        }
 
                         new_status.current_streamer = None;
                         new_status.current_drop = None;
@@ -1145,9 +1008,15 @@ pub async fn start_miner(
                         new_status.active_drops = Vec::new();
                         s_guard.update_and_notify(&app_clone, new_status);
                     }
+                    if current_auto_start {
+                        break;
+                    }
                     { let jitter = rand::thread_rng().gen_range(1..=10); tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await; }
                     continue;
                 }
+                
+                // We successfully found a stream to mine, so we are no longer in the startup check
+                current_auto_start = false;
 
                 // We have active streams, start the mining loop for them
                 let mut loop_count = 15;
@@ -1242,6 +1111,7 @@ pub async fn start_miner(
                             .get_drop_current_session(&store, &stream.channel_id)
                             .await
                         {
+                            let _ = std::fs::write("D:\\Devs\\TwitchMiner\\session.json", session_res.to_string());
                             if let Some(session) =
                                 session_res.pointer("/data/currentUser/dropCurrentSession")
                             {
@@ -1254,21 +1124,20 @@ pub async fn start_miner(
                                     .and_then(|v| v.as_i64())
                                     .unwrap_or(0);
                                 let drop_id_rt = session
-                                    .pointer("/drop/id")
+                                    .get("dropID")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("")
                                     .to_string();
-                                let drop_name_rt =
-                                    session.pointer("/drop/name").and_then(|v| v.as_str());
+
+                                let mut s_guard = state_clone.lock().await;
+                                let mut new_status = s_guard.status.clone();
+                                new_status.status = format!("RT: {}", drop_id_rt);
 
                                 if req > 0 {
                                     let pct = (cur as f64 / req as f64 * 100.0).min(100.0);
-                                    let mut s_guard = state_clone.lock().await;
-                                    let mut new_status = s_guard.status.clone();
                                     if let Some(existing) =
                                         new_status.active_drops.iter_mut().find(|d| {
                                             d.id == drop_id_rt
-                                                || drop_name_rt.map_or(false, |n| d.name == n)
                                         })
                                     {
                                         existing.current_minutes = cur;
@@ -1282,6 +1151,8 @@ pub async fn start_miner(
                                         new_status.progress = (total_cur as f64 / total_req as f64 * 100.0).min(100.0);
                                     }
 
+                                    s_guard.update_and_notify(&app_clone, new_status);
+                                } else {
                                     s_guard.update_and_notify(&app_clone, new_status);
                                 }
                             }

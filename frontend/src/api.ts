@@ -22,14 +22,14 @@ export const api = {
   logout: () => invoke<void>('logout'),
 
   getStatus: () => invoke<MinerStatus>('get_status'),
-  startMiner: () => invoke<void>('start_miner'),
+  startMiner: (auto_start_check?: boolean) => invoke<void>('start_miner', { autoStartCheck: auto_start_check }),
   stopMiner: () => invoke<void>('stop_miner'),
   getDropCampaigns: () => invoke<DropCampaign[]>('get_drop_campaigns'),
   getClaimedDrops: () => invoke<DropItem[]>('get_claimed_drops'),
   claimDrop: (dropId: string) => invoke<unknown>('claim_drop_cmd', { dropId }),
 
   getStreakMinerStatus: () => invoke<StreakMinerStatus>('get_streak_miner_status'),
-  startStreakMiner: () => invoke<void>('start_streak_miner'),
+  startStreakMiner: (auto_start_check?: boolean) => invoke<void>('start_streak_miner', { autoStartCheck: auto_start_check }),
   stopStreakMiner: () => invoke<void>('stop_streak_miner'),
 
   getConfig: () => invoke<AppConfig>('get_config'),

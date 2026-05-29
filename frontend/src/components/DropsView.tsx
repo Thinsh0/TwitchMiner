@@ -71,6 +71,11 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
     return acc;
   }, {});
 
+  const emptyGames = priorityGames.filter(game =>
+    !Object.keys(campaignsByGame).some(k => k.toLowerCase() === game.toLowerCase()) &&
+    game.toLowerCase().includes(search.toLowerCase())
+  );
+
   const toggleGame = (gameName: string) => {
     setCollapsedGames(prev => ({
       ...prev,
@@ -199,9 +204,9 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
             Loading campaigns...
           </CardContent>
         </Card>
-      ) : dropCampaigns.length > 0 ? (
-        Object.keys(campaignsByGame).length > 0 ? (
-          Object.entries(campaignsByGame).map(([gameName, gameCampaigns]) => (
+      ) : Object.keys(campaignsByGame).length > 0 || emptyGames.length > 0 ? (
+        <>
+          {Object.entries(campaignsByGame).map(([gameName, gameCampaigns]) => (
             <GameCampaignGroup
               key={gameName}
               gameName={gameName}
@@ -215,47 +220,44 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
               onClaimSuccess={fetchCampaigns}
               currentDropName={dropStatus.current_drop}
             />
-          ))
-        ) : (
-          <Card className="bg-black/40 border-white/10">
-            <CardContent className="p-8 text-center text-zinc-500">
-              <Search className="w-10 h-10 mx-auto mb-3 opacity-20" />
-              No campaigns match your search.
-            </CardContent>
-          </Card>
-        )
-      ) : priorityGames.length > 0 ? (
-            <>
-              {priorityGames.map((game, i) => (
-                <Card key={i} className="bg-black/40 border-white/10">
-                  <CardContent className="p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-500/40 to-blue-500/40 flex items-center justify-center text-white font-bold">
-                        {game.charAt(0)}
-                      </div>
-                      <div>
-                        <div className="text-white font-medium">{game}</div>
-                        <div className="text-xs text-zinc-500">Checking for active campaigns...</div>
-                      </div>
-                    </div>
-                    <Badge variant="secondary" className="bg-zinc-800 text-zinc-400">
-                      No active drops
-                    </Badge>
-                  </CardContent>
-                </Card>
-              ))}
-            </>
-          ) : (
-            <Card className="bg-black/40 border-white/10">
-              <CardContent className="p-8 text-center">
-                <Package className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
-                <p className="text-zinc-400">No games configured.</p>
-                <p className="text-sm text-zinc-500 mt-2">
-                  Go to Settings → Priorities to add games.
-                </p>
+          ))}
+          {emptyGames.map((game, i) => (
+            <Card key={`empty-${i}`} className="bg-black/40 border-white/10">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-500/40 to-blue-500/40 flex items-center justify-center text-white font-bold">
+                    {game.charAt(0)}
+                  </div>
+                  <div>
+                    <div className="text-white font-medium">{game}</div>
+                    <div className="text-xs text-zinc-500">Checking for active campaigns...</div>
+                  </div>
+                </div>
+                <Badge variant="secondary" className="bg-zinc-800 text-zinc-400">
+                  No active drops
+                </Badge>
               </CardContent>
             </Card>
-          )}
+          ))}
+        </>
+      ) : priorityGames.length === 0 && search.trim() === '' ? (
+        <Card className="bg-black/40 border-white/10">
+          <CardContent className="p-8 text-center">
+            <Package className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
+            <p className="text-zinc-400">No games configured.</p>
+            <p className="text-sm text-zinc-500 mt-2">
+              Go to Settings → Priorities to add games.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="bg-black/40 border-white/10">
+          <CardContent className="p-8 text-center text-zinc-500">
+            <Search className="w-10 h-10 mx-auto mb-3 opacity-20" />
+            No campaigns match your search.
+          </CardContent>
+        </Card>
+      )}
       </div>
   );
 }

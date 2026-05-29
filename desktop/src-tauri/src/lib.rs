@@ -19,10 +19,35 @@ async fn check_auth_status(app: AppHandle) -> Result<bool, String> {
     let store = app
         .store("config.json")
         .map_err(|e: tauri_plugin_store::Error| e.to_string())?;
-    Ok(store
+    
+    let store_arc = std::sync::Arc::new(store);
+    
+    let has_token = store_arc
         .get("access_token")
         .and_then(|token| token.as_str().map(|value| !value.trim().is_empty()))
-        .unwrap_or(false))
+        .unwrap_or(false);
+        
+    if !has_token {
+        return Ok(false);
+    }
+    
+    match auth::validate_access_token(&store_arc).await {
+        Ok(true) => Ok(true),
+        Ok(false) => {
+            // Invalid token, try to refresh
+            if let Err(e) = auth::refresh_access_token(&store_arc).await {
+                log::error!("Token validation failed, and refresh failed: {}", e);
+                Ok(false)
+            } else {
+                log::info!("Token validation failed, but refresh succeeded.");
+                Ok(true)
+            }
+        },
+        Err(e) => {
+            log::warn!("Network error during token validation: {}. Assuming token is still valid.", e);
+            Ok(true)
+        }
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

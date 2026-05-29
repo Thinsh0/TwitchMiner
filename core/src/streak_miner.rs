@@ -44,6 +44,7 @@ impl StreakMinerState {
 pub async fn start_streak_miner(
     app: AppHandle,
     state: tauri::State<'_, Arc<Mutex<StreakMinerState>>>,
+    auto_start_check: Option<bool>,
 ) -> Result<(), String> {
     let mut s = state.lock().await;
     if s.is_running {
@@ -65,6 +66,7 @@ pub async fn start_streak_miner(
     };
 
     let handle = tokio::spawn(async move {
+        let mut current_auto_start = auto_start_check.unwrap_or(false);
         let gql = TwitchGQL::new();
 
         loop {
@@ -110,14 +112,33 @@ pub async fn start_streak_miner(
             let max_concurrent = get_max_concurrent(&store);
 
             if channels.is_empty() {
-                {
-                    let mut s_guard = state_clone.lock().await;
-                    let mut new_status = s_guard.status.clone();
-                    new_status.status = "No config".to_string();
-                    s_guard.update_and_notify(&app_clone, new_status);
+                if current_auto_start {
+                    {
+                        let mut s_guard = state_clone.lock().await;
+                        let mut new_status = s_guard.status.clone();
+                        new_status.status = "Idle (No channels configured)".to_string();
+                        s_guard.is_running = false;
+                        s_guard.update_and_notify(&app_clone, new_status);
+                    }
+                    break;
+                } else {
+                    {
+                        let mut s_guard = state_clone.lock().await;
+                        let mut new_status = s_guard.status.clone();
+                        new_status.status = "No config".to_string();
+                        s_guard.update_and_notify(&app_clone, new_status);
+                    }
+                    for _ in 0..30 {
+                        {
+                            let s_guard = state_clone.lock().await;
+                            if !s_guard.is_running {
+                                break;
+                            }
+                        }
+                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    }
+                    continue;
                 }
-                tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
-                continue;
             }
 
             // Get user info
@@ -176,14 +197,29 @@ pub async fn start_streak_miner(
                 }
             }
 
-            // Update cycle count and wait for next cycle
+            let mut any_watching = false;
             {
                 let mut s_guard = state_clone.lock().await;
                 let mut new_status = s_guard.status.clone();
                 new_status.cycle_count += 1;
-                new_status.status = "Waiting for next cycle...".to_string();
+                
+                any_watching = new_status.channels_info.iter().any(|c| c.status == "Watching");
+
+                if current_auto_start && !any_watching {
+                    new_status.status = "Idle (Auto-start: None live)".to_string();
+                    s_guard.is_running = false;
+                } else {
+                    new_status.status = "Waiting for next cycle...".to_string();
+                }
+                
                 s_guard.update_and_notify(&app_clone, new_status);
             }
+
+            if current_auto_start && !any_watching {
+                break;
+            }
+            
+            current_auto_start = false;
 
             for _ in 0..check_interval {
                 {

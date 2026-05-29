@@ -251,6 +251,12 @@ impl TwitchGQL {
         self.post_persisted(store, "Inventory", sha256, vars).await
     }
 
+    pub async fn get_all_campaigns(&self, store: &Arc<Store<tauri::Wry>>) -> Result<Value, String> {
+        let sha256 = "5a4da2ab3d5b47c9f9ce864e727b2cb346af1e3ea8b897fe8f704a97ff017619";
+        let vars = json!({ "fetchRewardCampaigns": false });
+        self.post_persisted(store, "ViewerDropsDashboard", sha256, vars).await
+    }
+
     pub async fn get_user_info(&self, store: &Arc<Store<tauri::Wry>>) -> Result<Value, String> {
         let query =
             "query UserInfo { currentUser { id login displayName profileImageURL(width: 50) } }";

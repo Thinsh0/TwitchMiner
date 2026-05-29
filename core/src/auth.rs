@@ -4,7 +4,7 @@ use serde_json::json;
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
 
-const CLIENT_ID: &str = "kimne78kx3ncx6brgo4mv6wki5h1ko"; // Typical Switch/Web Client ID
+const CLIENT_ID: &str = "kd1unb4b3q4t58fwlpcbzcbnm76a8fp"; // Twitch Android App Client ID
 const SCOPES: &str = "openid user:read:email";
 
 #[tauri::command]
@@ -163,11 +163,41 @@ pub async fn refresh_access_token(
 
         Ok(())
     } else {
+        let status = res.status();
         let text = res.text().await.unwrap_or_default();
-        store.delete("access_token");
-        store.delete("refresh_token");
-        let _ = store.save();
-        Err(format!("Failed to refresh token: {}", text))
+        if status.as_u16() == 400 || status.as_u16() == 401 {
+            store.delete("access_token");
+            store.delete("refresh_token");
+            let _ = store.save();
+        }
+        Err(format!("Failed to refresh token ({}): {}", status, text))
+    }
+}
+
+pub async fn validate_access_token(
+    store: &std::sync::Arc<tauri_plugin_store::Store<tauri::Wry>>,
+) -> Result<bool, String> {
+    let access_token = match store.get("access_token") {
+        Some(v) => match v.as_str() {
+            Some(s) => s.to_string(),
+            None => return Ok(false),
+        },
+        None => return Ok(false),
+    };
+
+    let client = Client::new();
+    let res = client
+        .get("https://id.twitch.tv/oauth2/validate")
+        .header("Authorization", format!("OAuth {}", access_token))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if res.status().is_success() {
+        Ok(true)
+    } else {
+        log::info!("Token validation failed with status {}", res.status());
+        Ok(false)
     }
 }
 

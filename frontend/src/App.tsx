@@ -243,11 +243,11 @@ function App() {
         if (!config) return
         if (config.settings?.auto_start_drops) {
           const current = await api.getStatus()
-          if (!current.is_running) await api.startMiner()
+          if (!current.is_running) await api.startMiner(true)
         }
         if (config.bonus?.daily_streaks?.auto_start || config.bonus?.points_farming?.auto_start) {
           const s = await api.getStreakMinerStatus()
-          if (s.status === 'Idle' || s.status === 'Stopped') await api.startStreakMiner()
+          if (s.status === 'Idle' || s.status === 'Stopped') await api.startStreakMiner(true)
         }
       }).catch(console.error)
     } else {
@@ -365,12 +365,12 @@ function App() {
   }
 
   return (
-    <div className="h-screen bg-black/95 text-white flex flex-col md:flex-row relative overflow-hidden font-sans">
+    <div className="h-screen bg-background text-foreground flex flex-col md:flex-row relative overflow-hidden font-sans">
       <Toaster richColors position="top-right" />
       <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-purple-900/20 to-transparent pointer-events-none" />
 
       {/* Top Header for Mobile */}
-      <header className="md:hidden flex h-16 items-center justify-between px-6 bg-black/40 border-b border-white/10 backdrop-blur-xl shrink-0 relative z-10" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+      <header className="md:hidden flex h-16 items-center justify-between px-6 bg-background/40 border-b border-border backdrop-blur-xl shrink-0 relative z-10" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <h1 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-400">
           Twitch Miner
         </h1>
@@ -379,7 +379,7 @@ function App() {
             <img src={userInfo.profileImageURL} alt={userInfo.displayName} className="w-8 h-8 rounded-full border border-purple-500/50" />
             <button
               onClick={() => setLogoutConfirmOpen(true)}
-              className="text-xs text-zinc-400 hover:text-white px-2 py-1 bg-white/5 border border-white/10 rounded-md transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 bg-white/5 dark:bg-white/5 border border-border rounded-md transition-colors"
             >
               Logout
             </button>
@@ -388,9 +388,9 @@ function App() {
       </header>
 
       {/* Sidebar Navigation (Desktop) */}
-      <aside className="hidden md:flex w-64 bg-black/40 border-r border-white/10 backdrop-blur-xl flex-col relative z-10">
+      <aside className="hidden md:flex w-64 bg-background/40 border-r border-border backdrop-blur-xl flex-col relative z-10">
         {/* Logo */}
-        <div className="p-6 border-b border-white/10">
+        <div className="p-6 border-b border-border">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-400">
@@ -416,8 +416,8 @@ function App() {
                 key={item.id}
                 onClick={() => setActiveView(item.id)}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${isActive
-                  ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                  ? 'bg-purple-600/20 text-purple-600 dark:text-purple-400 border border-purple-500/30'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
                 }`}
               >
                 <Icon className="w-5 h-5" />
@@ -434,13 +434,13 @@ function App() {
         </nav>
 
         {/* Status Footer */}
-        <div className="p-4 border-t border-white/10">
+        <div className="p-4 border-t border-border">
           {userInfo && (
-            <div className="flex items-center gap-3 mb-4 p-2 bg-white/5 rounded-lg border border-white/5">
+            <div className="flex items-center gap-3 mb-4 p-2 bg-black/5 dark:bg-white/5 rounded-lg border border-border">
               <img src={userInfo.profileImageURL} alt={userInfo.displayName} className="w-8 h-8 rounded-full" />
               <div className="flex flex-col min-w-0">
-                <span className="text-sm font-semibold text-white truncate">{userInfo.displayName}</span>
-                <span className="text-xs text-zinc-400 truncate">@{userInfo.login}</span>
+                <span className="text-sm font-semibold text-foreground truncate">{userInfo.displayName}</span>
+                <span className="text-xs text-muted-foreground truncate">@{userInfo.login}</span>
               </div>
             </div>
           )}
@@ -468,7 +468,7 @@ function App() {
             variant="outline"
             size="sm"
             onClick={() => setLogoutConfirmOpen(true)}
-            className="mt-4 w-full border-white/10 text-zinc-400 hover:text-white hover:bg-white/5"
+            className="mt-4 w-full border-border text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
           >
             Logout
           </Button>
@@ -493,7 +493,7 @@ function App() {
       </main>
 
       {/* Bottom Navigation (Mobile) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-zinc-950/80 border-t border-white/10 backdrop-blur-2xl flex justify-around items-center z-20 pb-safe" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-background/80 border-t border-border backdrop-blur-2xl flex justify-around items-center z-20 pb-safe" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         {navItems.map((item) => {
           const Icon = item.icon
           const isActive = activeView === item.id
@@ -501,7 +501,7 @@ function App() {
             <button
               key={item.id}
               onClick={() => setActiveView(item.id)}
-              className={`flex flex-col items-center justify-center flex-1 h-full py-1 text-[10px] font-medium transition-colors relative ${isActive ? 'text-purple-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+              className={`flex flex-col items-center justify-center flex-1 h-full py-1 text-[10px] font-medium transition-colors relative ${isActive ? 'text-purple-600 dark:text-purple-400' : 'text-muted-foreground hover:text-foreground'}`}
             >
               <Icon className="w-5 h-5 mb-0.5" />
               <span>{item.label}</span>
@@ -518,15 +518,15 @@ function App() {
 
       {/* Logout Confirmation Dialog */}
       <AlertDialog open={logoutConfirmOpen} onOpenChange={setLogoutConfirmOpen}>
-        <AlertDialogContent className="bg-zinc-950 border-white/10 text-white">
+        <AlertDialogContent className="bg-background border-border text-foreground">
           <AlertDialogHeader>
             <AlertDialogTitle>Log out?</AlertDialogTitle>
-            <AlertDialogDescription className="text-zinc-400">
+            <AlertDialogDescription className="text-muted-foreground">
               This will stop all active miners and disconnect your Twitch account.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="border-white/10 bg-transparent text-zinc-400 hover:text-white hover:bg-white/5">Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="border-border bg-transparent text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5">Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleLogout}
               className="bg-red-600 hover:bg-red-700 text-white"

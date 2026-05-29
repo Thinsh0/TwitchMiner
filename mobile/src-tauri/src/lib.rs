@@ -6,7 +6,7 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 
-
+mod wakelock;
 
 #[tauri::command]
 async fn get_status(
@@ -173,6 +173,7 @@ impl tauri_plugin_background_service::BackgroundService<tauri::Wry> for TwitchMi
 
     async fn run(&mut self, ctx: &tauri_plugin_background_service::ServiceContext<tauri::Wry>) -> Result<(), tauri_plugin_background_service::ServiceError> {
         log::info!("TwitchMinerService background run loop started.");
+        let _ = crate::wakelock::acquire_wakelock();
         
         let app = ctx.app.clone();
         
@@ -181,14 +182,14 @@ impl tauri_plugin_background_service::BackgroundService<tauri::Wry> for TwitchMi
             Some(state) => state,
             None => {
                 log::error!("MinerState is not managed yet, aborting background service.");
-                return Err(tauri_plugin_background_service::ServiceError::Init("MinerState not managed".into()));
+                return Ok(());
             }
         };
         let streak_miner_state = match app.try_state::<Arc<Mutex<StreakMinerState>>>() {
             Some(state) => state,
             None => {
                 log::error!("StreakMinerState is not managed yet, aborting background service.");
-                return Err(tauri_plugin_background_service::ServiceError::Init("StreakMinerState not managed".into()));
+                return Ok(());
             }
         };
         
@@ -210,9 +211,30 @@ impl tauri_plugin_background_service::BackgroundService<tauri::Wry> for TwitchMi
                     }
                 }
             }
-            
-            let _ = miner::start_miner(app.clone(), miner_state.clone()).await;
-            let _ = streak_miner::start_streak_miner(app.clone(), streak_miner_state.clone()).await;
+            if let Ok(store) = app.store("config.json") {
+                let app_config: twitch_miner_core::models::AppConfig = store
+                    .get("app_config")
+                    .and_then(|value| serde_json::from_value(value).ok())
+                    .unwrap_or_default();
+                    
+                if app_config.settings.auto_start_drops {
+                    log::info!("Auto-starting drops miner in background...");
+                    let _ = miner::start_miner(app.clone(), miner_state.clone(), Some(true)).await;
+                } else {
+                    log::info!("Auto-start drops is disabled, not starting drops miner.");
+                }
+                
+                if app_config.bonus.daily_streaks.auto_start || app_config.bonus.points_farming.auto_start {
+                    log::info!("Auto-starting streak miner in background...");
+                    let _ = streak_miner::start_streak_miner(app.clone(), streak_miner_state.clone(), Some(true)).await;
+                } else {
+                    log::info!("Auto-start streak is disabled, not starting streak miner.");
+                }
+            } else {
+                log::info!("Failed to load config, falling back to unconditional start with abort checks.");
+                let _ = miner::start_miner(app.clone(), miner_state.clone(), Some(true)).await;
+                let _ = streak_miner::start_streak_miner(app.clone(), streak_miner_state.clone(), Some(true)).await;
+            }
         } else {
             log::info!("User is not authenticated, background miners did not start.");
         }
@@ -221,6 +243,7 @@ impl tauri_plugin_background_service::BackgroundService<tauri::Wry> for TwitchMi
         tokio::select! {
             _ = ctx.shutdown.cancelled() => {
                 log::info!("TwitchMinerService background service cancelled.");
+                let _ = crate::wakelock::release_wakelock();
             }
         }
         
@@ -271,3 +294,4 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+

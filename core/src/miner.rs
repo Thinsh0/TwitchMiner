@@ -1286,3 +1286,209 @@ pub async fn stop_miner(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_find_live_drop_progress() {
+        let inventory = json!({
+            "data": {
+                "currentUser": {
+                    "inventory": {
+                        "dropCampaignsInProgress": [
+                            {
+                                "id": "camp1",
+                                "timeBasedDrops": [
+                                    {
+                                        "id": "drop1",
+                                        "self": {
+                                            "currentMinutesWatched": 45
+                                        },
+                                        "requiredMinutesWatched": 60
+                                    }
+                                ]
+                            }
+                        ],
+                        "viewerDropCampaigns": [
+                            {
+                                "id": "camp2",
+                                "timeBasedDrops": [
+                                    {
+                                        "id": "drop2",
+                                        "self": {
+                                            "currentMinutesWatched": 10
+                                        },
+                                        "requiredMinutesWatched": 120
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            }
+        });
+
+        assert_eq!(find_live_drop_progress(&inventory, "drop1"), Some((45, 60)));
+        assert_eq!(find_live_drop_progress(&inventory, "drop2"), Some((10, 120)));
+        assert_eq!(find_live_drop_progress(&inventory, "non_existent"), None);
+    }
+
+    #[test]
+    fn test_resolve_claim_id() {
+        let inventory = json!({
+            "data": {
+                "currentUser": {
+                    "inventory": {
+                        "drops": [
+                            {
+                                "id": "drop1",
+                                "self": {
+                                    "dropInstanceID": "instance1"
+                                }
+                            },
+                            {
+                                "id": "drop2",
+                                "campaign": {
+                                    "id": "camp1"
+                                }
+                            }
+                        ],
+                        "dropCampaignsInProgress": [
+                            {
+                                "id": "camp_in_progress",
+                                "timeBasedDrops": [
+                                    {
+                                        "id": "drop_in_progress",
+                                        "self": {
+                                            "dropInstanceID": "instance_in_progress"
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        "viewerDropCampaigns": [
+                            {
+                                "id": "camp_viewer",
+                                "timeBasedDrops": [
+                                    {
+                                        "id": "drop_viewer",
+                                        "campaign": {
+                                            "id": "camp_viewer"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            }
+        });
+
+        // 1. Found in drops list with instance id
+        let (id1, _) = resolve_claim_id(&inventory, "drop1", "user123").unwrap();
+        assert_eq!(id1, "instance1");
+
+        // 2. Found in drops list with compound id fallback
+        let (id2, _) = resolve_claim_id(&inventory, "drop2", "user123").unwrap();
+        assert_eq!(id2, "user123#camp1#drop2");
+
+        // 3. Found in progress with instance id
+        let (id3, _) = resolve_claim_id(&inventory, "drop_in_progress", "user123").unwrap();
+        assert_eq!(id3, "instance_in_progress");
+
+        // 4. Found in viewer drop campaign with compound id fallback
+        let (id4, _) = resolve_claim_id(&inventory, "drop_viewer", "user123").unwrap();
+        assert_eq!(id4, "user123#camp_viewer#drop_viewer");
+
+        // 5. Not found
+        assert!(resolve_claim_id(&inventory, "not_found", "user123").is_none());
+    }
+
+    #[test]
+    fn test_summarize_active_drops() {
+        let active = vec![
+            ("camp1".to_string(), "drop1".to_string(), Some("Drop 1".to_string()), 30, 60, 50),
+            ("camp1".to_string(), "drop2".to_string(), Some("Drop 2".to_string()), 10, 100, 10),
+        ];
+
+        let (curr_drop, _image, progress, total_current, total_required, min_remaining, list) = summarize_active_drops(&active);
+        assert_eq!(curr_drop, Some("2 drops actifs en cours".to_string()));
+        assert_eq!(progress, 25.0); // (30+10)/(60+100) = 40/160 = 25%
+        assert_eq!(total_current, 40);
+        assert_eq!(total_required, 160);
+        assert_eq!(min_remaining, 30); // min of (60-30)=30 and (100-10)=90 is 30
+        assert_eq!(list.len(), 2);
+    }
+
+    #[test]
+    fn test_build_mineable_candidates() {
+        use crate::models::DropItem;
+        
+        let campaign_game1 = DropCampaign {
+            id: "camp1".to_string(),
+            name: "Camp 1".to_string(),
+            game_id: "game1_id".to_string(),
+            game_name: "Game 1".to_string(),
+            end_date: "end_date".to_string(),
+            drops: vec![
+                DropItem {
+                    id: "drop1".to_string(),
+                    name: "Drop 1".to_string(),
+                    image_url: Some("url1".to_string()),
+                    current_minutes: 10,
+                    required_minutes: 60,
+                    is_claimed: false,
+                    ..Default::default()
+                },
+                DropItem {
+                    id: "drop2".to_string(),
+                    name: "Drop 2".to_string(),
+                    image_url: Some("url2".to_string()),
+                    current_minutes: 60,
+                    required_minutes: 60,
+                    is_claimed: false,
+                    ..Default::default()
+                }
+            ],
+            ..Default::default()
+        };
+
+        let campaign_game2 = DropCampaign {
+            id: "camp2".to_string(),
+            name: "Camp 2".to_string(),
+            game_id: "game2_id".to_string(),
+            game_name: "Game 2".to_string(),
+            end_date: "end_date".to_string(),
+            drops: vec![
+                DropItem {
+                    id: "drop3".to_string(),
+                    name: "Drop 3".to_string(),
+                    image_url: Some("url3".to_string()),
+                    current_minutes: 0,
+                    required_minutes: 30,
+                    is_claimed: false,
+                    ..Default::default()
+                }
+            ],
+            ..Default::default()
+        };
+
+        let campaigns = vec![campaign_game1, campaign_game2];
+
+        // 1. Mine all: false, Priority game: "Game 1"
+        let candidates_pri = build_mineable_candidates(&campaigns, &["Game 1".to_string()], false);
+        assert_eq!(candidates_pri.len(), 1);
+        assert_eq!(candidates_pri[0].drop_id, "drop1");
+
+        // 2. Mine all: true, Priority game: "Game 1"
+        let candidates_all = build_mineable_candidates(&campaigns, &["Game 1".to_string()], true);
+        assert_eq!(candidates_all.len(), 2);
+        // drop1 should have higher score than drop3 because drop1 has priority game and some minutes watched
+        assert_eq!(candidates_all[0].drop_id, "drop1");
+        assert_eq!(candidates_all[1].drop_id, "drop3");
+    }
+}
+
+

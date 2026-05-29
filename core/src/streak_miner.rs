@@ -2,7 +2,7 @@ use crate::api::TwitchGQL;
 use crate::models::ChannelPointsInfo;
 use crate::models::StreakMinerStatus;
 use crate::utils::json_id_to_string;
-use serde_json::Value;
+
 use rand::Rng;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
@@ -197,12 +197,12 @@ pub async fn start_streak_miner(
                 }
             }
 
-            let mut any_watching = false;
+            let any_watching;
             {
                 let mut s_guard = state_clone.lock().await;
                 let mut new_status = s_guard.status.clone();
                 new_status.cycle_count += 1;
-                
+
                 any_watching = new_status.channels_info.iter().any(|c| c.status == "Watching");
 
                 if current_auto_start && !any_watching {
@@ -211,7 +211,7 @@ pub async fn start_streak_miner(
                 } else {
                     new_status.status = "Waiting for next cycle...".to_string();
                 }
-                
+
                 s_guard.update_and_notify(&app_clone, new_status);
             }
 

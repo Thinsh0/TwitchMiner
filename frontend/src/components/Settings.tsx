@@ -37,7 +37,6 @@ export function SettingsPanel() {
   }, [])
 
   // Auto-save config when it changes (debounced)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!config || loading) return
     const timeout = setTimeout(() => {

@@ -8,6 +8,7 @@ use tauri::{AppHandle, Emitter};
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 #[tauri::command]
 pub async fn get_claimed_drops(app: AppHandle) -> Result<Vec<DropItem>, String> {
@@ -21,6 +22,57 @@ pub async fn get_claimed_drops(app: AppHandle) -> Result<Vec<DropItem>, String> 
     Ok(claimed_history)
 }
 
+/// Resolves the drop claim ID from the inventory response.
+/// Returns `(claim_id, drop_json_node)` if found, `None` otherwise.
+fn resolve_claim_id<'a>(
+    inventory: &'a Value,
+    drop_id: &str,
+    current_user_id: &str,
+) -> Option<(String, &'a Value)> {
+    // 1. Search completed drops list
+    if let Some(drops) = inventory
+        .pointer("/data/currentUser/inventory/drops")
+        .and_then(|v| v.as_array())
+    {
+        for drop in drops {
+            if json_id_to_string(drop.get("id")).as_deref() == Some(drop_id) {
+                let claim_id = json_id_to_string(drop.pointer("/self/dropInstanceID"))
+                    .or_else(|| {
+                        let camp_id = json_id_to_string(drop.pointer("/campaign/id"))?;
+                        Some(format!("{}#{}#{}", current_user_id, camp_id, drop_id))
+                    })?;
+                return Some((claim_id, drop));
+            }
+        }
+    }
+
+    // 2. Search campaigns in progress / viewer campaign paths
+    let campaign_paths = [
+        "/data/currentUser/inventory/dropCampaignsInProgress",
+        "/data/currentUser/inventory/viewerDropCampaigns",
+    ];
+    for path in campaign_paths {
+        if let Some(campaigns) = inventory.pointer(path).and_then(|v| v.as_array()) {
+            for camp in campaigns {
+                let camp_id = json_id_to_string(camp.get("id")).unwrap_or_default();
+                if let Some(drops) = camp.get("timeBasedDrops").and_then(|v| v.as_array()) {
+                    for drop in drops {
+                        if json_id_to_string(drop.get("id")).as_deref() == Some(drop_id) {
+                            let claim_id = json_id_to_string(drop.pointer("/self/dropInstanceID"))
+                                .or_else(|| {
+                                    if camp_id.is_empty() { return None; }
+                                    Some(format!("{}#{}#{}", current_user_id, camp_id, drop_id))
+                                })?;
+                            return Some((claim_id, drop));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 #[tauri::command]
 pub async fn claim_drop_cmd(
     app: AppHandle,
@@ -29,93 +81,36 @@ pub async fn claim_drop_cmd(
     let store = app
         .store("config.json")
         .map_err(|e: tauri_plugin_store::Error| e.to_string())?;
-    
+
     let gql = TwitchGQL::new();
-    
+
     let ui_res = gql.get_user_info(&store).await?;
     let current_user_id = json_id_to_string(ui_res.pointer("/data/currentUser/id"))
         .ok_or_else(|| "Failed to get user ID".to_string())?;
 
     let inventory = gql.get_inventory(&store).await?;
-    
-    let mut resolved_claim_id = None;
-    let mut drop_node = None;
 
-    // Search completed drops
-    if let Some(drops) = inventory
-        .pointer("/data/currentUser/inventory/drops")
-        .and_then(|v| v.as_array())
-    {
-        for drop in drops {
-            if let Some(id) = json_id_to_string(drop.get("id")) {
-                if id == drop_id {
-                    drop_node = Some(drop.clone());
-                    let mut claim_id = json_id_to_string(drop.pointer("/self/dropInstanceID"));
-                    if claim_id.is_none() {
-                        let camp_id = json_id_to_string(drop.pointer("/campaign/id"));
-                        if let Some(c) = camp_id {
-                            claim_id = Some(format!("{}#{}#{}", current_user_id, c, id));
-                        }
-                    }
-                    resolved_claim_id = claim_id;
-                    break;
-                }
-            }
-        }
-    }
+    let (claim_id, drop_node) = resolve_claim_id(&inventory, &drop_id, &current_user_id)
+        .ok_or_else(|| format!("Drop with ID {} not found or cannot be claimed.", drop_id))?;
 
-    // Search campaigns in progress or viewer campaign paths
-    if resolved_claim_id.is_none() {
-        let campaign_paths = [
-            "/data/currentUser/inventory/dropCampaignsInProgress",
-            "/data/currentUser/inventory/viewerDropCampaigns",
-        ];
-        'outer: for path in campaign_paths {
-            if let Some(campaigns) = inventory.pointer(path).and_then(|v| v.as_array()) {
-                for camp in campaigns {
-                    let camp_id = json_id_to_string(camp.get("id")).unwrap_or_default();
-                    if let Some(drops) = camp.get("timeBasedDrops").and_then(|v| v.as_array()) {
-                        for drop in drops {
-                            if let Some(id) = json_id_to_string(drop.get("id")) {
-                                if id == drop_id {
-                                    drop_node = Some(drop.clone());
-                                    let mut claim_id = json_id_to_string(drop.pointer("/self/dropInstanceID"));
-                                    if claim_id.is_none() && !camp_id.is_empty() {
-                                        claim_id = Some(format!("{}#{}#{}", current_user_id, camp_id, id));
-                                    }
-                                    resolved_claim_id = claim_id;
-                                    break 'outer;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    let claim_id = resolved_claim_id.ok_or_else(|| format!("Drop with ID {} not found or cannot be claimed.", drop_id))?;
-    
     log::info!("claim_drop_cmd: claiming drop with claim_id = {}", claim_id);
     let claim_res = gql.claim_drop(&store, &claim_id).await?;
 
-    if let Some(node) = drop_node {
-        if let Some(mut item) = parse_drop_item(&node) {
-            item.is_claimed = true;
-            item.claimed_at = Some(chrono::Utc::now().to_rfc3339());
-            let mut claimed_history: Vec<DropItem> = store
-                .get("claimed_drops")
-                .and_then(|v| serde_json::from_value(v).ok())
-                .unwrap_or_default();
-            if !claimed_history.iter().any(|d| d.id == item.id) {
-                claimed_history.push(item.clone());
-                let _ = store.set(
-                    "claimed_drops",
-                    serde_json::to_value(&claimed_history).unwrap(),
-                );
-                let _ = store.save();
-                let _ = app.emit("drop-claimed", item);
-            }
+    if let Some(mut item) = parse_drop_item(drop_node) {
+        item.is_claimed = true;
+        item.claimed_at = Some(chrono::Utc::now().to_rfc3339());
+        let mut claimed_history: Vec<DropItem> = store
+            .get("claimed_drops")
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+        if !claimed_history.iter().any(|d| d.id == item.id) {
+            claimed_history.push(item.clone());
+            let _ = store.set(
+                "claimed_drops",
+                serde_json::to_value(&claimed_history).unwrap(),
+            );
+            let _ = store.save();
+            let _ = app.emit("drop-claimed", item);
         }
     }
 
@@ -126,6 +121,7 @@ pub struct MinerState {
     pub status: MinerStatus,
     pub is_running: bool,
     pub task: Option<JoinHandle<()>>,
+    pub cancel_token: Option<CancellationToken>,
 }
 
 impl MinerState {
@@ -137,6 +133,7 @@ impl MinerState {
             },
             is_running: false,
             task: None,
+            cancel_token: None,
         }
     }
 
@@ -149,6 +146,12 @@ impl MinerState {
 
         // Send real-time update to frontend
         let _ = app.emit("miner-status-update", new_status);
+    }
+}
+
+impl Default for MinerState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -169,6 +172,27 @@ struct MineableDropCandidate {
     score: i64,
 }
 
+async fn save_claimed_drop(
+    store: &Arc<tauri_plugin_store::Store<tauri::Wry>>,
+    app: &AppHandle,
+    drop: &Value,
+) {
+    if let Some(mut item) = parse_drop_item(drop) {
+        item.is_claimed = true;
+        item.claimed_at = Some(chrono::Utc::now().to_rfc3339());
+        let mut claimed_history: Vec<DropItem> = store
+            .get("claimed_drops")
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+        if !claimed_history.iter().any(|d| d.id == item.id) {
+            claimed_history.push(item.clone());
+            let _ = store.set("claimed_drops", serde_json::to_value(&claimed_history).unwrap());
+            let _ = store.save();
+            let _ = app.emit("drop-claimed", item);
+        }
+    }
+}
+
 async fn check_and_claim_drops(
     gql: &TwitchGQL,
     store: &Arc<tauri_plugin_store::Store<tauri::Wry>>,
@@ -176,128 +200,72 @@ async fn check_and_claim_drops(
     inventory: &Value,
     app: &AppHandle,
 ) {
-    // 1. Check Completed Drops List
+    // 1. Check Completed Drops List (percentAwarded >= 100)
     if let Some(drops) = inventory
         .pointer("/data/currentUser/inventory/drops")
         .and_then(|v| v.as_array())
     {
         for drop in drops {
-            let is_claimed = drop
-                .pointer("/self/isClaimed")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let pct = drop
-                .get("percentAwarded")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0);
+            let is_claimed = drop.pointer("/self/isClaimed").and_then(|v| v.as_bool()).unwrap_or(false);
+            let pct = drop.get("percentAwarded").and_then(|v| v.as_i64()).unwrap_or(0);
 
-            if !is_claimed && pct >= 100 {
-                let mut claim_id = json_id_to_string(drop.pointer("/self/dropInstanceID"));
+            if is_claimed || pct < 100 {
+                continue;
+            }
+            let drop_id = match json_id_to_string(drop.get("id")) {
+                Some(id) => id,
+                None => continue,
+            };
+            let claim_id = json_id_to_string(drop.pointer("/self/dropInstanceID"))
+                .or_else(|| {
+                    let camp_id = json_id_to_string(drop.pointer("/campaign/id"))?;
+                    Some(format!("{}#{}#{}", current_user_id, camp_id, drop_id))
+                });
 
-                if claim_id.is_none() {
-                    let camp_id = json_id_to_string(drop.pointer("/campaign/id"));
-                    let drop_def_id = json_id_to_string(drop.get("id"));
-                    if let (Some(c), Some(d)) = (camp_id, drop_def_id) {
-                        claim_id = Some(format!("{}#{}#{}", current_user_id, c, d));
-                    }
+            if let Some(c_id) = claim_id {
+                match gql.claim_drop(store, &c_id).await {
+                    Ok(res) => log::info!("check_and_claim_drops: claim response: {:?}", res),
+                    Err(e) => { log::error!("check_and_claim_drops: claim failed for {}: {}", c_id, e); continue; }
                 }
-
-                if let Some(c_id) = claim_id {
-                    match gql.claim_drop(store, &c_id).await {
-                        Ok(res) => {
-                            log::info!("check_and_claim_drops: claim response: {:?}", res);
-                        }
-                        Err(e) => {
-                            log::error!("check_and_claim_drops: claim failed for {}: {}", c_id, e);
-                            continue;
-                        }
-                    }
-                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-
-                    if let Some(mut item) = parse_drop_item(drop) {
-                        item.is_claimed = true;
-                        item.claimed_at = Some(chrono::Utc::now().to_rfc3339());
-                        let mut claimed_history: Vec<DropItem> = store
-                            .get("claimed_drops")
-                            .and_then(|v| serde_json::from_value(v).ok())
-                            .unwrap_or_default();
-                        if !claimed_history.iter().any(|d| d.id == item.id) {
-                            claimed_history.push(item.clone());
-                            let _ = store.set(
-                                "claimed_drops",
-                                serde_json::to_value(&claimed_history).unwrap(),
-                            );
-                            let _ = store.save();
-                            let _ = app.emit("drop-claimed", item);
-                        }
-                    }
-                }
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                save_claimed_drop(store, app, drop).await;
             }
         }
     }
 
-    // 2. Check Active Campaigns Progress
+    // 2. Check Active Campaigns Progress (currentMinutes >= requiredMinutes)
     if let Some(campaigns) = inventory
         .pointer("/data/currentUser/inventory/dropCampaignsInProgress")
         .and_then(|v| v.as_array())
     {
         for camp in campaigns {
+            let camp_id = json_id_to_string(camp.get("id")).unwrap_or_default();
             if let Some(time_drops) = camp.get("timeBasedDrops").and_then(|v| v.as_array()) {
                 for drop in time_drops {
-                    let is_claimed = drop
-                        .pointer("/self/isClaimed")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-                    let cur_mins = drop
-                        .pointer("/self/currentMinutesWatched")
-                        .and_then(|v| v.as_i64())
-                        .unwrap_or(0);
-                    let req_mins = drop
-                        .get("requiredMinutesWatched")
-                        .and_then(|v| v.as_i64())
-                        .unwrap_or(0);
+                    let is_claimed = drop.pointer("/self/isClaimed").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let cur_mins = drop.pointer("/self/currentMinutesWatched").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let req_mins = drop.get("requiredMinutesWatched").and_then(|v| v.as_i64()).unwrap_or(0);
 
-                    if !is_claimed && req_mins > 0 && cur_mins >= req_mins {
-                        let mut claim_id = json_id_to_string(drop.pointer("/self/dropInstanceID"));
+                    if is_claimed || req_mins <= 0 || cur_mins < req_mins {
+                        continue;
+                    }
+                    let drop_id = match json_id_to_string(drop.get("id")) {
+                        Some(id) => id,
+                        None => continue,
+                    };
+                    let claim_id = json_id_to_string(drop.pointer("/self/dropInstanceID"))
+                        .or_else(|| {
+                            if camp_id.is_empty() { return None; }
+                            Some(format!("{}#{}#{}", current_user_id, camp_id, drop_id))
+                        });
 
-                        if claim_id.is_none() {
-                            let camp_id = json_id_to_string(camp.get("id"));
-                            let drop_def_id = json_id_to_string(drop.get("id"));
-                            if let (Some(c), Some(d)) = (camp_id, drop_def_id) {
-                                claim_id = Some(format!("{}#{}#{}", current_user_id, c, d));
-                            }
+                    if let Some(c_id) = claim_id {
+                        match gql.claim_drop(store, &c_id).await {
+                            Ok(res) => log::info!("check_and_claim_drops: claim response: {:?}", res),
+                            Err(e) => { log::error!("check_and_claim_drops: claim failed for {}: {}", c_id, e); continue; }
                         }
-
-                        if let Some(c_id) = claim_id {
-                            match gql.claim_drop(store, &c_id).await {
-                                Ok(res) => {
-                                    log::info!("check_and_claim_drops: claim response: {:?}", res);
-                                }
-                                Err(e) => {
-                                    log::error!("check_and_claim_drops: claim failed for {}: {}", c_id, e);
-                                    continue;
-                                }
-                            }
-                            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-
-                            if let Some(mut item) = parse_drop_item(drop) {
-                                item.is_claimed = true;
-                                item.claimed_at = Some(chrono::Utc::now().to_rfc3339());
-                                let mut claimed_history: Vec<DropItem> = store
-                                    .get("claimed_drops")
-                                    .and_then(|v| serde_json::from_value(v).ok())
-                                    .unwrap_or_default();
-                                if !claimed_history.iter().any(|d| d.id == item.id) {
-                                    claimed_history.push(item.clone());
-                                    let _ = store.set(
-                                        "claimed_drops",
-                                        serde_json::to_value(&claimed_history).unwrap(),
-                                    );
-                                    let _ = store.save();
-                                    let _ = app.emit("drop-claimed", item);
-                                }
-                            }
-                        }
+                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                        save_claimed_drop(store, app, drop).await;
                     }
                 }
             }
@@ -358,6 +326,8 @@ fn parse_campaign_node(camp: &Value, status: &str) -> Option<DropCampaign> {
         .and_then(|v| v.as_str())
         .unwrap_or("Drop Campaign")
         .to_string();
+    // Extract the real Twitch game ID (fixes BUG6: was using campaign ID as game ID)
+    let game_id = json_id_to_string(camp.pointer("/game/id")).unwrap_or_default();
     let game_name = camp
         .pointer("/game/displayName")
         .and_then(|v| v.as_str())
@@ -391,6 +361,7 @@ fn parse_campaign_node(camp: &Value, status: &str) -> Option<DropCampaign> {
     Some(DropCampaign {
         id,
         name,
+        game_id,
         game_name,
         image_url,
         status: status.to_string(),
@@ -498,7 +469,8 @@ fn build_mineable_candidates(
             candidates.push(MineableDropCandidate {
                 campaign_id: camp.id.clone(),
                 campaign_name: camp.name.clone(),
-                game_id: camp.id.clone(), // We might not have the true game ID here if game is just name, but actually global response gives game.id
+                // game_id is stored separately from campaign_id; use the game-level id stored in DropCampaign
+                game_id: camp.game_id.clone(),
                 game_name: camp.game_name.clone(),
                 drop_id: drop.id.clone(),
                 drop_name: drop.name.clone(),
@@ -554,6 +526,58 @@ fn available_drops_contains_candidate(response: &Value, candidate: &MineableDrop
             })
             .unwrap_or(true)
     })
+}
+
+/// Look up the live (currentMinutesWatched, requiredMinutesWatched) for a drop_id
+/// from a fresh inventory response. Returns None if not found.
+fn find_live_drop_progress(inventory: &Value, drop_id: &str) -> Option<(i64, i64)> {
+    // Search in dropCampaignsInProgress
+    if let Some(campaigns) = inventory
+        .pointer("/data/currentUser/inventory/dropCampaignsInProgress")
+        .and_then(|v| v.as_array())
+    {
+        for camp in campaigns {
+            if let Some(drops) = camp.get("timeBasedDrops").and_then(|v| v.as_array()) {
+                for drop in drops {
+                    if json_id_to_string(drop.get("id")).as_deref() == Some(drop_id) {
+                        let cur = drop
+                            .pointer("/self/currentMinutesWatched")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(0);
+                        let req = drop
+                            .get("requiredMinutesWatched")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(0);
+                        return Some((cur, req));
+                    }
+                }
+            }
+        }
+    }
+    // Also search viewerDropCampaigns
+    if let Some(campaigns) = inventory
+        .pointer("/data/currentUser/inventory/viewerDropCampaigns")
+        .and_then(|v| v.as_array())
+    {
+        for camp in campaigns {
+            if let Some(drops) = camp.get("timeBasedDrops").and_then(|v| v.as_array()) {
+                for drop in drops {
+                    if json_id_to_string(drop.get("id")).as_deref() == Some(drop_id) {
+                        let cur = drop
+                            .pointer("/self/currentMinutesWatched")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(0);
+                        let req = drop
+                            .get("requiredMinutesWatched")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(0);
+                        return Some((cur, req));
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 fn summarize_active_drops(
@@ -619,31 +643,8 @@ fn summarize_active_drops(
     )
 }
 
-fn parse_available_campaigns(response: &Value, fallback_game_name: &str) -> Vec<DropCampaign> {
-    let mut parsed = Vec::new();
 
-    if let Some(campaigns) = response
-        .pointer("/data/channel/viewerDropCampaigns")
-        .and_then(|v| v.as_array())
-    {
-        for camp in campaigns {
-            if let Some(mut campaign) = parse_campaign_node(camp, "AVAILABLE") {
-                if campaign.game_name == "Unknown Game" {
-                    campaign.game_name = fallback_game_name.to_string();
-                }
-                parsed.push(campaign);
-            }
-        }
-    }
 
-    parsed
-}
-
-fn campaign_exists(campaigns: &[DropCampaign], candidate: &DropCampaign) -> bool {
-    campaigns
-        .iter()
-        .any(|c| !candidate.id.is_empty() && c.id == candidate.id)
-}
 
 #[tauri::command]
 pub async fn get_drop_campaigns(app: AppHandle) -> Result<Vec<DropCampaign>, String> {
@@ -711,6 +712,8 @@ pub async fn start_miner(
     }
 
     s.is_running = true;
+    let cancel_token = CancellationToken::new();
+    s.cancel_token = Some(cancel_token.clone());
     let mut new_status = s.status.clone();
     new_status.status = "Starting...".to_string();
     new_status.is_running = true;
@@ -730,8 +733,13 @@ pub async fn start_miner(
         let gql = TwitchGQL::new();
         log::info!("start_miner: background thread started");
         let mut active_streams: Vec<TargetStream> = Vec::new();
+        // Cache user_id at startup; refresh only on auth error
+        let mut cached_user_id: Option<String> = None;
 
         loop {
+            if cancel_token.is_cancelled() {
+                break;
+            }
             {
                 let s_guard = state_clone.lock().await;
                 if !s_guard.is_running {
@@ -771,14 +779,17 @@ pub async fn start_miner(
                 s_guard.update_and_notify(&app_clone, new_status);
             }
 
-            let ui_res = gql.get_user_info(&store).await;
-            let current_user_id = if let Ok(ui) = &ui_res {
-                json_id_to_string(ui.pointer("/data/currentUser/id"))
-            } else {
-                None
-            };
+            // P3: Use cached user_id, only re-fetch when missing or auth failed
+            if cached_user_id.is_none() {
+                let ui_res = gql.get_user_info(&store).await;
+                cached_user_id = if let Ok(ui) = &ui_res {
+                    json_id_to_string(ui.pointer("/data/currentUser/id"))
+                } else {
+                    None
+                };
+            }
 
-            if let Some(uid) = current_user_id {
+            if let Some(uid) = cached_user_id.clone() {
                 log::info!(
                     "start_miner: got user id {}, checking configured games",
                     uid
@@ -798,7 +809,8 @@ pub async fn start_miner(
                     Ok(val) => val,
                     Err(e) => {
                         log::info!("start_miner: global campaigns error: {}", e);
-                        { let jitter = rand::thread_rng().gen_range(1..=10); tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await; }
+                        let jitter = rand::thread_rng().gen_range(1u64..=30);
+                        tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await;
                         continue;
                     }
                 };
@@ -809,8 +821,13 @@ pub async fn start_miner(
                         inventory
                     }
                     Err(e) => {
+                        // Auth error: invalidate cached user_id so it will be re-fetched next cycle
+                        if e.contains("401") || e.contains("unauthenticated") {
+                            cached_user_id = None;
+                        }
                         log::info!("start_miner: inventory error: {}", e);
-                        { let jitter = rand::thread_rng().gen_range(1..=10); tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await; }
+                        let jitter = rand::thread_rng().gen_range(1u64..=30);
+                        tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await;
                         continue;
                     }
                 };
@@ -1011,7 +1028,8 @@ pub async fn start_miner(
                     if current_auto_start {
                         break;
                     }
-                    { let jitter = rand::thread_rng().gen_range(1..=10); tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await; }
+                    let jitter = rand::thread_rng().gen_range(1u64..=30);
+                    tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await;
                     continue;
                 }
                 
@@ -1019,13 +1037,16 @@ pub async fn start_miner(
                 current_auto_start = false;
 
                 // We have active streams, start the mining loop for them
-                let mut loop_count = 15;
-                while loop_count > 0 {
-                    {
-                        let s_guard = state_clone.lock().await;
-                        if !s_guard.is_running {
-                            break;
-                        }
+                // BUG4: loop driven by CancellationToken instead of a fixed counter
+                // We break out after 15 iterations to rediscover streams, but stop cleanly on cancel
+                let mut inner_ticks = 0u32;
+                loop {
+                    if cancel_token.is_cancelled() {
+                        break;
+                    }
+                    if inner_ticks >= 15 {
+                        // Time to rediscover streams
+                        break;
                     }
 
                     // Combine all streams into status
@@ -1048,12 +1069,31 @@ pub async fn start_miner(
                         s_guard.update_and_notify(&app_clone, new_status.clone());
                     }
 
-                    // Collect all active drops
+                    // BUG2: Collect live drop progress from inventory (refreshed each cycle)
+                    // active_drop tuples in active_streams stay as initial anchors;
+                    // we always use fresh inventory data for progress display.
                     if let Ok(inv) = gql.get_inventory(&store).await {
                         check_and_claim_drops(&gql, &store, &uid, &inv, &app_clone).await;
-                        let mut all_drops = Vec::new();
+
+                        // Build up-to-date progress tuples from inventory data
+                        let mut all_drops: Vec<(String, String, Option<String>, i64, i64, i64)> = Vec::new();
                         for stream in &active_streams {
-                            all_drops.push(stream.active_drop.clone());
+                            let drop_id = &stream.active_drop.0;
+                            // Try to find live progress in inventory
+                            let live = find_live_drop_progress(&inv, drop_id);
+                            if let Some((cur, req)) = live {
+                                let pct = if req > 0 { (cur * 100 / req).clamp(0, 100) } else { 0 };
+                                all_drops.push((
+                                    drop_id.clone(),
+                                    stream.active_drop.1.clone(),
+                                    stream.active_drop.2.clone(),
+                                    cur,
+                                    req,
+                                    pct,
+                                ));
+                            } else {
+                                all_drops.push(stream.active_drop.clone());
+                            }
                         }
 
                         if !all_drops.is_empty() {
@@ -1111,7 +1151,6 @@ pub async fn start_miner(
                             .get_drop_current_session(&store, &stream.channel_id)
                             .await
                         {
-                            let _ = std::fs::write("D:\\Devs\\TwitchMiner\\session.json", session_res.to_string());
                             if let Some(session) =
                                 session_res.pointer("/data/currentUser/dropCurrentSession")
                             {
@@ -1159,7 +1198,7 @@ pub async fn start_miner(
                         }
 
                         // Claim community points occasionally
-                        if loop_count % 5 == 0 {
+                        if inner_ticks % 5 == 0 {
                             if let Ok(pts_res) = gql
                                 .get_channel_points_context(&store, &stream.streamer_login)
                                 .await
@@ -1180,17 +1219,21 @@ pub async fn start_miner(
                         }
                     }
 
-                    { let jitter = rand::thread_rng().gen_range(1..=10); tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await; }
-                    loop_count -= 1;
+                    let jitter = rand::thread_rng().gen_range(1u64..=30);
+                    tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await;
+                    inner_ticks += 1;
                 }
             } else {
+                // Auth error: clear cached user_id so it will be re-fetched next cycle
+                cached_user_id = None;
                 {
                     let mut s_guard = state_clone.lock().await;
                     let mut new_status = s_guard.status.clone();
                     new_status.status = "Authentication Error".to_string();
                     s_guard.update_and_notify(&app_clone, new_status);
                 }
-                { let jitter = rand::thread_rng().gen_range(1..=10); tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await; }
+                let jitter = rand::thread_rng().gen_range(1u64..=30);
+                tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await;
             }
         }
 
@@ -1209,24 +1252,36 @@ pub async fn stop_miner(
     app: AppHandle,
     state: tauri::State<'_, Arc<Mutex<MinerState>>>,
 ) -> Result<(), String> {
-    let mut s = state.lock().await;
-    s.is_running = false;
-    let mut new_status = s.status.clone();
-    new_status.status = "Stopped".to_string();
-    new_status.is_running = false;
-    new_status.current_streamer = None;
-    new_status.current_streamer_login = None;
-    new_status.current_drop = None;
-    new_status.drop_image_url = None;
-    new_status.streamer_image_url = None;
-    new_status.progress = 0.0;
-    new_status.active_drops.clear();
-    new_status.started_at = None;
+    let (task, cancel_token) = {
+        let mut s = state.lock().await;
+        s.is_running = false;
+        let mut new_status = s.status.clone();
+        new_status.status = "Stopped".to_string();
+        new_status.is_running = false;
+        new_status.current_streamer = None;
+        new_status.current_streamer_login = None;
+        new_status.current_drop = None;
+        new_status.drop_image_url = None;
+        new_status.streamer_image_url = None;
+        new_status.progress = 0.0;
+        new_status.active_drops.clear();
+        new_status.started_at = None;
+        s.update_and_notify(&app, new_status);
+        (s.task.take(), s.cancel_token.take())
+    };
 
-    s.update_and_notify(&app, new_status);
-
-    if let Some(task) = s.task.take() {
-        task.abort();
+    // BUG3: Signal cancellation first, then await graceful shutdown
+    if let Some(token) = cancel_token {
+        token.cancel();
+    }
+    if let Some(task) = task {
+        // Give the task up to 5s to finish cleanly; abort as last resort
+        tokio::select! {
+            _ = task => {}
+            _ = tokio::time::sleep(tokio::time::Duration::from_secs(5)) => {
+                log::warn!("stop_miner: task did not finish in time, aborting.");
+            }
+        }
     }
     Ok(())
 }

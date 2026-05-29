@@ -35,6 +35,9 @@ pub struct MinerStatus {
 pub struct DropCampaign {
     pub id: String,
     pub name: String,
+    /// Twitch game ID (distinct from campaign ID).
+    #[serde(default)]
+    pub game_id: String,
     pub game_name: String,
     pub image_url: Option<String>,
     pub status: String,

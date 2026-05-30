@@ -47,6 +47,7 @@ export interface ChannelPointsInfo {
   points: number
   has_claim_available: boolean
   status: string
+  profile_image_url?: string | null
 }
 
 export interface StreakMinerStatus {

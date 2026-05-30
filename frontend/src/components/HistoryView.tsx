@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { api } from '@/api'
 import { useAppStore } from '@/store'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -34,6 +34,17 @@ export function HistoryView() {
       setRefreshing(false)
     }
   }
+
+  // Load history on mount
+  useEffect(() => {
+    let active = true
+    api.getClaimedDrops().then(drops => {
+      if (active) {
+        setClaimedDrops(drops.reverse())
+      }
+    }).catch(console.error)
+    return () => { active = false }
+  }, [setClaimedDrops])
 
   // Compute stats
   const totalDrops = claimedDrops.length

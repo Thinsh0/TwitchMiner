@@ -22,6 +22,8 @@ interface AppState {
   loadClaimedDrops: () => Promise<void>
   backendStatus: BackendStatus
   setBackendStatus: (status: BackendStatus) => void
+  language: string
+  setLanguage: (lang: string) => void
 }
 
 const activityTitles: Record<ActivityEventType, string> = {
@@ -83,4 +85,6 @@ export const useAppStore = create<AppState>((set) => ({
   },
   backendStatus: 'unknown',
   setBackendStatus: (status) => set({ backendStatus: status }),
+  language: 'EN',
+  setLanguage: (lang) => set({ language: lang }),
 }))

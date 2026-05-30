@@ -115,9 +115,17 @@ export function ChannelPointsView({ streakStatus, streakRunning, onToggle }: Cha
                     className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 transition-colors"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm">
-                        {channel.channel_name.charAt(0).toUpperCase()}
-                      </div>
+                      {channel.profile_image_url ? (
+                        <img
+                          src={channel.profile_image_url}
+                          alt={channel.channel_name}
+                          className="w-10 h-10 rounded-full object-cover border border-white/10"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm">
+                          {channel.channel_name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
                       <div>
                         <div className="flex items-center gap-2">
                           <div className="text-white font-medium">{channel.channel_name}</div>

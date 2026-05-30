@@ -209,7 +209,11 @@ async fn check_and_claim_drops(
             let is_claimed = drop.pointer("/self/isClaimed").and_then(|v| v.as_bool()).unwrap_or(false);
             let pct = drop.get("percentAwarded").and_then(|v| v.as_i64()).unwrap_or(0);
 
-            if is_claimed || pct < 100 {
+            if pct < 100 {
+                continue;
+            }
+            if is_claimed {
+                save_claimed_drop(store, app, drop).await;
                 continue;
             }
             let drop_id = match json_id_to_string(drop.get("id")) {
@@ -246,7 +250,11 @@ async fn check_and_claim_drops(
                     let cur_mins = drop.pointer("/self/currentMinutesWatched").and_then(|v| v.as_i64()).unwrap_or(0);
                     let req_mins = drop.get("requiredMinutesWatched").and_then(|v| v.as_i64()).unwrap_or(0);
 
-                    if is_claimed || req_mins <= 0 || cur_mins < req_mins {
+                    if is_claimed {
+                        save_claimed_drop(store, app, drop).await;
+                        continue;
+                    }
+                    if req_mins <= 0 || cur_mins < req_mins {
                         continue;
                     }
                     let drop_id = match json_id_to_string(drop.get("id")) {
@@ -795,12 +803,18 @@ pub async fn start_miner(
                     uid
                 );
 
-                let priority_games = store
+                let app_config_data = store
                     .get("app_config")
                     .and_then(|value| {
                         serde_json::from_value::<crate::models::AppConfig>(value).ok()
-                    })
-                    .map(|config| config.priorities.games)
+                    });
+                let priority_games = app_config_data
+                    .as_ref()
+                    .map(|config| config.priorities.games.clone())
+                    .unwrap_or_default();
+                let priority_streamers = app_config_data
+                    .as_ref()
+                    .map(|config| config.priorities.streamers.clone())
                     .unwrap_or_default();
 
                 active_streams.clear();
@@ -916,7 +930,21 @@ pub async fn start_miner(
                         continue;
                     };
 
-                    for edge in edges {
+                    let mut sorted_edges = edges.clone();
+                    sorted_edges.sort_by_key(|edge| {
+                        let login = edge.pointer("/node/broadcaster/login").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+                        let display_name = edge.pointer("/node/broadcaster/displayName").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+                        let pos = priority_streamers.iter().position(|s| {
+                            let s_lower = s.to_lowercase();
+                            s_lower == login || s_lower == display_name
+                        });
+                        match pos {
+                            Some(idx) => idx as i64,
+                            None => i64::MAX,
+                        }
+                    });
+
+                    for edge in &sorted_edges {
                         let tags = edge.pointer("/node/tags").and_then(|v| v.as_array());
                         let freeform_tags = edge
                             .pointer("/node/freeformTags")

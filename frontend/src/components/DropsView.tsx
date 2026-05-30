@@ -520,12 +520,18 @@ function DropItemCard({ drop, onClaimSuccess }: { drop: DropItem; onClaimSuccess
       )}
       <div className="flex-1">
         <div className="text-white text-sm font-medium">{drop.name}</div>
-        <div className="flex items-center gap-2 mt-1">
-          <Progress value={progress} className="h-2 flex-1" />
-          <span className="text-xs text-zinc-400 w-20 text-right">
-            {drop.current_minutes}/{drop.required_minutes} min
-          </span>
-        </div>
+        {progress >= 100 || drop.is_claimed ? (
+          <div className="text-xs text-zinc-400 mt-1">
+            Durée requise : {drop.required_minutes} min
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 mt-1">
+            <Progress value={progress} className="h-2 flex-1" />
+            <span className="text-xs text-zinc-400 w-20 text-right">
+              {drop.current_minutes}/{drop.required_minutes} min
+            </span>
+          </div>
+        )}
       </div>
       {drop.is_claimed ? (
         <Badge className="bg-green-500/20 text-green-400">

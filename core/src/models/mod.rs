@@ -65,6 +65,7 @@ pub struct ChannelPointsInfo {
     pub points: u64,
     pub has_claim_available: bool,
     pub status: String,
+    pub profile_image_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

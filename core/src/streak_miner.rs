@@ -278,6 +278,7 @@ async fn get_channel_points(
         points: 0,
         has_claim_available: false,
         status: "Checking...".to_string(),
+        profile_image_url: None,
     };
 
     match gql.get_channel_points_context(store, channel).await {
@@ -286,6 +287,9 @@ async fn get_channel_points(
                 if let Some(display_name) = channel_data.get("displayName").and_then(|v| v.as_str())
                 {
                     info.channel_name = display_name.to_string();
+                }
+                if let Some(img_url) = channel_data.get("profileImageURL").and_then(|v| v.as_str()) {
+                    info.profile_image_url = Some(img_url.to_string());
                 }
                 if let Some(self_data) = channel_data.get("self") {
                     if let Some(points_data) = self_data.get("communityPoints") {

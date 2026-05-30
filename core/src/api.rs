@@ -303,7 +303,7 @@ impl TwitchGQL {
                     return Err(format!("GraphQL errors in response: {}", errors));
                 }
                 if let Some(status) = val.pointer("/data/claimDropRewards/status").and_then(|s| s.as_str()) {
-                    if status != "SUCCESS" {
+                    if status != "SUCCESS" && status != "ELIGIBLE_FOR_ALL" && status != "DROP_INSTANCE_ALREADY_CLAIMED" {
                         return Err(format!("Claim failed with status: {}", status));
                     }
                 }
@@ -509,6 +509,7 @@ mutation SendEvents($input: SendSpadeEventsInput!) {
             channel(name: $login) {
                 id
                 displayName
+                profileImageURL(width: 50)
                 self {
                     communityPoints {
                         balance

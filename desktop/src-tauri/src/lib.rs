@@ -50,6 +50,22 @@ async fn check_auth_status(app: AppHandle) -> Result<bool, String> {
     }
 }
 
+#[tauri::command]
+async fn check_battery_optimizations() -> Result<bool, String> {
+    Ok(true)
+}
+
+#[tauri::command]
+async fn request_battery_optimization() -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+async fn update_foreground_label(label: String) -> Result<(), String> {
+    let _ = label;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let miner_state = Arc::new(Mutex::new(MinerState::new()));
@@ -163,7 +179,11 @@ pub fn run() {
             config::get_config,
             config::save_config,
             config::reset_config,
-            config::search_games_cmd
+            config::search_games_cmd,
+            config::ping,
+            check_battery_optimizations,
+            request_battery_optimization,
+            update_foreground_label
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

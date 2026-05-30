@@ -167,12 +167,23 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              {(streakStatus.channels_info?.length > 0 ? streakStatus.channels_info.slice(0, 3) : configuredChannels.slice(0, 3).map(name => ({ channel_name: name, points: 0, has_claim_available: false, status: 'Idle' }))).map((channel, i) => (
+              {(streakStatus.channels_info?.length > 0 
+                ? streakStatus.channels_info.slice(0, 3) 
+                : configuredChannels.slice(0, 3).map(name => ({ channel_name: name, points: 0, has_claim_available: false, status: 'Idle', profile_image_url: null }))
+              ).map((channel: any, i) => (
                 <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5">
                   <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold">
-                      {channel.channel_name.charAt(0).toUpperCase()}
-                    </div>
+                    {channel.profile_image_url ? (
+                      <img
+                        src={channel.profile_image_url}
+                        alt={channel.channel_name}
+                        className="w-8 h-8 rounded-full object-cover border border-white/10"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold">
+                        {channel.channel_name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
                     <span className="text-white text-sm">{channel.channel_name}</span>
                   </div>
                   <div className="flex items-center gap-2">

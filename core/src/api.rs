@@ -215,6 +215,20 @@ impl TwitchGQL {
             };
 
             if let Some(errors) = json_val.get("errors").and_then(|e| e.as_array()) {
+                // Detect persisted query hash mismatch — treat as hard error
+                let is_not_found = errors.iter().any(|e| {
+                    e.get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("")
+                        .contains("PersistedQueryNotFound")
+                });
+                if is_not_found {
+                    return Err(format!(
+                        "PersistedQueryNotFound for operation '{}'. The GQL hash may be stale.",
+                        operation_name
+                    ));
+                }
+
                 let is_unauth = errors.iter().any(|e| {
                     e.get("message")
                         .and_then(|m| m.as_str())
@@ -227,12 +241,18 @@ impl TwitchGQL {
                 });
 
                 if is_unauth {
-                    log::info!(
-                        "Got GQL unauthenticated error (persisted), attempting token refresh..."
+                    log::warn!(
+                        "Got GQL unauthenticated error (persisted '{}'), attempting token refresh...",
+                        operation_name
                     );
                     if let Ok(()) = crate::auth::refresh_access_token(store).await {
                         continue;
                     }
+                    // Refresh also failed — surface the error clearly
+                    return Err(format!(
+                        "Authentication failed for '{}' and token refresh did not recover.",
+                        operation_name
+                    ));
                 }
             }
 

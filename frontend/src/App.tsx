@@ -358,7 +358,7 @@ function App() {
       case 'history':
         return <HistoryView />
       case 'settings':
-        return <SettingsPanel />
+        return <SettingsPanel onNavigate={(view) => setActiveView(view)} />
       default:
         return null
     }

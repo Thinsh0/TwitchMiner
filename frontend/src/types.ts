@@ -112,6 +112,11 @@ export interface ScheduleException {
   is_allowed: boolean
 }
 
+export interface GameException {
+  game: string
+  keyword: string
+}
+
 export interface WorkSchedule {
   enabled: boolean
   monday: ScheduleDay
@@ -122,6 +127,10 @@ export interface WorkSchedule {
   saturday: ScheduleDay
   sunday: ScheduleDay
   exceptions: ScheduleException[]
+  game_exceptions?: GameException[]
+  skip_short_campaigns_days?: number
+  skip_expired?: boolean
+  skip_already_owned?: boolean
 }
 
 export type ActivityEventType = 'drop' | 'points' | 'auth' | 'system'

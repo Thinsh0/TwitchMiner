@@ -7,22 +7,13 @@ use reqwest::{header, Client};
 use serde_json::{json, Value};
 use std::io::Write;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 use tauri_plugin_store::Store;
-use tokio::sync::Mutex;
 use uuid::Uuid;
-
-struct CachedIntegrityToken {
-    token: String,
-    fetched_at: Instant,
-}
 
 pub struct TwitchGQL {
     client: Client,
     client_id: String,
     device_id: String,
-    /// Cached Client-Integrity token; expires after 5 min.
-    integrity_cache: Arc<Mutex<Option<CachedIntegrityToken>>>,
 }
 
 impl TwitchGQL {
@@ -39,91 +30,12 @@ impl TwitchGQL {
 
         Self {
             client,
-            client_id: "kimne78kx3ncx6brgo4mv6wki5h1ko".to_string(),
+            // Android client ID — bypasses Twitch's web integrity check system.
+            // The web ID (kimne78kx3ncx6brgo4mv6wki5h1ko) requires a Client-Integrity
+            // token that needs real browser JS fingerprinting to generate correctly.
+            client_id: "kd1unb4b3q4t58fwlpcbzcbnm76a8fp".to_string(),
             device_id,
-            integrity_cache: Arc::new(Mutex::new(None)),
         }
-    }
-
-    /// Fetches (or returns a cached) Client-Integrity token from Twitch.
-    /// The token is required for mutations like claimDropRewards.
-    async fn get_integrity_token(
-        &self,
-        store: &Arc<Store<tauri::Wry>>,
-    ) -> Option<String> {
-        const TOKEN_TTL: Duration = Duration::from_secs(270); // 4.5 min; tokens live ~5 min
-
-        {
-            let cache = self.integrity_cache.lock().await;
-            if let Some(ref cached) = *cache {
-                if cached.fetched_at.elapsed() < TOKEN_TTL {
-                    return Some(cached.token.clone());
-                }
-            }
-        }
-
-        // Token missing or stale — fetch a fresh one.
-        let token = Self::get_auth_token(store);
-        let mut headers = header::HeaderMap::new();
-        headers.insert("Client-ID", self.client_id.parse().unwrap());
-        headers.insert("X-Device-Id", self.device_id.parse().unwrap());
-        headers.insert("Content-Type", "application/json".parse().unwrap());
-        headers.insert("Origin", "https://www.twitch.tv".parse().unwrap());
-        headers.insert("Referer", "https://www.twitch.tv/".parse().unwrap());
-        if let Some(ref t) = token {
-            if let Ok(v) = format!("OAuth {}", t).parse() {
-                headers.insert("Authorization", v);
-            }
-        }
-
-        let res = self
-            .client
-            .post("https://passport.twitch.tv/integrity")
-            .headers(headers)
-            .body("{}")
-            .send()
-            .await;
-
-        match res {
-            Ok(r) if r.status().is_success() => {
-                if let Ok(body) = r.json::<Value>().await {
-                    if let Some(tok) = body.get("token").and_then(|t| t.as_str()) {
-                        let tok = tok.to_string();
-                        let mut cache = self.integrity_cache.lock().await;
-                        *cache = Some(CachedIntegrityToken {
-                            token: tok.clone(),
-                            fetched_at: Instant::now(),
-                        });
-                        log::info!("Fetched fresh Client-Integrity token");
-                        return Some(tok);
-                    }
-                }
-                log::warn!("Integrity response missing 'token' field");
-                None
-            }
-            Ok(r) => {
-                log::warn!("Integrity endpoint returned HTTP {}", r.status());
-                None
-            }
-            Err(e) => {
-                log::warn!("Failed to fetch integrity token: {}", e);
-                None
-            }
-        }
-    }
-
-    fn build_headers_with_integrity(
-        &self,
-        token: &Option<String>,
-        integrity: &Option<String>,
-    ) -> header::HeaderMap {
-        let mut headers = self.build_headers(token);
-        if let Some(it) = integrity {
-            if let Ok(v) = it.parse() {
-                headers.insert("Client-Integrity", v);
-            }
-        }
-        headers
     }
 
     fn get_auth_token(store: &Arc<Store<tauri::Wry>>) -> Option<String> {
@@ -393,31 +305,7 @@ impl TwitchGQL {
             }
         });
 
-        // claimDropRewards requires a Client-Integrity token.
-        let integrity = self.get_integrity_token(store).await;
-        if integrity.is_none() {
-            log::warn!("claim_drop: proceeding without integrity token — may fail");
-        }
-
-        let payload = json!({
-            "operationName": "DropsPage_ClaimDropRewards",
-            "query": query,
-            "variables": vars
-        });
-
-        let auth_token = Self::get_auth_token(store);
-        let result = match self
-            .client
-            .post("https://gql.twitch.tv/gql")
-            .headers(self.build_headers_with_integrity(&auth_token, &integrity))
-            .json(&payload)
-            .send()
-            .await
-        {
-            Ok(r) => r.json::<Value>().await.map_err(|e| e.to_string()),
-            Err(e) => Err(e.to_string()),
-        };
-        let result = result.map_err(|e| format!("HTTP request failed: {}", e));
+        let result = self.post(store, "DropsPage_ClaimDropRewards", query, vars).await;
         
         match result {
             Ok(val) => {

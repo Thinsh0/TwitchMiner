@@ -21,7 +21,7 @@ function formatClaimDate(dateStr?: string | null): string {
 }
 
 export function HistoryView() {
-  const { t, lang } = useTranslation()
+  const { t } = useTranslation()
   const { claimedDrops, setClaimedDrops } = useAppStore()
   const [refreshing, setRefreshing] = useState(false)
 

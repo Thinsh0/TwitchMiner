@@ -415,8 +415,11 @@ function GameCampaignGroup({
         </CardContent>
       )}
     </Card>
-  );function CampaignCard({ campaign, compact = false, onClaimSuccess, currentDropName }: { campaign: DropCampaign; compact?: boolean; onClaimSuccess?: () => void; currentDropName?: string | null }) {
-  const { t, lang } = useTranslation();
+  );
+}
+
+function CampaignCard({ campaign, compact = false, onClaimSuccess, currentDropName }: { campaign: DropCampaign; compact?: boolean; onClaimSuccess?: () => void; currentDropName?: string | null }) {
+  const { lang } = useTranslation();
   const totalDrops = campaign.drops.length;
   const claimedDrops = campaign.drops.filter(d => d.is_claimed).length;
   const endDate = formatDropDate(campaign.end_date);
@@ -557,6 +560,7 @@ function DropItemCard({ drop, onClaimSuccess }: { drop: DropItem; onClaimSuccess
       ) : (
         <Badge variant="secondary" className="bg-zinc-800 text-zinc-400">
           {Math.round(progress)}%
+        </Badge>
       )}
     </div>
   );

@@ -24,6 +24,8 @@ interface AppState {
   setBackendStatus: (status: BackendStatus) => void
   language: string
   setLanguage: (lang: string) => void
+  theme: 'light' | 'dark' | 'oled'
+  setTheme: (theme: 'light' | 'dark' | 'oled') => void
 }
 
 const activityTitles: Record<ActivityEventType, string> = {
@@ -87,4 +89,6 @@ export const useAppStore = create<AppState>((set) => ({
   setBackendStatus: (status) => set({ backendStatus: status }),
   language: 'EN',
   setLanguage: (lang) => set({ language: lang }),
+  theme: 'dark',
+  setTheme: (theme) => set({ theme }),
 }))

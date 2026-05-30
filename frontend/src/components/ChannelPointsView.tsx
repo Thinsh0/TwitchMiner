@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tv, Play, Square, Gift, AlertCircle, CheckCircle2, Clock, Eye, ExternalLink } from 'lucide-react'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { useTranslation } from '@/lib/i18n'
 import type { ChannelPointsInfo, StreakMinerStatus } from '@/types'
 
 interface ChannelPointsViewProps {
@@ -15,6 +16,7 @@ interface ChannelPointsViewProps {
 }
 
 export function ChannelPointsView({ streakStatus, streakRunning, onToggle }: ChannelPointsViewProps) {
+  const { t, lang } = useTranslation()
   const [configuredChannels, setConfiguredChannels] = useState<string[]>([])
 
   useEffect(() => {
@@ -44,10 +46,10 @@ export function ChannelPointsView({ streakStatus, streakRunning, onToggle }: Cha
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <Tv className="w-5 h-5 text-blue-400" />
-            Channel Points Mining
+            {t('points.title')}
           </h2>
           <p className="text-sm text-zinc-400 mt-1">
-            Watch channels to earn points and claim rewards
+            {t('points.subtitle')}
           </p>
         </div>
         <Button
@@ -56,7 +58,7 @@ export function ChannelPointsView({ streakStatus, streakRunning, onToggle }: Cha
           onClick={onToggle}
           className={!streakRunning ? "bg-blue-600 hover:bg-blue-700 text-white" : ""}
         >
-          {streakRunning ? <><Square className="mr-2 h-4 w-4 fill-current" /> Stop Mining</> : <><Play className="mr-2 h-4 w-4 fill-current" /> Start Mining</>}
+          {streakRunning ? <><Square className="mr-2 h-4 w-4 fill-current" /> {t('points.stopFarming')}</> : <><Play className="mr-2 h-4 w-4 fill-current" /> {t('points.startFarming')}</>}
         </Button>
       </div>
 
@@ -65,19 +67,19 @@ export function ChannelPointsView({ streakStatus, streakRunning, onToggle }: Cha
         <Card className="bg-black/40 border-white/10">
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-blue-400">{totalPoints.toLocaleString()}</div>
-            <div className="text-xs text-zinc-400 mt-1">Total Points</div>
+            <div className="text-xs text-zinc-400 mt-1">{t('points.totalPoints')}</div>
           </CardContent>
         </Card>
         <Card className="bg-black/40 border-white/10">
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-green-400">{streakStatus.successful_pings}</div>
-            <div className="text-xs text-zinc-400 mt-1">Successful Pings</div>
+            <div className="text-xs text-zinc-400 mt-1">{t('points.successPings')}</div>
           </CardContent>
         </Card>
         <Card className="bg-black/40 border-white/10">
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-purple-400">{streakStatus.cycle_count}</div>
-            <div className="text-xs text-zinc-400 mt-1">Cycles</div>
+            <div className="text-xs text-zinc-400 mt-1">{t('points.cycles')}</div>
           </CardContent>
         </Card>
         <Card className="bg-black/40 border-white/10">
@@ -85,7 +87,7 @@ export function ChannelPointsView({ streakStatus, streakRunning, onToggle }: Cha
             <div className="text-2xl font-bold text-yellow-400">
               {streakStatus.channels_info.filter(ch => ch.has_claim_available).length}
             </div>
-            <div className="text-xs text-zinc-400 mt-1">Claims Available</div>
+            <div className="text-xs text-zinc-400 mt-1">{t('points.claimsAvail')}</div>
           </CardContent>
         </Card>
       </div>
@@ -95,16 +97,16 @@ export function ChannelPointsView({ streakStatus, streakRunning, onToggle }: Cha
         <CardHeader>
           <CardTitle className="text-lg text-white flex items-center gap-2">
             <Eye className="w-5 h-5 text-blue-400" />
-            Your Channels
+            {t('points.monitoredChannels')}
             <Badge variant="secondary" className="bg-blue-500/20 text-blue-400">
-              {mergedChannels.length} channels
+              {mergedChannels.length} {t('points.channelsCount')}
             </Badge>
           </CardTitle>
         </CardHeader>
         <CardContent>
           {mergedChannels.length === 0 ? (
             <div className="text-center py-8 text-zinc-500">
-              No channels configured. Go to Settings → Streaks or Points to add channels.
+              {t('points.noChannels')}
             </div>
           ) : (
             <ScrollArea className="h-[400px]">
@@ -132,7 +134,7 @@ export function ChannelPointsView({ streakStatus, streakRunning, onToggle }: Cha
                           <button
                             onClick={() => openUrl(`https://www.twitch.tv/${channel.channel_name.toLowerCase()}`)}
                             className="text-zinc-500 hover:text-blue-400 transition-colors"
-                            title="Open on Twitch"
+                            title={lang === 'FR' ? 'Ouvrir sur Twitch' : 'Open on Twitch'}
                           >
                             <ExternalLink className="w-3 h-3" />
                           </button>
@@ -150,7 +152,7 @@ export function ChannelPointsView({ streakStatus, streakRunning, onToggle }: Cha
                       {channel.has_claim_available && (
                         <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/50 animate-pulse">
                           <Gift className="w-3 h-3 mr-1" />
-                          Claim!
+                          {lang === 'FR' ? 'Réclamer !' : 'Claim!'}
                         </Badge>
                       )}
                     </div>
@@ -178,34 +180,46 @@ export function ChannelPointsView({ streakStatus, streakRunning, onToggle }: Cha
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
+  let label = status;
   if (status === 'Watching' || status === 'Ready') {
+    label = t('points.statusWatching');
     return (
       <Badge variant="secondary" className="bg-green-500/20 text-green-400 text-xs">
         <CheckCircle2 className="w-3 h-3 mr-1" />
-        {status}
+        {label}
       </Badge>
     );
   }
   if (status === 'Offline') {
+    label = t('points.statusOffline');
     return (
       <Badge variant="secondary" className="bg-zinc-500/20 text-zinc-400 text-xs">
         <Clock className="w-3 h-3 mr-1" />
-        Offline
+        {label}
       </Badge>
     );
   }
   if (status === 'Error' || status === 'Ping failed') {
+    label = t('points.statusError');
     return (
       <Badge variant="secondary" className="bg-red-500/20 text-red-400 text-xs">
         <AlertCircle className="w-3 h-3 mr-1" />
-        {status}
+        {label}
       </Badge>
     );
+  }
+  if (status === 'Checking') {
+    label = t('points.statusChecking');
+  } else if (status === 'Claimed') {
+    label = t('points.statusClaimed');
+  } else if (status === 'Claim failed') {
+    label = t('points.statusClaimFailed');
   }
   return (
     <Badge variant="secondary" className="bg-blue-500/20 text-blue-400 text-xs">
       <Clock className="w-3 h-3 mr-1" />
-      {status}
+      {label}
     </Badge>
   );
 }

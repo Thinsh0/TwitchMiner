@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { api } from '@/api'
 import { useAppStore } from '@/store'
+import { useTranslation } from '@/lib/i18n'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { CheckCircle2, History, RefreshCw, Loader2, Package, Trophy, Calendar } from 'lucide-react'
@@ -20,6 +21,7 @@ function formatClaimDate(dateStr?: string | null): string {
 }
 
 export function HistoryView() {
+  const { t, lang } = useTranslation()
   const { claimedDrops, setClaimedDrops } = useAppStore()
   const [refreshing, setRefreshing] = useState(false)
 
@@ -65,9 +67,9 @@ export function HistoryView() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
             <History className="w-6 h-6 text-purple-400" />
-            Claim History
+            {t('history.title')}
           </h2>
-          <p className="text-zinc-400">A history of drops you have successfully claimed.</p>
+          <p className="text-zinc-400">{t('history.subtitle')}</p>
         </div>
         <Button
           variant="outline"
@@ -77,7 +79,7 @@ export function HistoryView() {
           className="border-white/10 text-zinc-400 hover:text-white hover:bg-white/5"
         >
           {refreshing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-          Refresh
+          {t('common.refresh')}
         </Button>
       </div>
 
@@ -88,7 +90,7 @@ export function HistoryView() {
             <Trophy className="w-8 h-8 text-yellow-400 shrink-0" />
             <div>
               <div className="text-2xl font-bold text-white">{totalDrops}</div>
-              <div className="text-xs text-zinc-400">Total claimed</div>
+              <div className="text-xs text-zinc-400">{t('history.totalClaimed')}</div>
             </div>
           </CardContent>
         </Card>
@@ -97,7 +99,7 @@ export function HistoryView() {
             <Calendar className="w-8 h-8 text-purple-400 shrink-0" />
             <div>
               <div className="text-2xl font-bold text-white">{dropsThisWeek}</div>
-              <div className="text-xs text-zinc-400">This week</div>
+              <div className="text-xs text-zinc-400">{t('history.thisWeek')}</div>
             </div>
           </CardContent>
         </Card>
@@ -106,7 +108,7 @@ export function HistoryView() {
             <Package className="w-8 h-8 text-blue-400 shrink-0" />
             <div>
               <div className="text-2xl font-bold text-white">{uniqueNames.size}</div>
-              <div className="text-xs text-zinc-400">Unique drops</div>
+              <div className="text-xs text-zinc-400">{t('history.uniqueDrops')}</div>
             </div>
           </CardContent>
         </Card>
@@ -114,16 +116,16 @@ export function HistoryView() {
 
       <Card className="bg-black/40 border-white/10 backdrop-blur-md">
         <CardHeader>
-          <CardTitle className="text-lg">Claimed Drops ({claimedDrops.length})</CardTitle>
+          <CardTitle className="text-lg">{t('history.claimedDrops')} ({claimedDrops.length})</CardTitle>
           <CardDescription className="text-zinc-400">
-            Recently claimed drops are shown first.
+            {t('history.recentFirst')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {claimedDrops.length === 0 ? (
             <div className="text-center py-10 text-zinc-500">
               <History className="w-12 h-12 mx-auto mb-3 opacity-20" />
-              <p>No drops claimed yet.</p>
+              <p>{t('history.noClaimed')}</p>
             </div>
           ) : (
             <ScrollArea className="h-[500px] pr-4">
@@ -144,18 +146,18 @@ export function HistoryView() {
                       <div>
                         <h4 className="font-medium text-white">{drop.name}</h4>
                         <p className="text-sm text-zinc-400">
-                          {drop.required_minutes} min required
+                          {drop.required_minutes} {t('history.minRequired')}
                         </p>
                         {drop.claimed_at && (
                           <p className="text-xs text-zinc-500 mt-0.5">
-                            Claimed {formatClaimDate(drop.claimed_at)}
+                            {t('history.claimedAt')} {formatClaimDate(drop.claimed_at)}
                           </p>
                         )}
                       </div>
                     </div>
                     <Badge className="bg-green-500/20 text-green-400 border-green-500/30 shrink-0">
                       <CheckCircle2 className="w-3 h-3 mr-1" />
-                      Claimed
+                      {t('common.claimed')}
                     </Badge>
                   </div>
                 ))}

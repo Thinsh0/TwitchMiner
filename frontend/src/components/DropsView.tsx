@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { api } from '@/api'
 import { useAppStore } from '@/store'
+import { useTranslation } from '@/lib/i18n'
 import type { DropCampaign, DropItem, MinerStatus } from '@/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -18,6 +19,7 @@ interface DropsViewProps {
 }
 
 export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
+  const { t, lang } = useTranslation()
   const { dropCampaigns, setDropCampaigns } = useAppStore()
   const [priorityGames, setPriorityGames] = useState<string[]>([]);
   const [collapsedGames, setCollapsedGames] = useState<Record<string, boolean>>({});
@@ -112,10 +114,10 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <Gamepad2 className="w-5 h-5 text-purple-400" />
-            Drop Campaigns
+            {t('drops.title')}
           </h2>
           <p className="text-sm text-zinc-400 mt-1">
-            Available drops for your selected games
+            {t('drops.subtitle')}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -127,7 +129,7 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
             className="border-white/10 text-zinc-400"
           >
             {loading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
-            Refresh
+            {t('common.refresh')}
           </Button>
           <Button
             size="lg"
@@ -135,7 +137,7 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
             onClick={onToggleMiner}
             className={!dropStatus.is_running ? "bg-purple-600 hover:bg-purple-700 text-white" : ""}
           >
-            {dropStatus.is_running ? <><Square className="mr-2 h-4 w-4 fill-current" />Stop Mining</> : <><Play className="mr-2 h-4 w-4 fill-current" />Start Mining</>}
+            {dropStatus.is_running ? <><Square className="mr-2 h-4 w-4 fill-current" />{t('dashboard.stopMiner')}</> : <><Play className="mr-2 h-4 w-4 fill-current" />{t('dashboard.startMiner')}</>}
           </Button>
         </div>
       </div>
@@ -146,7 +148,7 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
         <Input
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Search by game or campaign name..."
+          placeholder={t('drops.searchPlaceholder')}
           className="pl-9 bg-white/5 border-white/10 text-white placeholder:text-zinc-500"
         />
       </div>
@@ -158,11 +160,11 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
             {dropStatus.drop_image_url && <img src={dropStatus.drop_image_url} alt="" className="w-10 h-10 rounded" />}
             <div className="flex-1 min-w-0">
               <p className="text-xs text-purple-300 font-semibold uppercase tracking-wide flex items-center gap-1">
-                <Zap className="w-3 h-3" /> Currently mining
+                <Zap className="w-3 h-3" /> {t('drops.currentlyMining')}
               </p>
               <p className="text-white font-medium truncate">{dropStatus.current_drop}</p>
               {dropStatus.current_streamer && (
-                <p className="text-xs text-zinc-400">on {dropStatus.current_streamer}</p>
+                <p className="text-xs text-zinc-400">{lang === 'FR' ? 'sur' : 'on'} {dropStatus.current_streamer}</p>
               )}
             </div>
             <div className="text-right shrink-0">
@@ -174,15 +176,15 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
 
       <Card className="bg-black/40 border-white/10">
         <CardContent className="p-3 flex flex-wrap items-center gap-3">
-          <span className="text-sm text-zinc-400">Global sort</span>
+          <span className="text-sm text-zinc-400">{t('drops.globalSort')}</span>
           <select
             value={globalSortKey}
             onChange={(event) => setGlobalSortKey(event.target.value as DropSortKey)}
             className="bg-zinc-900 border border-white/10 rounded-md px-3 py-2 text-sm text-white"
           >
-            <option value="name">Alphabetical</option>
-            <option value="date">Expiration date</option>
-            <option value="duration">Total duration</option>
+            <option value="name">{t('drops.sortAlpha')}</option>
+            <option value="date">{t('drops.sortDate')}</option>
+            <option value="duration">{t('drops.sortDuration')}</option>
           </select>
           <Button
             type="button"
@@ -191,7 +193,7 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
             onClick={() => setGlobalSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')}
             className="border-white/10 text-zinc-300"
           >
-            {globalSortDirection === 'asc' ? 'Ascending' : 'Descending'}
+            {globalSortDirection === 'asc' ? t('drops.asc') : t('drops.desc')}
           </Button>
         </CardContent>
       </Card>
@@ -201,7 +203,7 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
         <Card className="bg-black/40 border-white/10">
           <CardContent className="p-10 flex items-center justify-center gap-3 text-zinc-400">
             <Loader2 className="w-6 h-6 animate-spin" />
-            Loading campaigns...
+            {t('drops.loadingCampaigns')}
           </CardContent>
         </Card>
       ) : Object.keys(campaignsByGame).length > 0 || emptyGames.length > 0 ? (
@@ -230,11 +232,11 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
                   </div>
                   <div>
                     <div className="text-white font-medium">{game}</div>
-                    <div className="text-xs text-zinc-500">Checking for active campaigns...</div>
+                    <div className="text-xs text-zinc-500">{lang === 'FR' ? 'Recherche de campagnes actives...' : 'Checking for active campaigns...'}</div>
                   </div>
                 </div>
                 <Badge variant="secondary" className="bg-zinc-800 text-zinc-400">
-                  No active drops
+                  {lang === 'FR' ? 'Aucun drop actif' : 'No active drops'}
                 </Badge>
               </CardContent>
             </Card>
@@ -244,9 +246,9 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
         <Card className="bg-black/40 border-white/10">
           <CardContent className="p-8 text-center">
             <Package className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
-            <p className="text-zinc-400">No games configured.</p>
+            <p className="text-zinc-400">{t('drops.noGames')}</p>
             <p className="text-sm text-zinc-500 mt-2">
-              Go to Settings → Priorities to add games.
+              {t('drops.noGamesHint')}
             </p>
           </CardContent>
         </Card>
@@ -254,7 +256,7 @@ export function DropsView({ dropStatus, onToggleMiner }: DropsViewProps) {
         <Card className="bg-black/40 border-white/10">
           <CardContent className="p-8 text-center text-zinc-500">
             <Search className="w-10 h-10 mx-auto mb-3 opacity-20" />
-            No campaigns match your search.
+            {t('drops.noMatch')}
           </CardContent>
         </Card>
       )}
@@ -321,6 +323,7 @@ function GameCampaignGroup({
   onClaimSuccess?: () => void;
   currentDropName?: string | null;
 }) {
+  const { t, lang } = useTranslation();
   const gameImage = campaigns.find(c => c.image_url)?.image_url;
   const totalDrops = campaigns.reduce((sum, campaign) => sum + campaign.drops.length, 0);
   const claimedDrops = campaigns.reduce(
@@ -359,24 +362,24 @@ function GameCampaignGroup({
             )}
             </button>
             <p className="text-sm text-zinc-400">
-              {campaigns.length} campaign{campaigns.length > 1 ? 's' : ''} • {claimedDrops}/{totalDrops} drops claimed
+              {campaigns.length} {lang === 'FR' ? `campagne${campaigns.length > 1 ? 's' : ''}` : `campaign${campaigns.length > 1 ? 's' : ''}`} • {claimedDrops}/{totalDrops} {lang === 'FR' ? 'drops obtenus' : 'drops claimed'}
             </p>
           </div>
         </div>
         {groupStatus === 'COMPLETED' ? (
           <Badge className="bg-blue-500/20 text-blue-400">
             <CheckCircle2 className="w-3 h-3 mr-1" />
-            Completed
+            {lang === 'FR' ? 'Terminé' : 'Completed'}
           </Badge>
         ) : groupStatus === 'READY' ? (
           <Badge className="bg-yellow-500/20 text-yellow-400">
             <Gift className="w-3 h-3 mr-1" />
-            Ready
+            {lang === 'FR' ? 'Prêt' : 'Ready'}
           </Badge>
         ) : (
           <Badge className="bg-green-500/20 text-green-400">
             <Clock className="w-3 h-3 mr-1" />
-            Active
+            {lang === 'FR' ? 'Actif' : 'Active'}
           </Badge>
         )}
       </div>
@@ -384,15 +387,15 @@ function GameCampaignGroup({
       {!collapsed && (
         <CardContent className="space-y-3 pt-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-zinc-500">Sort this game</span>
+            <span className="text-xs text-zinc-500">{lang === 'FR' ? 'Trier ce jeu' : 'Sort this game'}</span>
             <select
               value={sortKey}
               onChange={(event) => onSortKeyChange(event.target.value as DropSortKey)}
               className="bg-zinc-900 border border-white/10 rounded-md px-2 py-1 text-xs text-white"
             >
-              <option value="name">Alphabetical</option>
-              <option value="date">Expiration date</option>
-              <option value="duration">Total duration</option>
+              <option value="name">{t('drops.sortAlpha')}</option>
+              <option value="date">{t('drops.sortDate')}</option>
+              <option value="duration">{t('drops.sortDuration')}</option>
             </select>
             <Button
               type="button"
@@ -401,7 +404,7 @@ function GameCampaignGroup({
               onClick={onSortDirectionToggle}
               className="h-7 border-white/10 text-xs text-zinc-300"
             >
-              {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+              {sortDirection === 'asc' ? t('drops.asc') : t('drops.desc')}
             </Button>
           </div>
           <div className="max-h-[400px] overflow-y-auto pr-2 space-y-3">
@@ -412,10 +415,8 @@ function GameCampaignGroup({
         </CardContent>
       )}
     </Card>
-  );
-}
-
-function CampaignCard({ campaign, compact = false, onClaimSuccess, currentDropName }: { campaign: DropCampaign; compact?: boolean; onClaimSuccess?: () => void; currentDropName?: string | null }) {
+  );function CampaignCard({ campaign, compact = false, onClaimSuccess, currentDropName }: { campaign: DropCampaign; compact?: boolean; onClaimSuccess?: () => void; currentDropName?: string | null }) {
+  const { t, lang } = useTranslation();
   const totalDrops = campaign.drops.length;
   const claimedDrops = campaign.drops.filter(d => d.is_claimed).length;
   const endDate = formatDropDate(campaign.end_date);
@@ -440,11 +441,11 @@ function CampaignCard({ campaign, compact = false, onClaimSuccess, currentDropNa
                 {compact ? campaign.name : campaign.game_name}
               </CardTitle>
               <p className="text-sm text-zinc-400">
-                {compact ? `${claimedDrops}/${totalDrops} drops claimed` : campaign.name}
+                {compact ? `${claimedDrops}/{totalDrops} ${lang === 'FR' ? 'drops obtenus' : 'drops claimed'}` : campaign.name}
               </p>
               {endDate && (
                 <p className="text-xs text-orange-300 mt-1">
-                  Ends {endDate}
+                  {lang === 'FR' ? `Se termine le ${endDate}` : `Ends ${endDate}`}
                 </p>
               )}
             </div>
@@ -452,22 +453,22 @@ function CampaignCard({ campaign, compact = false, onClaimSuccess, currentDropNa
           {campaign.status === 'COMPLETED' ? (
             <Badge className="bg-blue-500/20 text-blue-400">
               <CheckCircle2 className="w-3 h-3 mr-1" />
-              Completed
+              {lang === 'FR' ? 'Terminé' : 'Completed'}
             </Badge>
           ) : campaign.status === 'READY' ? (
             <Badge className="bg-yellow-500/20 text-yellow-400">
               <Gift className="w-3 h-3 mr-1" />
-              Ready
+              {lang === 'FR' ? 'Prêt' : 'Ready'}
             </Badge>
           ) : campaign.status === 'AVAILABLE' ? (
             <Badge className="bg-zinc-500/20 text-zinc-400">
               <Clock className="w-3 h-3 mr-1" />
-              Available
+              {lang === 'FR' ? 'Disponible' : 'Available'}
             </Badge>
           ) : (
             <Badge className="bg-green-500/20 text-green-400">
               <Clock className="w-3 h-3 mr-1" />
-              Active
+              {lang === 'FR' ? 'Actif' : 'Active'}
             </Badge>
           )}
         </div>
@@ -475,7 +476,7 @@ function CampaignCard({ campaign, compact = false, onClaimSuccess, currentDropNa
       <CardContent>
         {!compact && (
           <div className="text-sm text-zinc-400 mb-3">
-            {claimedDrops}/{totalDrops} drops claimed
+            {claimedDrops}/{totalDrops} {lang === 'FR' ? 'drops obtenus' : 'drops claimed'}
           </div>
         )}
         <div className="space-y-3">
@@ -489,6 +490,7 @@ function CampaignCard({ campaign, compact = false, onClaimSuccess, currentDropNa
 }
 
 function DropItemCard({ drop, onClaimSuccess }: { drop: DropItem; onClaimSuccess?: () => void }) {
+  const { t, lang } = useTranslation();
   const [isClaiming, setIsClaiming] = useState(false);
   const progress = drop.required_minutes > 0
     ? Math.min(100, (drop.current_minutes / drop.required_minutes) * 100)
@@ -522,7 +524,7 @@ function DropItemCard({ drop, onClaimSuccess }: { drop: DropItem; onClaimSuccess
         <div className="text-white text-sm font-medium">{drop.name}</div>
         {progress >= 100 || drop.is_claimed ? (
           <div className="text-xs text-zinc-400 mt-1">
-            Durée requise : {drop.required_minutes} min
+            {t('drops.durationReq')} : {drop.required_minutes} min
           </div>
         ) : (
           <div className="flex items-center gap-2 mt-1">
@@ -536,7 +538,7 @@ function DropItemCard({ drop, onClaimSuccess }: { drop: DropItem; onClaimSuccess
       {drop.is_claimed ? (
         <Badge className="bg-green-500/20 text-green-400">
           <CheckCircle2 className="w-3 h-3 mr-1" />
-          Claimed
+          {t('common.claimed')}
         </Badge>
       ) : progress >= 100 ? (
         <Button 
@@ -550,12 +552,11 @@ function DropItemCard({ drop, onClaimSuccess }: { drop: DropItem; onClaimSuccess
           ) : (
             <Gift className="w-3 h-3 mr-1" />
           )}
-          {isClaiming ? 'Claiming...' : 'Claim'}
+          {isClaiming ? (lang === 'FR' ? 'Réclamation...' : 'Claiming...') : t('common.claim')}
         </Button>
       ) : (
         <Badge variant="secondary" className="bg-zinc-800 text-zinc-400">
           {Math.round(progress)}%
-        </Badge>
       )}
     </div>
   );

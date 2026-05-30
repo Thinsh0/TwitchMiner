@@ -37,6 +37,7 @@ fn default_config() -> AppConfig {
             show_tray_icon: true,
             auto_start_drops: false,
             mine_all_inventory: false,
+            theme: "dark".to_string(),
         },
         schedule: Default::default(),
     }
@@ -73,6 +74,9 @@ fn sanitize_config(mut config: AppConfig) -> AppConfig {
     config.settings.check_interval = config.settings.check_interval.clamp(10, 300);
     if !["EN", "FR", "ES", "DE"].contains(&config.settings.language.as_str()) {
         config.settings.language = "EN".to_string();
+    }
+    if !["light", "dark", "oled"].contains(&config.settings.theme.as_str()) {
+        config.settings.theme = "dark".to_string();
     }
     config
 }

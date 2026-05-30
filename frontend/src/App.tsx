@@ -5,6 +5,7 @@ import type { MinerStatus, StreakMinerStatus, DropItem } from './types'
 import { api } from './api'
 import type { UserInfo } from './api'
 import { activityNotifications } from './activity'
+import { useTranslation } from './lib/i18n'
 import { Button } from '@/components/ui/button'
 import {
   Settings, LayoutDashboard,
@@ -31,13 +32,19 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Toaster, toast } from 'sonner'
 
 function App() {
-  const { status, setStatus, isAuthenticated, setAuthenticated, setDropCampaigns, addActivity, loadActivities } = useAppStore()
+  const { status, setStatus, isAuthenticated, setAuthenticated, setDropCampaigns, addActivity, loadActivities, theme } = useAppStore()
+  const { t, lang } = useTranslation()
   const [authDialog, setAuthDialog] = useState(false)
   const [userCode, setUserCode] = useState('')
   const [authUri, setAuthUri] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
+
+  useEffect(() => {
+    document.documentElement.classList.remove('light', 'dark', 'oled')
+    document.documentElement.classList.add(theme)
+  }, [theme])
 
   // Streak Miner state
   const [streakStatus, setStreakStatus] = useState<StreakMinerStatus>({
@@ -102,7 +109,15 @@ function App() {
   useEffect(() => {
     loadActivities().catch(console.error)
     api.getConfig()
-      .then(activityNotifications.setConfig)
+      .then(config => {
+        activityNotifications.setConfig(config)
+        if (config.settings?.language) {
+          useAppStore.getState().setLanguage(config.settings.language)
+        }
+        if (config.settings?.theme) {
+          useAppStore.getState().setTheme(config.settings.theme as any)
+        }
+      })
       .catch(console.error)
   }, [loadActivities])
 
@@ -340,11 +355,11 @@ function App() {
   }
 
   const navItems = [
-    { id: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'drops' as const, label: 'Drops', icon: Gamepad2 },
-    { id: 'points' as const, label: 'Channel Points', icon: Tv },
-    { id: 'history' as const, label: 'History', icon: History },
-    { id: 'settings' as const, label: 'Settings', icon: Settings },
+    { id: 'dashboard' as const, label: t('nav.dashboard'), icon: LayoutDashboard },
+    { id: 'drops' as const, label: t('nav.drops'), icon: Gamepad2 },
+    { id: 'points' as const, label: t('nav.points'), icon: Tv },
+    { id: 'history' as const, label: t('nav.history'), icon: History },
+    { id: 'settings' as const, label: t('nav.settings'), icon: Settings },
   ]
 
   const renderView = () => {
@@ -381,7 +396,7 @@ function App() {
               onClick={() => setLogoutConfirmOpen(true)}
               className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 bg-white/5 dark:bg-white/5 border border-border rounded-md transition-colors"
             >
-              Logout
+              {t('common.logout')}
             </button>
           </div>
         )}
@@ -446,21 +461,21 @@ function App() {
           )}
           <div className="space-y-2 text-xs">
             <div className="flex justify-between text-zinc-500">
-              <span>Drop Miner</span>
+              <span>{lang === 'FR' ? 'Mineur de Drops' : 'Drop Miner'}</span>
               <span className={status.is_running ? 'text-green-400' : 'text-zinc-600'}>
-                {status.is_running ? 'Active' : 'Idle'}
+                {status.is_running ? t('common.active') : t('common.idle')}
               </span>
             </div>
             <div className="flex justify-between text-zinc-500">
-              <span>Points Miner</span>
+              <span>{lang === 'FR' ? 'Mineur de Points' : 'Points Miner'}</span>
               <span className={streakRunning ? 'text-blue-400' : 'text-zinc-600'}>
-                {streakRunning ? 'Active' : 'Idle'}
+                {streakRunning ? t('common.active') : t('common.idle')}
               </span>
             </div>
             {backendStatus === 'disconnected' && (
               <div className="flex items-center gap-1 text-red-400 text-xs pt-1">
                 <WifiOff className="w-3 h-3" />
-                Backend unreachable
+                {lang === 'FR' ? 'Serveur injoignable' : 'Backend unreachable'}
               </div>
             )}
           </div>
@@ -470,7 +485,7 @@ function App() {
             onClick={() => setLogoutConfirmOpen(true)}
             className="mt-4 w-full border-border text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
           >
-            Logout
+            {t('common.logout')}
           </Button>
         </div>
       </aside>
@@ -520,18 +535,20 @@ function App() {
       <AlertDialog open={logoutConfirmOpen} onOpenChange={setLogoutConfirmOpen}>
         <AlertDialogContent className="bg-background border-border text-foreground">
           <AlertDialogHeader>
-            <AlertDialogTitle>Log out?</AlertDialogTitle>
+            <AlertDialogTitle>{t('common.logout')} ?</AlertDialogTitle>
             <AlertDialogDescription className="text-muted-foreground">
-              This will stop all active miners and disconnect your Twitch account.
+              {lang === 'FR'
+                ? 'Cela arrêtera tous les mineurs actifs et déconnectera votre compte Twitch.'
+                : 'This will stop all active miners and disconnect your Twitch account.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="border-border bg-transparent text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5">Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="border-border bg-transparent text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5">{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleLogout}
               className="bg-red-600 hover:bg-red-700 text-white"
             >
-              Log out
+              {t('common.logout')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

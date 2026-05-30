@@ -98,6 +98,7 @@ export interface AppConfig {
     show_tray_icon?: boolean
     auto_start_drops: boolean
     mine_all_inventory?: boolean
+    theme?: 'light' | 'dark' | 'oled'
   }
   schedule?: WorkSchedule
 }

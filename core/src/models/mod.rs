@@ -195,6 +195,12 @@ pub struct Settings {
     pub auto_start_drops: bool,
     #[serde(default)]
     pub mine_all_inventory: bool,
+    #[serde(default = "default_theme")]
+    pub theme: String,
+}
+
+fn default_theme() -> String {
+    "dark".to_string()
 }
 
 fn default_true() -> bool {

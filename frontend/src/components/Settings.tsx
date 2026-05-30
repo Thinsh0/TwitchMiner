@@ -9,6 +9,8 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
+import { useAppStore } from '@/store'
+import { useTranslation } from '@/lib/i18n'
 import {
   X, Plus, Gamepad2, Tv, Settings2, Clock, AlertTriangle,
   Check, Target, Users, Bell, Zap, FilterX, ChevronRight,
@@ -102,9 +104,10 @@ function ChipList({
 
 // ── Auto-save indicator ───────────────────────────────────────────────────
 function SavedIndicator({ visible }: { visible: boolean }) {
+  const { t } = useTranslation()
   return (
     <span className={`flex items-center gap-1 text-xs text-green-400 transition-opacity duration-300 ${visible ? 'opacity-100' : 'opacity-0'}`}>
-      <Check className="w-3 h-3" /> Sauvegardé
+      <Check className="w-3 h-3" /> {t('common.saved')}
     </span>
   )
 }
@@ -128,6 +131,7 @@ export interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPanelProps) {
+  const { t, lang } = useTranslation()
   const isMobile = osType() === 'android' || osType() === 'ios'
 
   const [config, setConfig] = useState<AppConfig | null>(null)
@@ -232,8 +236,17 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
     updateSched({ [day]: { ...(s[day as keyof typeof s] as any), [field]: value } })
   }
 
-  const updateSetting = (key: keyof AppConfig['settings'], value: any) =>
-    config && setConfig({ ...config, settings: { ...config.settings, [key]: value } })
+  const updateSetting = (key: keyof AppConfig['settings'], value: any) => {
+    if (config) {
+      setConfig({ ...config, settings: { ...config.settings, [key]: value } })
+      if (key === 'language') {
+        useAppStore.getState().setLanguage(value)
+      }
+      if (key === 'theme') {
+        useAppStore.getState().setTheme(value)
+      }
+    }
+  }
 
   const updateBonus = (key: 'daily_streaks' | 'points_farming', field: string, value: any) =>
     config && setConfig({ ...config, bonus: { ...config.bonus, [key]: { ...config.bonus[key], [field]: value } } })
@@ -297,14 +310,16 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
   if (loading) {
     return (
       <Card className="bg-black/40 border-white/10 backdrop-blur-xl shadow-xl">
-        <CardContent className="p-6 text-center text-zinc-400">Chargement de la configuration...</CardContent>
+        <CardContent className="p-6 text-center text-zinc-400">{t('common.loading')}</CardContent>
       </Card>
     )
   }
   if (!config) {
     return (
       <Card className="bg-black/40 border-white/10 backdrop-blur-xl shadow-xl">
-        <CardContent className="p-6 text-center text-red-400">Impossible de charger la configuration.</CardContent>
+        <CardContent className="p-6 text-center text-red-400">
+          {lang === 'FR' ? 'Impossible de charger la configuration.' : 'Failed to load configuration.'}
+        </CardContent>
       </Card>
     )
   }
@@ -316,7 +331,7 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
         <div className="flex items-center justify-between">
           <CardTitle className="text-base text-white flex items-center gap-2">
             <Settings2 className="w-4 h-4 text-purple-400" />
-            Configuration
+            {t('settings.title')}
           </CardTitle>
           <SavedIndicator visible={savedVisible} />
         </div>
@@ -326,16 +341,16 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
         <Tabs defaultValue={defaultTab} className="w-full">
           <TabsList className="grid w-full grid-cols-4 bg-white/5 mb-4">
             <TabsTrigger value="general" className="text-xs gap-1">
-              <Settings2 className="w-3 h-3" /> Général
+              <Settings2 className="w-3 h-3" /> {t('settings.tabs.general')}
             </TabsTrigger>
             <TabsTrigger value="drops" className="text-xs gap-1">
-              <Gamepad2 className="w-3 h-3" /> Drops
+              <Gamepad2 className="w-3 h-3" /> {t('settings.tabs.drops')}
             </TabsTrigger>
             <TabsTrigger value="points" className="text-xs gap-1">
-              <Tv className="w-3 h-3" /> Channel Points
+              <Tv className="w-3 h-3" /> {t('settings.tabs.points')}
             </TabsTrigger>
             <TabsTrigger value="schedule" className="text-xs gap-1">
-              <Clock className="w-3 h-3" /> Planification
+              <Clock className="w-3 h-3" /> {t('settings.tabs.schedule')}
             </TabsTrigger>
           </TabsList>
 
@@ -344,33 +359,33 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
 
             {/* Notifications */}
             <div className="bg-white/[0.03] border border-white/8 rounded-xl p-4">
-              <SectionTitle icon={Bell}>Notifications</SectionTitle>
-              <p className="text-xs text-zinc-500 mb-3">Événements qui déclenchent une notification système.</p>
-              <SettingRow label="Activer les notifications" description="Active/désactive toutes les notifications de l'app.">
+              <SectionTitle icon={Bell}>{t('settings.general.notifications')}</SectionTitle>
+              <p className="text-xs text-zinc-500 mb-3">{t('settings.general.notificationsDesc')}</p>
+              <SettingRow label={t('settings.general.enableNotifications')} description={t('settings.general.enableNotificationsDesc')}>
                 <Switch checked={config.settings.notifications_enabled} onCheckedChange={v => updateSetting('notifications_enabled', v)} />
               </SettingRow>
-              <SettingRow label="Nouveau drop actif" description="Quand le mineur commence à accumuler un nouveau drop.">
+              <SettingRow label={t('settings.general.newActiveDrop')} description={t('settings.general.newActiveDropDesc')}>
                 <Switch checked={config.settings.notify_active_drop} onCheckedChange={v => updateSetting('notify_active_drop', v)} disabled={!config.settings.notifications_enabled} />
               </SettingRow>
-              <SettingRow label="Drop réclamé" description="À chaque drop obtenu avec succès.">
+              <SettingRow label={t('settings.general.dropClaimed')} description={t('settings.general.dropClaimedDesc')}>
                 <Switch checked={config.settings.notify_claim} onCheckedChange={v => updateSetting('notify_claim', v)} disabled={!config.settings.notifications_enabled} />
               </SettingRow>
-              <SettingRow label="Campagne terminée" description="Quand tous les drops d'une campagne sont complétés.">
+              <SettingRow label={t('settings.general.campaignFinish')} description={t('settings.general.campaignFinishDesc')}>
                 <Switch checked={config.settings.notify_campaign_finish} onCheckedChange={v => updateSetting('notify_campaign_finish', v)} disabled={!config.settings.notifications_enabled} />
               </SettingRow>
             </div>
 
             {/* Miner */}
             <div className="bg-white/[0.03] border border-white/8 rounded-xl p-4">
-              <SectionTitle icon={Settings2}>Mineur</SectionTitle>
-              <SettingRow label="Intervalle de vérification" description="Fréquence à laquelle le mineur interroge Twitch (10–300 s).">
+              <SectionTitle icon={Settings2}>{t('settings.general.miner')}</SectionTitle>
+              <SettingRow label={t('settings.general.checkInterval')} description={t('settings.general.checkIntervalDesc')}>
                 <div className="flex items-center gap-2">
                   <Input type="number" value={config.settings.check_interval} onChange={e => updateSetting('check_interval', parseInt(e.target.value) || 60)}
                     className="w-16 bg-white/5 border-white/10 text-white text-center" min={10} max={300} />
                   <span className="text-xs text-zinc-500">s</span>
                 </div>
               </SettingRow>
-              <SettingRow label="Langue" description="Langue de l'interface.">
+              <SettingRow label={t('settings.general.language')} description={t('settings.general.languageDesc')}>
                 <select value={config.settings.language} onChange={e => updateSetting('language', e.target.value)}
                   className="bg-zinc-900 border border-white/10 text-white rounded px-2 py-1 text-sm">
                   <option value="FR">🇫🇷 Français</option>
@@ -379,29 +394,37 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
                   <option value="DE">🇩🇪 Deutsch</option>
                 </select>
               </SettingRow>
+              <SettingRow label={lang === 'FR' ? 'Thème' : 'Theme'} description={lang === 'FR' ? "Thème de l'interface graphique." : 'UI color theme.'}>
+                <select value={config.settings.theme || 'dark'} onChange={e => updateSetting('theme', e.target.value)}
+                  className="bg-zinc-900 border border-white/10 text-white rounded px-2 py-1 text-sm">
+                  <option value="light">☀️ {lang === 'FR' ? 'Clair' : 'Light'}</option>
+                  <option value="dark">🌙 {lang === 'FR' ? 'Sombre' : 'Dark'}</option>
+                  <option value="oled">🌑 OLED</option>
+                </select>
+              </SettingRow>
             </div>
 
             {/* Desktop-only: System & Tray */}
             {!isMobile && (
               <div className="bg-white/[0.03] border border-white/8 rounded-xl p-4">
-                <SectionTitle icon={Settings2}>Système &amp; Tray</SectionTitle>
-                <SettingRow label="Lancement au démarrage" description="Démarre l'app automatiquement au démarrage de Windows.">
+                <SectionTitle icon={Settings2}>{t('settings.general.system')}</SectionTitle>
+                <SettingRow label={t('settings.general.autostart')} description={t('settings.general.autostartDesc')}>
                   <Switch checked={autostartEnabled} onCheckedChange={toggleAutostart} />
                 </SettingRow>
-                <SettingRow label="Minimiser dans la zone de notification" description="Reste actif en arrière-plan à la fermeture.">
+                <SettingRow label={t('settings.general.minToTray')} description={t('settings.general.minToTrayDesc')}>
                   <Switch checked={config.settings.minimize_to_tray ?? true} onCheckedChange={v => updateSetting('minimize_to_tray', v)} />
                 </SettingRow>
-                <SettingRow label="Icône dans le tray" description="Affiche l'icône dans la barre des tâches système.">
+                <SettingRow label={t('settings.general.trayIcon')} description={t('settings.general.trayIconDesc')}>
                   <Switch checked={config.settings.show_tray_icon ?? true} onCheckedChange={v => updateSetting('show_tray_icon', v)} />
                 </SettingRow>
-                <SettingRow label="Lancer les dossiers de logs" description="">
+                <SettingRow label={t('settings.general.logsFolder')} description="">
                   <Button variant="outline" size="sm" className="border-white/10 text-zinc-400 hover:text-white hover:bg-white/5 text-xs"
                     onClick={async () => {
                       const { appLogDir } = await import('@tauri-apps/api/path')
                       const { open } = await import('@tauri-apps/plugin-shell')
                       await open(await appLogDir())
                     }}>
-                    Ouvrir les logs
+                    {t('common.openLogs')}
                   </Button>
                 </SettingRow>
               </div>
@@ -409,23 +432,23 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
 
             {/* Danger zone */}
             <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-4">
-              <SectionTitle icon={AlertTriangle}>Zone de danger</SectionTitle>
+              <SectionTitle icon={AlertTriangle}>{t('settings.general.dangerZone')}</SectionTitle>
               <p className="text-xs text-red-400/70 mb-3">
-                Efface toutes vos configurations et remet les valeurs par défaut. Irréversible.
+                {t('settings.general.dangerZoneDesc')}
               </p>
               {resetConfirmOpen ? (
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" className="border-white/10 text-zinc-400 flex-1" onClick={() => setResetConfirmOpen(false)}>
-                    Annuler
+                    {t('common.cancel')}
                   </Button>
                   <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white flex-1" onClick={resetConfig}>
-                    <RotateCcw className="w-3 h-3 mr-1" /> Confirmer
+                    <RotateCcw className="w-3 h-3 mr-1" /> {t('common.confirm')}
                   </Button>
                 </div>
               ) : (
                 <Button size="sm" className="bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 w-full"
                   onClick={() => setResetConfirmOpen(true)}>
-                  <RotateCcw className="w-3 h-3 mr-1" /> Réinitialiser la configuration
+                  <RotateCcw className="w-3 h-3 mr-1" /> {t('settings.general.resetButton')}
                 </Button>
               )}
             </div>
@@ -436,14 +459,13 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
 
             {/* Jeux ciblés */}
             <div className="bg-white/[0.03] border border-white/8 rounded-xl p-4">
-              <SectionTitle icon={Target}>Jeux ciblés</SectionTitle>
+              <SectionTitle icon={Target}>{t('settings.drops.games')}</SectionTitle>
               <p className="text-xs text-zinc-500 mb-3">
-                Le mineur cherche des drops <span className="text-white font-semibold">uniquement</span> pour ces jeux.
-                Sans jeu configuré, aucun drop n'est miné.
+                {t('settings.drops.gamesDesc')}
               </p>
               <div className="flex gap-2 relative">
                 <div className="relative flex-1">
-                  <Input value={newGame} onChange={e => setNewGame(e.target.value)} placeholder="Rechercher un jeu..."
+                  <Input value={newGame} onChange={e => setNewGame(e.target.value)} placeholder={t('settings.drops.gamesPlaceholder')}
                     className="bg-white/5 border-white/10 text-white placeholder:text-zinc-500"
                     onKeyDown={e => e.key === 'Enter' && addGame()}
                     onFocus={() => newGame.length >= 2 && setShowGameDropdown(gameSearchResults.length > 0)} />
@@ -470,12 +492,12 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
 
             {/* Streamers ciblés */}
             <div className="bg-white/[0.03] border border-white/8 rounded-xl p-4">
-              <SectionTitle icon={Users}>Streamers ciblés</SectionTitle>
+              <SectionTitle icon={Users}>{t('settings.drops.streamers')}</SectionTitle>
               <p className="text-xs text-zinc-500 mb-3">
-                Surveille ces chaînes en priorité lorsqu'elles diffusent un jeu ciblé.
+                {t('settings.drops.streamersDesc')}
               </p>
               <div className="flex gap-2">
-                <Input value={newStreamer} onChange={e => setNewStreamer(e.target.value)} placeholder="Nom du streamer..."
+                <Input value={newStreamer} onChange={e => setNewStreamer(e.target.value)} placeholder={t('settings.drops.streamersPlaceholder')}
                   className="bg-white/5 border-white/10 text-white placeholder:text-zinc-500"
                   onKeyDown={e => e.key === 'Enter' && addStreamer()} />
                 <Button onClick={addStreamer} size="sm" className="bg-purple-600 hover:bg-purple-700 text-white">
@@ -487,11 +509,11 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
 
             {/* Comportement */}
             <div className="bg-white/[0.03] border border-white/8 rounded-xl p-4">
-              <SectionTitle icon={Settings2}>Comportement</SectionTitle>
-              <SettingRow label="Autoclaim automatique" description="Réclame les drops terminés sans action manuelle dès qu'ils sont disponibles.">
+              <SectionTitle icon={Settings2}>{t('settings.drops.behavior')}</SectionTitle>
+              <SettingRow label={t('settings.drops.mineAll')} description={t('settings.drops.mineAllDesc')}>
                 <Switch checked={config.settings.mine_all_inventory ?? false} onCheckedChange={v => updateSetting('mine_all_inventory' as any, v)} />
               </SettingRow>
-              <SettingRow label="Lancement automatique" description="Démarre le mineur de drops dès l'ouverture de l'app.">
+              <SettingRow label={t('settings.drops.autoStartDrops')} description={t('settings.drops.autoStartDropsDesc')}>
                 <Switch checked={config.settings.auto_start_drops} onCheckedChange={v => updateSetting('auto_start_drops', v)} />
               </SettingRow>
             </div>
@@ -503,14 +525,14 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
             {/* Watch Bonus */}
             <div className="bg-white/[0.03] border border-white/8 rounded-xl p-4">
               <div className="flex items-center justify-between mb-1">
-                <SectionTitle icon={Star}>Watch Bonus (claim quotidien)</SectionTitle>
-                <Shortcut view="points" label="Voir les chaînes" />
+                <SectionTitle icon={Star}>{t('settings.points.dailyBonus')}</SectionTitle>
+                <Shortcut view="points" label={lang === 'FR' ? 'Voir les chaînes' : 'View channels'} />
               </div>
               <p className="text-xs text-zinc-500 mb-3">
-                Regarde ces chaînes pour déclencher le bonus de présence quotidien.
+                {t('settings.points.dailyBonusDesc')}
               </p>
               <div className="flex gap-2">
-                <Input value={newStreakChannel} onChange={e => setNewStreakChannel(e.target.value)} placeholder="Nom de la chaîne..."
+                <Input value={newStreakChannel} onChange={e => setNewStreakChannel(e.target.value)} placeholder={t('settings.points.channelPlaceholder')}
                   className="bg-white/5 border-white/10 text-white placeholder:text-zinc-500"
                   onKeyDown={e => e.key === 'Enter' && addStreakChannel()} />
                 <Button onClick={addStreakChannel} size="sm" className="bg-purple-600 hover:bg-purple-700 text-white">
@@ -519,14 +541,14 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
               </div>
               <ChipList items={config.bonus.daily_streaks.channels} colorClass="bg-green-500/20 text-green-400 border-green-500/50" onRemove={removeStreakChannel} />
               <Separator className="bg-white/10 my-3" />
-              <SettingRow label="Démarrage automatique" description="Lance le watch bonus au démarrage de l'app.">
+              <SettingRow label={t('settings.points.autoStartPoints')} description={t('settings.points.autoStartPointsDesc')}>
                 <Switch checked={config.bonus.daily_streaks.auto_start} onCheckedChange={v => updateBonus('daily_streaks', 'auto_start', v)} />
               </SettingRow>
-              <SettingRow label="Mode de surveillance" description="Séquentiel : une chaîne à la fois. Parallèle : toutes simultanément.">
+              <SettingRow label={t('settings.points.monitoredMode')} description={t('settings.points.monitoredModeDesc')}>
                 <select value={config.bonus.daily_streaks.mode} onChange={e => updateBonus('daily_streaks', 'mode', e.target.value)}
                   className="bg-zinc-900 border border-white/10 text-white rounded px-2 py-1 text-sm">
-                  <option value="sequential">Séquentiel</option>
-                  <option value="parallel">Parallèle</option>
+                  <option value="sequential">{t('settings.points.sequential')}</option>
+                  <option value="parallel">{t('settings.points.parallel')}</option>
                 </select>
               </SettingRow>
             </div>
@@ -534,14 +556,14 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
             {/* Points Farming */}
             <div className="bg-white/[0.03] border border-white/8 rounded-xl p-4">
               <div className="flex items-center justify-between mb-1">
-                <SectionTitle icon={Coins}>Farming de channel points</SectionTitle>
-                <Shortcut view="points" label="Voir les points" />
+                <SectionTitle icon={Coins}>{t('settings.points.pointsFarming')}</SectionTitle>
+                <Shortcut view="points" label={lang === 'FR' ? 'Voir les points' : 'View points'} />
               </div>
               <p className="text-xs text-zinc-500 mb-3">
-                Réclame automatiquement les channel points toutes les heures.
+                {t('settings.points.pointsFarmingDesc')}
               </p>
               <div className="flex gap-2">
-                <Input value={newPointsChannel} onChange={e => setNewPointsChannel(e.target.value)} placeholder="Nom de la chaîne..."
+                <Input value={newPointsChannel} onChange={e => setNewPointsChannel(e.target.value)} placeholder={t('settings.points.channelPlaceholder')}
                   className="bg-white/5 border-white/10 text-white placeholder:text-zinc-500"
                   onKeyDown={e => e.key === 'Enter' && addPointsChannel()} />
                 <Button onClick={addPointsChannel} size="sm" className="bg-purple-600 hover:bg-purple-700 text-white">
@@ -550,10 +572,10 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
               </div>
               <ChipList items={config.bonus.points_farming.channels} colorClass="bg-yellow-500/20 text-yellow-400 border-yellow-500/50" onRemove={removePointsChannel} />
               <Separator className="bg-white/10 my-3" />
-              <SettingRow label="Démarrage automatique" description="Lance le farming au démarrage de l'app.">
+              <SettingRow label={t('settings.points.autoStartFarming')} description={t('settings.points.pointsFarmingDesc')}>
                 <Switch checked={config.bonus.points_farming.auto_start} onCheckedChange={v => updateBonus('points_farming', 'auto_start', v)} />
               </SettingRow>
-              <SettingRow label="Chaînes simultanées max" description="Nombre de chaînes surveillées en même temps (1–10).">
+              <SettingRow label={t('settings.points.maxConcurrent')} description={t('settings.points.maxConcurrentDesc')}>
                 <Input type="number" value={config.bonus.points_farming.max_concurrent}
                   onChange={e => updateBonus('points_farming', 'max_concurrent', parseInt(e.target.value) || 1)}
                   className="w-16 bg-white/5 border-white/10 text-white text-center" min={1} max={10} />
@@ -567,8 +589,8 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
             {/* Master toggle */}
             <div className="flex items-center justify-between p-4 bg-white/[0.03] border border-white/8 rounded-xl">
               <div>
-                <div className="text-sm font-semibold text-white">Activer la planification</div>
-                <p className="text-xs text-zinc-500 mt-0.5">Suspend le minage en dehors des plages horaires définies.</p>
+                <div className="text-sm font-semibold text-white">{t('settings.schedule.enableSchedule')}</div>
+                <p className="text-xs text-zinc-500 mt-0.5">{t('settings.schedule.enableScheduleDesc')}</p>
               </div>
               <Switch checked={sched().enabled} onCheckedChange={v => updateSched({ enabled: v })} />
             </div>
@@ -578,15 +600,16 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
 
                 {/* Weekly schedule */}
                 <div className="bg-white/[0.03] border border-white/8 rounded-xl p-4">
-                  <SectionTitle icon={Clock}>Plages horaires</SectionTitle>
+                  <SectionTitle icon={Clock}>{t('settings.schedule.scheduleTimes')}</SectionTitle>
                   <div className="space-y-1 mt-2">
                     {DAYS.map(day => {
                       const d = (sched()[day] as any) ?? { enabled: false, start_time: '08:00', end_time: '18:00' }
+                      const dayLabel = lang === 'FR' ? DAY_LABELS[day] : day.charAt(0).toUpperCase() + day.slice(1)
                       return (
                         <div key={day} className="flex flex-wrap items-center gap-3 py-2 border-b border-white/5 last:border-0">
                           <div className="flex items-center gap-2 w-28">
                             <Switch checked={d.enabled} onCheckedChange={v => updateSchedDay(day, 'enabled', v)} className="data-[state=checked]:bg-purple-500" />
-                            <span className="text-xs font-medium text-zinc-300 capitalize">{DAY_LABELS[day]}</span>
+                            <span className="text-xs font-medium text-zinc-300 capitalize">{dayLabel}</span>
                           </div>
                           {d.enabled ? (
                             <div className="flex items-center gap-2">
@@ -597,7 +620,7 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
                                 className="w-24 bg-zinc-900 border-white/10 text-white text-xs" />
                             </div>
                           ) : (
-                            <span className="text-xs text-zinc-600 italic">Toute la journée</span>
+                            <span className="text-xs text-zinc-600 italic">{t('settings.schedule.allDay')}</span>
                           )}
                         </div>
                       )
@@ -607,14 +630,14 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
 
                 {/* Game exceptions */}
                 <div className="bg-white/[0.03] border border-white/8 rounded-xl p-4">
-                  <SectionTitle icon={FilterX}>Exceptions par jeu</SectionTitle>
+                  <SectionTitle icon={FilterX}>{t('settings.schedule.gameExceptions')}</SectionTitle>
                   <p className="text-xs text-zinc-500 mb-3">
-                    Exclure définitivement un jeu du minage. Filtrage optionnel par mot-clé dans le nom de la campagne.
+                    {t('settings.schedule.gameExceptionsDesc')}
                   </p>
                   <div className="flex gap-2 mb-2 flex-wrap">
-                    <Input value={newExcGame} onChange={e => setNewExcGame(e.target.value)} placeholder="Nom du jeu..."
+                    <Input value={newExcGame} onChange={e => setNewExcGame(e.target.value)} placeholder={t('settings.schedule.gameNamePlaceholder')}
                       className="bg-white/5 border-white/10 text-white placeholder:text-zinc-500 flex-1 min-w-28" />
-                    <Input value={newExcKeyword} onChange={e => setNewExcKeyword(e.target.value)} placeholder="Mot-clé campagne (optionnel)"
+                    <Input value={newExcKeyword} onChange={e => setNewExcKeyword(e.target.value)} placeholder={t('settings.schedule.campaignKeywordPlaceholder')}
                       className="bg-white/5 border-white/10 text-white placeholder:text-zinc-500 flex-1 min-w-32" />
                     <Button onClick={addGameException} size="sm" className="bg-red-600/80 hover:bg-red-600 text-white">
                       <Plus className="w-4 h-4" />
@@ -622,15 +645,15 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
                   </div>
                   <div className="space-y-1.5 mt-2">
                     {gameExceptions().length === 0 ? (
-                      <p className="text-xs text-zinc-600 italic text-center py-3">Aucune exception configurée.</p>
+                      <p className="text-xs text-zinc-600 italic text-center py-3">{t('settings.schedule.noExceptions')}</p>
                     ) : gameExceptions().map((exc, i) => (
                       <div key={i} className="flex items-center justify-between gap-2 px-3 py-2 bg-red-500/5 border border-red-500/20 rounded-lg">
                         <div className="flex items-center gap-2 min-w-0">
-                          <Badge className="bg-red-500/20 text-red-400 border border-red-500/30 text-xs flex-shrink-0">Exclu</Badge>
+                          <Badge className="bg-red-500/20 text-red-400 border border-red-500/30 text-xs flex-shrink-0">{lang === 'FR' ? 'Exclu' : 'Excluded'}</Badge>
                           <div className="min-w-0">
                             <div className="text-xs font-semibold text-white truncate">{exc.game}</div>
-                            {exc.keyword && <div className="text-xs text-zinc-500">si contient "{exc.keyword}"</div>}
-                            {!exc.keyword && <div className="text-xs text-zinc-500">Toutes les campagnes</div>}
+                            {exc.keyword && <div className="text-xs text-zinc-500">{lang === 'FR' ? 'si contient' : 'if contains'} "{exc.keyword}"</div>}
+                            {!exc.keyword && <div className="text-xs text-zinc-500">{lang === 'FR' ? 'Toutes les campagnes' : 'All campaigns'}</div>}
                           </div>
                         </div>
                         <Button size="icon" variant="ghost" className="h-7 w-7 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 flex-shrink-0"
@@ -644,11 +667,11 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
 
                 {/* Auto exceptions */}
                 <div className="bg-white/[0.03] border border-white/8 rounded-xl p-4">
-                  <SectionTitle icon={Zap}>Exceptions automatiques</SectionTitle>
-                  <p className="text-xs text-zinc-500 mb-3">Skip automatiquement les campagnes qui ne valent pas le temps investi.</p>
+                  <SectionTitle icon={Zap}>{t('settings.schedule.autoExceptions')}</SectionTitle>
+                  <p className="text-xs text-zinc-500 mb-3">{t('settings.schedule.autoExceptionsDesc')}</p>
                   <SettingRow
-                    label="Ignorer les drops courts"
-                    description="Skip si la campagne dure moins de N jours (bêtas, tests limités…)."
+                    label={t('settings.schedule.skipShort')}
+                    description={t('settings.schedule.skipShortDesc')}
                   >
                     <div className="flex items-center gap-1.5">
                       <Input
@@ -658,13 +681,13 @@ export function SettingsPanel({ onNavigate, defaultTab = 'general' }: SettingsPa
                         className="w-14 bg-white/5 border-white/10 text-white text-center text-xs"
                         min={0} max={30}
                       />
-                      <span className="text-xs text-zinc-500">j</span>
+                      <span className="text-xs text-zinc-500">{t('common.days').charAt(0)}</span>
                     </div>
                   </SettingRow>
-                  <SettingRow label="Ignorer les drops expirés" description="Skip les campagnes terminées depuis plus de 24h.">
+                  <SettingRow label={t('settings.schedule.skipExpired')} description={t('settings.schedule.skipExpiredDesc')}>
                     <Switch checked={sched().skip_expired ?? true} onCheckedChange={v => updateSched({ skip_expired: v })} />
                   </SettingRow>
-                  <SettingRow label="Ignorer si déjà possédé" description="Ne mine pas un drop déjà obtenu (sauf si «Miner tout l'inventaire» est actif).">
+                  <SettingRow label={t('settings.schedule.skipOwned')} description={t('settings.schedule.skipOwnedDesc')}>
                     <Switch checked={sched().skip_already_owned ?? true} onCheckedChange={v => updateSched({ skip_already_owned: v })} />
                   </SettingRow>
                 </div>

@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { open } from '@tauri-apps/plugin-shell'
 import { useAppStore } from '@/store'
+import { useTranslation } from '@/lib/i18n'
 import type { ActiveDropInfo, MinerStatus, StreakMinerStatus } from '@/types'
 import { Play, Square, Activity, Zap, TrendingUp, Clock, ImageOff, Gamepad2 } from 'lucide-react'
 import { MobileSetupWizard } from './MobileSetupWizard'
@@ -20,6 +21,7 @@ interface DashboardViewProps {
 }
 
 export function DashboardView({ status, streakStatus, streakRunning, onToggleDropMiner, onToggleStreakMiner }: DashboardViewProps) {
+  const { t, lang } = useTranslation()
   const isAndroid = osType() === 'android'
   const [configuredChannels, setConfiguredChannels] = useState<string[]>([])
   const [priorityGames, setPriorityGames] = useState<string[]>([])
@@ -84,26 +86,26 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           icon={<Clock className="w-5 h-5 text-purple-400" />}
-          label="Miner Uptime"
+          label={t('dashboard.uptime')}
           value={uptime}
           color={status.is_running ? 'text-green-400' : 'text-zinc-400'}
         />
         <StatCard
           icon={<Gamepad2 className="w-5 h-5 text-purple-400" />}
-          label="Drops Claimed"
+          label={t('dashboard.claimed')}
           value={claimedDrops.length.toString()}
           color="text-purple-400"
         />
         <StatCard
           icon={<TrendingUp className="w-5 h-5 text-yellow-400" />}
-          label="Total Points"
+          label={t('dashboard.points')}
           value={totalPoints.toLocaleString()}
           color="text-yellow-400"
         />
         <StatCard
           icon={<Zap className="w-5 h-5 text-blue-400" />}
-          label="Points Miner"
-          value={streakRunning ? 'Active' : 'Idle'}
+          label={lang === 'FR' ? 'Mineur de Points' : 'Points Miner'}
+          value={streakRunning ? t('common.active') : t('common.idle')}
           color={streakRunning ? 'text-blue-400' : 'text-zinc-400'}
         />
       </div>
@@ -114,7 +116,7 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
           <CardHeader>
             <CardTitle className="text-lg text-white flex items-center gap-2">
               <Activity className="w-5 h-5 text-purple-400" />
-              Drop Mining
+              {lang === 'FR' ? 'Mining de Drops' : 'Drop Mining'}
             </CardTitle>
             <CardDescription className="text-zinc-400">{status.status}</CardDescription>
           </CardHeader>
@@ -135,7 +137,7 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
                   {status.current_streamer}
                 </button>
               ) : (
-                <span className="text-sm text-zinc-400">No streamer</span>
+                <span className="text-sm text-zinc-400">{lang === 'FR' ? 'Aucun streamer' : 'No streamer'}</span>
               )}
             </div>
 
@@ -147,7 +149,7 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
               variant={status.is_running ? "destructive" : "default"}
               onClick={onToggleDropMiner}
             >
-              {status.is_running ? <><Square className="mr-2 h-4 w-4" /> Stop Drop Mining</> : <><Play className="mr-2 h-4 w-4" /> Start Drop Mining</>}
+              {status.is_running ? <><Square className="mr-2 h-4 w-4" /> {t('dashboard.stopMiner')}</> : <><Play className="mr-2 h-4 w-4" /> {t('dashboard.startMiner')}</>}
             </Button>
           </CardContent>
         </Card>
@@ -160,7 +162,7 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
               Channel Points
             </CardTitle>
             <CardDescription className="text-zinc-400">
-              {activeChannels} channels active | {totalPoints.toLocaleString()} points total
+              {activeChannels} {lang === 'FR' ? 'chaînes actives' : 'channels active'} | {totalPoints.toLocaleString()} {lang === 'FR' ? 'points au total' : 'points total'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -183,7 +185,7 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
               ))}
               {configuredChannels.length === 0 && streakStatus.channels_info?.length === 0 && (
                 <div className="text-center py-4 text-zinc-500 text-sm">
-                  No channels configured. Go to Settings to add channels.
+                  {t('points.noChannels')}
                 </div>
               )}
               {priorityGames.length > 0 && (
@@ -203,7 +205,7 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
               variant={streakRunning ? "destructive" : "default"}
               onClick={onToggleStreakMiner}
             >
-              {streakRunning ? <><Square className="mr-2 h-4 w-4" /> Stop Points Mining</> : <><Play className="mr-2 h-4 w-4" /> Start Points Mining</>}
+              {streakRunning ? <><Square className="mr-2 h-4 w-4" /> {t('points.stopFarming')}</> : <><Play className="mr-2 h-4 w-4" /> {t('points.startFarming')}</>}
             </Button>
           </CardContent>
         </Card>
@@ -213,10 +215,10 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
         <CardHeader>
           <CardTitle className="text-lg text-white flex items-center gap-2">
             <Clock className="w-5 h-5 text-green-400" />
-            Recent Activity
+            {lang === 'FR' ? 'Activité récente' : 'Recent Activity'}
           </CardTitle>
           <CardDescription className="text-zinc-400">
-            Latest miner, authentication, and system events
+            {lang === 'FR' ? 'Derniers événements du mineur, de connexion et du système' : 'Latest miner, authentication, and system events'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -241,7 +243,7 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
             </div>
           ) : (
             <div className="rounded-lg border border-white/5 bg-white/5 p-4 text-sm text-zinc-500">
-              Activity will appear here when miners start, stop, or report status changes.
+              {lang === 'FR' ? "L'activité apparaîtra ici lorsque les mineurs démarrent, s'arrêtent ou signalent des changements de statut." : 'Activity will appear here when miners start, stop, or report status changes.'}
             </div>
           )}
         </CardContent>

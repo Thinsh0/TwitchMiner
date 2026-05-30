@@ -288,13 +288,20 @@ impl TwitchGQL {
         store: &Arc<Store<tauri::Wry>>,
         drop_id: &str,
     ) -> Result<Value, String> {
-        let sha256 = "2f884fa187b8fadb2a49db0adc033e636f7b6aaee6e76de1e2bba9a7baf0daf6";
+        // Use a raw GQL mutation instead of a persisted query to avoid
+        // PersistedQueryNotFound errors caused by Twitch rotating sha256 hashes.
+        let query = "mutation DropsPage_ClaimDropRewards($input: ClaimDropRewardsInput!) {
+            claimDropRewards(input: $input) {
+                isUserAccountConnected
+                status
+            }
+        }";
         let vars = json!({
             "input": {
                 "dropInstanceID": drop_id
             }
         });
-        let result = self.post_persisted(store, "DropsPage_ClaimDropRewards", sha256, vars).await;
+        let result = self.post(store, "DropsPage_ClaimDropRewards", query, vars).await;
         
         match result {
             Ok(val) => {

@@ -169,7 +169,7 @@ export function DashboardView({ status, streakStatus, streakRunning, onToggleDro
             <div className="space-y-2">
               {(streakStatus.channels_info?.length > 0 
                 ? streakStatus.channels_info.slice(0, 3) 
-                : configuredChannels.slice(0, 3).map(name => ({ channel_name: name, points: 0, has_claim_available: false, status: 'Idle', profile_image_url: null }))
+                : configuredChannels.slice(0, 3).map(name => ({ channel_name: name, channel_login: name.toLowerCase(), points: 0, has_claim_available: false, status: 'Idle', profile_image_url: null }))
               ).map((channel: any, i) => (
                 <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5">
                   <div className="flex items-center gap-2">

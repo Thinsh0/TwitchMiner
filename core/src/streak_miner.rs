@@ -275,6 +275,7 @@ async fn get_channel_points(
 ) -> ChannelPointsInfo {
     let mut info = ChannelPointsInfo {
         channel_name: channel.to_string(),
+        channel_login: channel.to_lowercase(),
         points: 0,
         has_claim_available: false,
         status: "Checking...".to_string(),
@@ -283,13 +284,13 @@ async fn get_channel_points(
 
     match gql.get_channel_points_context(store, channel).await {
         Ok(response) => {
+            if let Some(img_url) = response.pointer("/data/user/profileImageURL").and_then(|v| v.as_str()) {
+                info.profile_image_url = Some(img_url.to_string());
+            }
             if let Some(channel_data) = response.pointer("/data/channel") {
                 if let Some(display_name) = channel_data.get("displayName").and_then(|v| v.as_str())
                 {
                     info.channel_name = display_name.to_string();
-                }
-                if let Some(img_url) = channel_data.get("profileImageURL").and_then(|v| v.as_str()) {
-                    info.profile_image_url = Some(img_url.to_string());
                 }
                 if let Some(self_data) = channel_data.get("self") {
                     if let Some(points_data) = self_data.get("communityPoints") {
@@ -575,9 +576,17 @@ async fn process_single_channel(
         }
     };
 
+    let game_name = stream_data
+        .pointer("/game/name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let game_id = json_id_to_string(stream_data.pointer("/game/id")).unwrap_or_default();
+
     log::debug!(
-        "[process_single_channel] {}: broadcast_id={}, channel_id={}",
-        channel, broadcast_id, channel_id
+        "[process_single_channel] {}: broadcast_id={}, channel_id={}, game={}, game_id={}",
+        channel, broadcast_id, channel_id, game_name, game_id
     );
 
     // Prepare and send minute-watched payload
@@ -587,10 +596,10 @@ async fn process_single_channel(
         "properties": {
             "broadcast_id": broadcast_id,
             "channel_id": channel_id,
-            "channel": channel,
+            "channel": channel.to_lowercase(),
             "client_time": client_time,
-            "game": "",
-            "game_id": "",
+            "game": game_name,
+            "game_id": game_id,
             "hidden": false,
             "is_live": true,
             "live": true,

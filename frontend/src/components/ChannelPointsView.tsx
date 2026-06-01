@@ -32,9 +32,9 @@ export function ChannelPointsView({ streakStatus, streakRunning, onToggle }: Cha
   // Merge live channels_info with configured channels (live data takes priority)
   const mergedChannels: ChannelPointsInfo[] = configuredChannels.map(name => {
     const live = streakStatus.channels_info.find(
-      ch => ch.channel_name.toLowerCase() === name.toLowerCase()
+      ch => ch.channel_login.toLowerCase() === name.toLowerCase()
     )
-    return live ?? { channel_name: name, points: 0, has_claim_available: false, status: 'Idle' }
+    return live ?? { channel_name: name, channel_login: name.toLowerCase(), points: 0, has_claim_available: false, status: 'Idle' }
   })
 
   const totalPoints = mergedChannels.reduce((sum, ch) => sum + ch.points, 0);

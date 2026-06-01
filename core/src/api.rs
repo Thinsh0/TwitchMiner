@@ -520,7 +520,6 @@ mutation SendEvents($input: SendSpadeEventsInput!) {
             channel(name: $login) {
                 id
                 displayName
-                profileImageURL(width: 50)
                 self {
                     communityPoints {
                         balance
@@ -529,6 +528,9 @@ mutation SendEvents($input: SendSpadeEventsInput!) {
                         }
                     }
                 }
+            }
+            user(login: $login) {
+                profileImageURL(width: 50)
             }
         }";
         let vars = json!({ "login": channel_login });

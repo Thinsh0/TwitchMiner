@@ -44,6 +44,7 @@ export interface DropCampaign {
 
 export interface ChannelPointsInfo {
   channel_name: string
+  channel_login: string
   points: number
   has_claim_available: boolean
   status: string

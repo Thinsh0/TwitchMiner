@@ -62,6 +62,7 @@ pub struct DropItem {
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct ChannelPointsInfo {
     pub channel_name: String,
+    pub channel_login: String,
     pub points: u64,
     pub has_claim_available: bool,
     pub status: String,

@@ -80,6 +80,7 @@ impl TwitchGQL {
 
         let mut last_error = String::new();
         for attempt in 1..=3 {
+            let _ = crate::auth::ensure_valid_token(store).await;
             let token = Self::get_auth_token(store);
             let res = match self
                 .client
@@ -173,6 +174,7 @@ impl TwitchGQL {
 
         let mut last_error = String::new();
         for attempt in 1..=3 {
+            let _ = crate::auth::ensure_valid_token(store).await;
             let token = Self::get_auth_token(store);
             let res = match self
                 .client

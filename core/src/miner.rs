@@ -476,7 +476,8 @@ fn build_mineable_candidates(
                 campaign_name: camp.name.clone(),
                 game_id: camp.game_id.clone(),
                 game_name: camp.game_name.clone(),
-                drop_id: String::from("PROVISIONAL"),
+                // Encode campaign_id so the outer loop can track probe results.
+                drop_id: format!("PROVISIONAL:{}", camp.id),
                 drop_name: String::from("Starting Campaign..."),
                 image_url: camp.image_url.clone(),
                 current_minutes: 0,
@@ -564,7 +565,7 @@ fn available_drops_contains_candidate(response: &Value, candidate: &MineableDrop
             return false;
         }
 
-        if candidate.drop_id == "PROVISIONAL" {
+        if candidate.drop_id.starts_with("PROVISIONAL") {
             return true;
         }
 
@@ -820,6 +821,11 @@ pub async fn start_miner(
         let mut active_streams: Vec<TargetStream> = Vec::new();
         // Cache user_id at startup; refresh only on auth error
         let mut cached_user_id: Option<String> = None;
+        // Campaign IDs that returned drops:[] after a probe watch — skipped for this session.
+        // Pure RAM: resets every time the miner is started. No disk persistence.
+        let mut exhausted_campaigns: std::collections::HashSet<String> = std::collections::HashSet::new();
+        // Campaign IDs from PROVISIONAL streams in the last discovery cycle, waiting to be checked.
+        let mut just_probed_campaign_ids: Vec<String> = Vec::new();
 
         loop {
             if cancel_token.is_cancelled() {
@@ -894,6 +900,16 @@ pub async fn start_miner(
                     .map(|config| config.priorities.streamers.clone())
                     .unwrap_or_default();
 
+                // Before clearing streams: collect PROVISIONAL campaign IDs from last cycle
+                // so we can check them against the freshly fetched campaigns below.
+                just_probed_campaign_ids = active_streams
+                    .iter()
+                    .filter_map(|s| {
+                        s.active_drop.0.strip_prefix("PROVISIONAL:")
+                            .map(|id| id.to_string())
+                    })
+                    .collect();
+
                 active_streams.clear();
 
                 let global_campaigns = match gql.get_all_campaigns(&store).await {
@@ -924,6 +940,15 @@ pub async fn start_miner(
                 };
 
                 let mut campaigns = parse_all_campaigns(&global_campaigns, &inventory);
+
+                // Mark probed-but-still-empty campaigns as exhausted (RAM only, not persisted).
+                for camp_id in &just_probed_campaign_ids {
+                    if campaigns.iter().any(|c| &c.id == camp_id && c.drops.is_empty()) {
+                        log::info!("start_miner: campaign {} had no drops after probe — marking exhausted", camp_id);
+                        exhausted_campaigns.insert(camp_id.clone());
+                    }
+                }
+                just_probed_campaign_ids.clear();
 
                 // Persist campaign → drop_ids structure (miner loop copy)
                 let mut camp_structure: std::collections::HashMap<String, Vec<String>> = store
@@ -957,6 +982,10 @@ pub async fn start_miner(
                         return false;
                     }
                     if camp.drops.is_empty() {
+                        // Skip campaigns exhausted by the probe strategy (RAM-only).
+                        if exhausted_campaigns.contains(&camp.id) {
+                            return false;
+                        }
                         if let Some(known_ids) = camp_structure.get(&camp.id) {
                             if is_campaign_completed_via_claimed_drops(known_ids, &claimed_drops) {
                                 return false;
@@ -1069,7 +1098,7 @@ pub async fn start_miner(
 
                         // For unstarted campaigns (PROVISIONAL), skip the drops-tag check:
                         // the tag may not yet be set, but watching the stream will activate the campaign.
-                        if !has_drops && candidate.drop_id != "PROVISIONAL" {
+                        if !has_drops && !candidate.drop_id.starts_with("PROVISIONAL") {
                             continue;
                         }
 
@@ -1171,8 +1200,14 @@ pub async fn start_miner(
                 // BUG4: loop driven by CancellationToken instead of a fixed counter
                 // We break out after 15 iterations to rediscover streams, but stop cleanly on cancel
                 let mut inner_ticks = 0u32;
+                let all_provisional = active_streams.iter().all(|s| s.active_drop.0.starts_with("PROVISIONAL:"));
                 loop {
                     if cancel_token.is_cancelled() {
+                        break;
+                    }
+                    // Probe streams: if every active stream is PROVISIONAL and we've watched
+                    // for 2 minutes, break early to re-fetch campaigns and check for new drops.
+                    if all_provisional && inner_ticks >= 2 {
                         break;
                     }
                     if inner_ticks >= 15 {

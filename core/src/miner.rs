@@ -431,6 +431,40 @@ fn parse_all_campaigns(global_campaigns: &Value, inventory: &Value) -> Vec<DropC
     parsed
 }
 
+/// Returns true when a campaign with no visible drops in the parsed list has actually been
+/// completed in a previous session: we detect this by finding drops that belong to this campaign
+/// in the flat `/data/currentUser/inventory/drops` list (which persists across restarts) and
+/// confirming that every one of them is already claimed.
+/// If the campaign simply has never been started, the flat inventory has *no* entry for it.
+fn is_campaign_completed_in_flat_inventory(campaign_id: &str, inventory: &Value) -> bool {
+    let drops = match inventory
+        .pointer("/data/currentUser/inventory/drops")
+        .and_then(|v| v.as_array())
+    {
+        Some(d) => d,
+        None => return false,
+    };
+
+    let campaign_drops: Vec<&Value> = drops
+        .iter()
+        .filter(|drop| {
+            json_id_to_string(drop.pointer("/campaign/id")).as_deref() == Some(campaign_id)
+        })
+        .collect();
+
+    // No trace in the flat inventory → campaign was never started; keep it.
+    if campaign_drops.is_empty() {
+        return false;
+    }
+
+    // Drops exist for this campaign → completed only if every one is claimed.
+    campaign_drops.iter().all(|drop| {
+        drop.pointer("/self/isClaimed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    })
+}
+
 fn build_mineable_candidates(
     campaigns: &[DropCampaign],
     priority_games: &[String],
@@ -440,6 +474,32 @@ fn build_mineable_candidates(
 
     for camp in campaigns {
         if camp.id.is_empty() {
+            continue;
+        }
+
+        if camp.drops.is_empty() {
+            if !mine_all && !priority_games.iter().any(|game| game.eq_ignore_ascii_case(&camp.game_name)) {
+                continue;
+            }
+            let mut score = 40;
+            if priority_games.iter().any(|game| game.eq_ignore_ascii_case(&camp.game_name)) {
+                score += 100;
+            }
+            candidates.push(MineableDropCandidate {
+                campaign_id: camp.id.clone(),
+                campaign_name: camp.name.clone(),
+                game_id: camp.game_id.clone(),
+                game_name: camp.game_name.clone(),
+                drop_id: String::from("PROVISIONAL"),
+                drop_name: String::from("Starting Campaign..."),
+                image_url: camp.image_url.clone(),
+                current_minutes: 0,
+                required_minutes: 15,
+                remaining_minutes: 15,
+                percent: 0,
+                end_at: camp.end_date.clone(),
+                score,
+            });
             continue;
         }
 
@@ -516,6 +576,10 @@ fn available_drops_contains_candidate(response: &Value, candidate: &MineableDrop
             .unwrap_or(false);
         if !campaign_matches {
             return false;
+        }
+
+        if candidate.drop_id == "PROVISIONAL" {
+            return true;
         }
 
         camp.get("timeBasedDrops")
@@ -676,6 +740,11 @@ pub async fn get_drop_campaigns(app: AppHandle) -> Result<Vec<DropCampaign>, Str
         }
         let all_completed = !camp.drops.is_empty() && camp.drops.iter().all(|d| d.is_claimed || (d.required_minutes > 0 && d.current_minutes >= d.required_minutes));
         if all_completed {
+            return false;
+        }
+        // For campaigns with no drops: check if they were fully completed in a previous
+        // session via the flat inventory list. If yes, hide them.
+        if camp.drops.is_empty() && is_campaign_completed_in_flat_inventory(&camp.id, &inventory) {
             return false;
         }
         true
@@ -862,6 +931,11 @@ pub async fn start_miner(
                     if all_completed {
                         return false;
                     }
+                    // Same check for the miner loop: hide campaigns that were completed in a
+                    // previous session (drops: [] but flat inventory confirms all are claimed).
+                    if camp.drops.is_empty() && is_campaign_completed_in_flat_inventory(&camp.id, &inventory) {
+                        return false;
+                    }
                     true
                 });
 
@@ -966,7 +1040,9 @@ pub async fn start_miner(
                                 })
                                 .unwrap_or(false);
 
-                        if !has_drops {
+                        // For unstarted campaigns (PROVISIONAL), skip the drops-tag check:
+                        // the tag may not yet be set, but watching the stream will activate the campaign.
+                        if !has_drops && candidate.drop_id != "PROVISIONAL" {
                             continue;
                         }
 

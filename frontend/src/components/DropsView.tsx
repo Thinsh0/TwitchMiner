@@ -330,7 +330,7 @@ function GameCampaignGroup({
     (sum, campaign) => sum + campaign.drops.filter(drop => drop.is_claimed).length,
     0
   );
-  const allCompleted = campaigns.every(c => c.status === 'COMPLETED' || c.drops.every(d => d.is_claimed));
+  const allCompleted = campaigns.every(c => c.status === 'COMPLETED' || (c.drops.length > 0 && c.drops.every(d => d.is_claimed)));
   const hasReady = campaigns.some(c => c.status === 'READY');
   const groupStatus = allCompleted ? 'COMPLETED' : hasReady ? 'READY' : 'ACTIVE';
   const sortedCampaigns = sortCampaigns(campaigns, sortKey, sortDirection);
@@ -362,7 +362,10 @@ function GameCampaignGroup({
             )}
             </button>
             <p className="text-sm text-zinc-400">
-              {campaigns.length} {lang === 'FR' ? `campagne${campaigns.length > 1 ? 's' : ''}` : `campaign${campaigns.length > 1 ? 's' : ''}`} • {claimedDrops}/{totalDrops} {lang === 'FR' ? 'drops obtenus' : 'drops claimed'}
+              {campaigns.length} {lang === 'FR' ? `campagne${campaigns.length > 1 ? 's' : ''}` : `campaign${campaigns.length > 1 ? 's' : ''}`}
+              {totalDrops > 0
+                ? ` • ${claimedDrops}/${totalDrops} ${lang === 'FR' ? 'drops obtenus' : 'drops claimed'}`
+                : ` • ${lang === 'FR' ? 'Non commencée' : 'Not started'}`}
             </p>
           </div>
         </div>
@@ -444,7 +447,11 @@ function CampaignCard({ campaign, compact = false, onClaimSuccess, currentDropNa
                 {compact ? campaign.name : campaign.game_name}
               </CardTitle>
               <p className="text-sm text-zinc-400">
-                {compact ? `${claimedDrops}/{totalDrops} ${lang === 'FR' ? 'drops obtenus' : 'drops claimed'}` : campaign.name}
+                {compact
+                  ? (totalDrops > 0
+                      ? `${claimedDrops}/${totalDrops} ${lang === 'FR' ? 'drops obtenus' : 'drops claimed'}`
+                      : (lang === 'FR' ? 'Non commencée — en cours de démarrage...' : 'Not started — warming up...'))
+                  : campaign.name}
               </p>
               {endDate && (
                 <p className="text-xs text-orange-300 mt-1">
@@ -477,15 +484,24 @@ function CampaignCard({ campaign, compact = false, onClaimSuccess, currentDropNa
         </div>
       </CardHeader>
       <CardContent>
-        {!compact && (
           <div className="text-sm text-zinc-400 mb-3">
-            {claimedDrops}/{totalDrops} {lang === 'FR' ? 'drops obtenus' : 'drops claimed'}
+            {totalDrops > 0
+              ? `${claimedDrops}/${totalDrops} ${lang === 'FR' ? 'drops obtenus' : 'drops claimed'}`
+              : (lang === 'FR' ? 'Non commencée' : 'Not started yet')}
           </div>
-        )}
         <div className="space-y-3">
-          {campaign.drops.map((drop) => (
-            <DropItemCard key={drop.id} drop={drop} onClaimSuccess={onClaimSuccess} />
-          ))}
+          {campaign.drops.length === 0 ? (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-white/5 border border-white/5 text-sm text-zinc-500">
+              <Clock className="w-4 h-4 shrink-0 text-zinc-600" />
+              {lang === 'FR'
+                ? 'Le miner va regarder ce jeu pour démarrer automatiquement cette campagne.'
+                : 'The miner will watch this game to automatically start this campaign.'}
+            </div>
+          ) : (
+            campaign.drops.map((drop) => (
+              <DropItemCard key={drop.id} drop={drop} onClaimSuccess={onClaimSuccess} />
+            ))
+          )}
         </div>
       </CardContent>
     </Card>

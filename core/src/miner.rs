@@ -328,6 +328,7 @@ fn parse_drop_item(drop: &Value) -> Option<DropItem> {
         is_claimed,
         image_url: extract_image_url(drop),
         claimed_at: None,
+        campaign_id: None,
     })
 }
 
@@ -941,6 +942,7 @@ pub async fn start_miner(
                     .and_then(|v| serde_json::from_value(v).ok())
                     .unwrap_or_default();
 
+                let now = chrono::Utc::now();
                 campaigns.retain(|camp| {
                     if let Ok(end_date) = chrono::DateTime::parse_from_rfc3339(&camp.end_date) {
                         if now > end_date.with_timezone(&chrono::Utc) {

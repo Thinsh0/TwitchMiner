@@ -176,10 +176,12 @@ async fn save_claimed_drop(
     store: &Arc<tauri_plugin_store::Store<tauri::Wry>>,
     app: &AppHandle,
     drop: &Value,
+    campaign_id: Option<&str>,
 ) {
     if let Some(mut item) = parse_drop_item(drop) {
         item.is_claimed = true;
         item.claimed_at = Some(chrono::Utc::now().to_rfc3339());
+        item.campaign_id = campaign_id.map(|s| s.to_string());
         let mut claimed_history: Vec<DropItem> = store
             .get("claimed_drops")
             .and_then(|v| serde_json::from_value(v).ok())
@@ -213,7 +215,8 @@ async fn check_and_claim_drops(
                 continue;
             }
             if is_claimed {
-                save_claimed_drop(store, app, drop).await;
+                let camp_id_str = json_id_to_string(drop.pointer("/campaign/id"));
+                save_claimed_drop(store, app, drop, camp_id_str.as_deref()).await;
                 continue;
             }
             let drop_id = match json_id_to_string(drop.get("id")) {
@@ -232,7 +235,8 @@ async fn check_and_claim_drops(
                     Err(e) => { log::error!("check_and_claim_drops: claim failed for {}: {}", c_id, e); continue; }
                 }
                 tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                save_claimed_drop(store, app, drop).await;
+                let camp_id_str = json_id_to_string(drop.pointer("/campaign/id"));
+                save_claimed_drop(store, app, drop, camp_id_str.as_deref()).await;
             }
         }
     }
@@ -251,7 +255,7 @@ async fn check_and_claim_drops(
                     let req_mins = drop.get("requiredMinutesWatched").and_then(|v| v.as_i64()).unwrap_or(0);
 
                     if is_claimed {
-                        save_claimed_drop(store, app, drop).await;
+                        save_claimed_drop(store, app, drop, if camp_id.is_empty() { None } else { Some(&camp_id) }).await;
                         continue;
                     }
                     if req_mins <= 0 || cur_mins < req_mins {
@@ -273,7 +277,7 @@ async fn check_and_claim_drops(
                             Err(e) => { log::error!("check_and_claim_drops: claim failed for {}: {}", c_id, e); continue; }
                         }
                         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                        save_claimed_drop(store, app, drop).await;
+                        save_claimed_drop(store, app, drop, if camp_id.is_empty() { None } else { Some(&camp_id) }).await;
                     }
                 }
             }
@@ -431,37 +435,18 @@ fn parse_all_campaigns(global_campaigns: &Value, inventory: &Value) -> Vec<DropC
     parsed
 }
 
-/// Returns true when a campaign with no visible drops in the parsed list has actually been
-/// completed in a previous session: we detect this by finding drops that belong to this campaign
-/// in the flat `/data/currentUser/inventory/drops` list (which persists across restarts) and
-/// confirming that every one of them is already claimed.
-/// If the campaign simply has never been started, the flat inventory has *no* entry for it.
-fn is_campaign_completed_in_flat_inventory(campaign_id: &str, inventory: &Value) -> bool {
-    let drops = match inventory
-        .pointer("/data/currentUser/inventory/drops")
-        .and_then(|v| v.as_array())
-    {
-        Some(d) => d,
-        None => return false,
-    };
-
-    let campaign_drops: Vec<&Value> = drops
-        .iter()
-        .filter(|drop| {
-            json_id_to_string(drop.pointer("/campaign/id")).as_deref() == Some(campaign_id)
-        })
-        .collect();
-
-    // No trace in the flat inventory → campaign was never started; keep it.
-    if campaign_drops.is_empty() {
+/// Returns true if all known drops for a campaign (from the persistent structure cache)
+/// are present as claimed in the `claimed_drops` list.
+/// Works across restarts and regardless of whether campaign_id was set on the DropItem.
+fn is_campaign_completed_via_claimed_drops(
+    known_drop_ids: &[String],
+    claimed_drops: &[DropItem],
+) -> bool {
+    if known_drop_ids.is_empty() {
         return false;
     }
-
-    // Drops exist for this campaign → completed only if every one is claimed.
-    campaign_drops.iter().all(|drop| {
-        drop.pointer("/self/isClaimed")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
+    known_drop_ids.iter().all(|drop_id| {
+        claimed_drops.iter().any(|d| &d.id == drop_id && d.is_claimed)
     })
 }
 
@@ -728,6 +713,24 @@ pub async fn get_drop_campaigns(app: AppHandle) -> Result<Vec<DropCampaign>, Str
     let inventory = gql.get_inventory(&store).await?;
     let mut campaigns = parse_all_campaigns(&global_campaigns, &inventory);
 
+    // Persist the campaign → drop_ids structure so we can detect completed campaigns
+    // after a restart even when Twitch no longer returns their drops.
+    let mut camp_structure: std::collections::HashMap<String, Vec<String>> = store
+        .get("campaign_drop_structure")
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
+    for camp in &campaigns {
+        if !camp.drops.is_empty() {
+            camp_structure.insert(camp.id.clone(), camp.drops.iter().map(|d| d.id.clone()).collect());
+        }
+    }
+    let _ = store.set("campaign_drop_structure", serde_json::to_value(&camp_structure).unwrap());
+
+    let claimed_drops: Vec<DropItem> = store
+        .get("claimed_drops")
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
+
     let now = chrono::Utc::now();
     campaigns.retain(|camp| {
         if let Ok(end_date) = chrono::DateTime::parse_from_rfc3339(&camp.end_date) {
@@ -742,10 +745,14 @@ pub async fn get_drop_campaigns(app: AppHandle) -> Result<Vec<DropCampaign>, Str
         if all_completed {
             return false;
         }
-        // For campaigns with no drops: check if they were fully completed in a previous
-        // session via the flat inventory list. If yes, hide them.
-        if camp.drops.is_empty() && is_campaign_completed_in_flat_inventory(&camp.id, &inventory) {
-            return false;
+        // Campaign came back with no drops: check if we've seen its drop structure before
+        // and if all those drop IDs are in claimed_drops.
+        if camp.drops.is_empty() {
+            if let Some(known_ids) = camp_structure.get(&camp.id) {
+                if is_campaign_completed_via_claimed_drops(known_ids, &claimed_drops) {
+                    return false;
+                }
+            }
         }
         true
     });
@@ -917,7 +924,23 @@ pub async fn start_miner(
 
                 let mut campaigns = parse_all_campaigns(&global_campaigns, &inventory);
 
-                let now = chrono::Utc::now();
+                // Persist campaign → drop_ids structure (miner loop copy)
+                let mut camp_structure: std::collections::HashMap<String, Vec<String>> = store
+                    .get("campaign_drop_structure")
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default();
+                for camp in &campaigns {
+                    if !camp.drops.is_empty() {
+                        camp_structure.insert(camp.id.clone(), camp.drops.iter().map(|d| d.id.clone()).collect());
+                    }
+                }
+                let _ = store.set("campaign_drop_structure", serde_json::to_value(&camp_structure).unwrap());
+
+                let claimed_drops: Vec<DropItem> = store
+                    .get("claimed_drops")
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default();
+
                 campaigns.retain(|camp| {
                     if let Ok(end_date) = chrono::DateTime::parse_from_rfc3339(&camp.end_date) {
                         if now > end_date.with_timezone(&chrono::Utc) {
@@ -931,10 +954,12 @@ pub async fn start_miner(
                     if all_completed {
                         return false;
                     }
-                    // Same check for the miner loop: hide campaigns that were completed in a
-                    // previous session (drops: [] but flat inventory confirms all are claimed).
-                    if camp.drops.is_empty() && is_campaign_completed_in_flat_inventory(&camp.id, &inventory) {
-                        return false;
+                    if camp.drops.is_empty() {
+                        if let Some(known_ids) = camp_structure.get(&camp.id) {
+                            if is_campaign_completed_via_claimed_drops(known_ids, &claimed_drops) {
+                                return false;
+                            }
+                        }
                     }
                     true
                 });

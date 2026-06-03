@@ -57,6 +57,10 @@ pub struct DropItem {
     /// RFC3339 timestamp of when the drop was claimed (None for legacy entries).
     #[serde(default)]
     pub claimed_at: Option<String>,
+    /// Campaign this drop belongs to. Populated when claiming so we can detect
+    /// completed campaigns across restarts without volatile local state.
+    #[serde(default)]
+    pub campaign_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

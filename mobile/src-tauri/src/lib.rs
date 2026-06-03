@@ -256,10 +256,16 @@ pub fn run() {
     let miner_state = Arc::new(Mutex::new(MinerState::new()));
     let streak_miner_state = Arc::new(Mutex::new(StreakMinerState::new()));
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .manage(miner_state)
-        .manage(streak_miner_state)
-        .plugin(tauri_plugin_log::Builder::new().build())
+        .manage(streak_miner_state);
+
+    static LOG_INIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !LOG_INIT.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        builder = builder.plugin(tauri_plugin_log::Builder::new().build());
+    }
+
+    builder
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_store::Builder::new().build())

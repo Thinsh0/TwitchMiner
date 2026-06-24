@@ -1,6 +1,8 @@
 use twitch_miner_core::{auth, config, miner, models, streak_miner};
 use twitch_miner_core::miner::MinerState;
 use twitch_miner_core::streak_miner::StreakMinerState;
+use twitch_miner_core::engine::{ViewingEngine, EngineState};
+use twitch_miner_core::models::AppConfig;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_store::StoreExt;
@@ -219,23 +221,26 @@ impl tauri_plugin_background_service::BackgroundService<tauri::Wry> for TwitchMi
                     
                 if app_config.settings.auto_start_drops {
                     log::info!("Auto-starting drops miner in background...");
-                    let _ = miner::start_miner(app.clone(), miner_state.clone(), Some(true)).await;
+                    let _ = twitch_miner_core::engine::start_engine(app.clone(), app.state(), app.state()).await;
+                    let _ = miner::start_miner(app.clone(), miner_state.clone(), app.state(), Some(true)).await;
                 } else {
                     log::info!("Auto-start drops is disabled, not starting drops miner.");
                 }
                 
                 if app_config.bonus.daily_streaks.auto_start || app_config.bonus.points_farming.auto_start {
                     log::info!("Auto-starting streak miner in background...");
-                    let _ = streak_miner::start_streak_miner(app.clone(), streak_miner_state.clone(), Some(true)).await;
+                    let _ = twitch_miner_core::engine::start_engine(app.clone(), app.state(), app.state()).await;
+                    let _ = streak_miner::start_streak_miner(app.clone(), streak_miner_state.clone(), app.state(), Some(true)).await;
                 } else {
                     log::info!("Auto-start streak is disabled, not starting streak miner.");
                 }
             } else {
                 log::info!("Failed to load config, falling back to unconditional start with abort checks.");
-                let _ = miner::start_miner(app.clone(), miner_state.clone(), Some(true)).await;
-                let _ = streak_miner::start_streak_miner(app.clone(), streak_miner_state.clone(), Some(true)).await;
+                let _ = twitch_miner_core::engine::start_engine(app.clone(), app.state(), app.state()).await;
+                let _ = miner::start_miner(app.clone(), miner_state.clone(), app.state(), Some(true)).await;
+                let _ = streak_miner::start_streak_miner(app.clone(), streak_miner_state.clone(), app.state(), Some(true)).await;
             }
-        } else {
+            } else {
             log::info!("User is not authenticated, background miners did not start.");
         }
 
@@ -255,10 +260,16 @@ impl tauri_plugin_background_service::BackgroundService<tauri::Wry> for TwitchMi
 pub fn run() {
     let miner_state = Arc::new(Mutex::new(MinerState::new()));
     let streak_miner_state = Arc::new(Mutex::new(StreakMinerState::new()));
+    
+    // We can load max_concurrent from store, but for simplicity default is 3
+    let engine_state = Arc::new(Mutex::new(EngineState { is_running: false, cancel_token: None }));
+    let engine = Arc::new(ViewingEngine::new(3));
 
     let mut builder = tauri::Builder::default()
         .manage(miner_state)
-        .manage(streak_miner_state);
+        .manage(streak_miner_state)
+        .manage(engine_state)
+        .manage(engine);
 
     static LOG_INIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     if !LOG_INIT.swap(true, std::sync::atomic::Ordering::Relaxed) {
@@ -283,6 +294,9 @@ pub fn run() {
             auth::start_auth,
             auth::poll_for_token,
             auth::logout,
+            twitch_miner_core::engine::start_engine,
+            twitch_miner_core::engine::stop_engine,
+            twitch_miner_core::engine::get_engine_status,
             miner::start_miner,
             miner::stop_miner,
             miner::get_drop_campaigns,

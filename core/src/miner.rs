@@ -1,6 +1,8 @@
 use crate::api::TwitchGQL;
 use crate::models::{ActiveDropInfo, DropCampaign, DropItem, MinerStatus};
 use crate::utils::json_id_to_string;
+use crate::engine::ViewingEngine;
+use crate::models::{WatchRequest, WatchPurpose};
 use serde_json::Value;
 use rand::Rng;
 use std::sync::Arc;
@@ -790,8 +792,10 @@ struct TargetStream {
 pub async fn start_miner(
     app: AppHandle,
     state: tauri::State<'_, Arc<Mutex<MinerState>>>,
+    engine: tauri::State<'_, Arc<ViewingEngine>>,
     auto_start_check: Option<bool>,
 ) -> Result<(), String> {
+    let engine = engine.inner().clone();
     let mut s = state.lock().await;
     if s.is_running {
         return Ok(());
@@ -823,9 +827,9 @@ pub async fn start_miner(
         let mut cached_user_id: Option<String> = None;
         // Campaign IDs that returned drops:[] after a probe watch — skipped for this session.
         // Pure RAM: resets every time the miner is started. No disk persistence.
-        let mut exhausted_campaigns: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let exhausted_campaigns: std::collections::HashSet<String> = std::collections::HashSet::new();
         // Campaign IDs from PROVISIONAL streams in the last discovery cycle, waiting to be checked.
-        let mut just_probed_campaign_ids: Vec<String> = Vec::new();
+        
 
         loop {
             if cancel_token.is_cancelled() {
@@ -902,13 +906,7 @@ pub async fn start_miner(
 
                 // Before clearing streams: collect PROVISIONAL campaign IDs from last cycle
                 // so we can check them against the freshly fetched campaigns below.
-                just_probed_campaign_ids = active_streams
-                    .iter()
-                    .filter_map(|s| {
-                        s.active_drop.0.strip_prefix("PROVISIONAL:")
-                            .map(|id| id.to_string())
-                    })
-                    .collect();
+
 
                 active_streams.clear();
 
@@ -942,13 +940,7 @@ pub async fn start_miner(
                 let mut campaigns = parse_all_campaigns(&global_campaigns, &inventory);
 
                 // Mark probed-but-still-empty campaigns as exhausted (RAM only, not persisted).
-                for camp_id in &just_probed_campaign_ids {
-                    if campaigns.iter().any(|c| &c.id == camp_id && c.drops.is_empty()) {
-                        log::info!("start_miner: campaign {} had no drops after probe — marking exhausted", camp_id);
-                        exhausted_campaigns.insert(camp_id.clone());
-                    }
-                }
-                just_probed_campaign_ids.clear();
+
 
                 // Persist campaign → drop_ids structure (miner loop copy)
                 let mut camp_structure: std::collections::HashMap<String, Vec<String>> = store
@@ -1193,203 +1185,30 @@ pub async fn start_miner(
                     continue;
                 }
                 
-                // We successfully found a stream to mine, so we are no longer in the startup check
+                                // We successfully found a stream to mine, so we are no longer in the startup check
                 current_auto_start = false;
 
-                // We have active streams, start the mining loop for them
-                // BUG4: loop driven by CancellationToken instead of a fixed counter
-                // We break out after 15 iterations to rediscover streams, but stop cleanly on cancel
-                let mut inner_ticks = 0u32;
-                let all_provisional = active_streams.iter().all(|s| s.active_drop.0.starts_with("PROVISIONAL:"));
-                loop {
-                    if cancel_token.is_cancelled() {
-                        break;
-                    }
-                    // Probe streams: if every active stream is PROVISIONAL and we've watched
-                    // for 2 minutes, break early to re-fetch campaigns and check for new drops.
-                    if all_provisional && inner_ticks >= 2 {
-                        break;
-                    }
-                    if inner_ticks >= 15 {
-                        // Time to rediscover streams
-                        break;
-                    }
-
-                    // Combine all streams into status
-                    let streamers_names: Vec<String> = active_streams
-                        .iter()
-                        .map(|s| s.streamer_name.clone().unwrap_or(s.streamer_login.clone()))
-                        .collect();
-                    let status_text = format!("Watching: {}", streamers_names.join(", "));
-
-                    {
-                        let mut s_guard = state_clone.lock().await;
-                        let mut new_status = s_guard.status.clone();
-                        new_status.status = status_text;
-                        // Set primary streamer image to first one for UI
-                        if let Some(first) = active_streams.first() {
-                            new_status.current_streamer = first.streamer_name.clone();
-                            new_status.current_streamer_login = Some(first.streamer_login.clone());
-                            new_status.streamer_image_url = first.streamer_image.clone();
-                        }
-                        s_guard.update_and_notify(&app_clone, new_status.clone());
-                    }
-
-                    // BUG2: Collect live drop progress from inventory (refreshed each cycle)
-                    // active_drop tuples in active_streams stay as initial anchors;
-                    // we always use fresh inventory data for progress display.
-                    if let Ok(inv) = gql.get_inventory(&store).await {
-                        check_and_claim_drops(&gql, &store, &uid, &inv, &app_clone).await;
-
-                        // Build up-to-date progress tuples from inventory data
-                        let mut all_drops: Vec<(String, String, Option<String>, i64, i64, i64)> = Vec::new();
-                        for stream in &active_streams {
-                            let drop_id = &stream.active_drop.0;
-                            // Try to find live progress in inventory
-                            let live = find_live_drop_progress(&inv, drop_id);
-                            if let Some((cur, req)) = live {
-                                let pct = if req > 0 { (cur * 100 / req).clamp(0, 100) } else { 0 };
-                                all_drops.push((
-                                    drop_id.clone(),
-                                    stream.active_drop.1.clone(),
-                                    stream.active_drop.2.clone(),
-                                    cur,
-                                    req,
-                                    pct,
-                                ));
-                            } else {
-                                all_drops.push(stream.active_drop.clone());
-                            }
-                        }
-
-                        if !all_drops.is_empty() {
-                            let (
-                                drop_name,
-                                drop_image,
-                                overall_progress,
-                                _cur_mins,
-                                _req_mins,
-                                _remaining,
-                                drop_infos,
-                            ) = summarize_active_drops(&all_drops);
-                            let mut s_guard = state_clone.lock().await;
-                            let mut new_status = s_guard.status.clone();
-                            new_status.current_drop = drop_name;
-                            new_status.drop_image_url = drop_image;
-                            new_status.progress = overall_progress;
-                            new_status.active_drops = drop_infos;
-                            s_guard.update_and_notify(&app_clone, new_status);
-                        } else {
-                            let mut s_guard = state_clone.lock().await;
-                            let mut new_status = s_guard.status.clone();
-                            new_status.active_drops = Vec::new();
-                            new_status.progress = 0.0;
-                            s_guard.update_and_notify(&app_clone, new_status);
-                        }
-                    }
-
-                    // Send Pings & Update Session
-                    for stream in &active_streams {
-                        let client_time = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-                        let payload = serde_json::json!([{
-                            "event": "minute-watched",
-                            "properties": {
-                                "broadcast_id": stream.stream_id,
-                                "channel_id": stream.channel_id,
-                                "channel": stream.streamer_login,
-                                "client_time": client_time,
-                                "game": stream.game_id.clone(),
-                                "game_id": stream.game_id.clone(),
-                                "hidden": false,
-                                "is_live": true,
-                                "live": true,
-                                "logged_in": true,
-                                "minutes_logged": 1,
-                                "muted": false,
-                                "user_id": uid
-                            }
-                        }]);
-
-                        let _ = gql.send_watch_gql(&store, payload).await;
-
-                        // Update Realtime Progress
-                        if let Ok(session_res) = gql
-                            .get_drop_current_session(&store, &stream.channel_id)
-                            .await
-                        {
-                            if let Some(session) =
-                                session_res.pointer("/data/currentUser/dropCurrentSession")
-                            {
-                                let cur = session
-                                    .get("currentMinutesWatched")
-                                    .and_then(|v| v.as_i64())
-                                    .unwrap_or(0);
-                                let req = session
-                                    .get("requiredMinutesWatched")
-                                    .and_then(|v| v.as_i64())
-                                    .unwrap_or(0);
-                                let drop_id_rt = session
-                                    .get("dropID")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-
-                                let mut s_guard = state_clone.lock().await;
-                                let mut new_status = s_guard.status.clone();
-                                new_status.status = format!("RT: {}", drop_id_rt);
-
-                                if req > 0 {
-                                    let pct = (cur as f64 / req as f64 * 100.0).min(100.0);
-                                    if let Some(existing) =
-                                        new_status.active_drops.iter_mut().find(|d| {
-                                            d.id == drop_id_rt
-                                        })
-                                    {
-                                        existing.current_minutes = cur;
-                                        existing.progress = pct;
-                                    }
-
-                                    // Recalculate overall progress
-                                    let total_req: i64 = new_status.active_drops.iter().map(|d| d.required_minutes).sum();
-                                    let total_cur: i64 = new_status.active_drops.iter().map(|d| d.current_minutes).sum();
-                                    if total_req > 0 {
-                                        new_status.progress = (total_cur as f64 / total_req as f64 * 100.0).min(100.0);
-                                    }
-
-                                    s_guard.update_and_notify(&app_clone, new_status);
-                                } else {
-                                    s_guard.update_and_notify(&app_clone, new_status);
-                                }
-                            }
-                        }
-
-                        // Claim community points occasionally
-                        if inner_ticks % 5 == 0 {
-                            if let Ok(pts_res) = gql
-                                .get_channel_points_context(&store, &stream.streamer_login)
-                                .await
-                            {
-                                if let Some(claim_id) = pts_res
-                                    .pointer("/data/channel/self/communityPoints/availableClaim/id")
-                                    .and_then(|v| v.as_str())
-                                {
-                                    if let Some(ch_id) =
-                                        pts_res.pointer("/data/channel/id").and_then(|v| v.as_str())
-                                    {
-                                        let _ = gql
-                                            .claim_community_points(&store, ch_id, claim_id)
-                                            .await;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    let jitter = rand::thread_rng().gen_range(1u64..=30);
-                    tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await;
-                    inner_ticks += 1;
+                // Submit to engine
+                for stream in &active_streams {
+                    let req = WatchRequest {
+                        channel_login: stream.streamer_login.clone(),
+                        channel_id: stream.channel_id.clone(),
+                        stream_id: stream.stream_id.clone(),
+                        game_id: stream.game_id.clone(),
+                        game_name: stream.active_drop.1.clone(), // using drop name as fallback game name
+                        purpose: WatchPurpose::Drop {
+                            campaign_id: "unknown".to_string(),
+                            drop_id: stream.active_drop.0.clone(),
+                        },
+                        priority: 100,
+                    };
+                    engine.submit(req).await;
                 }
-            } else {
+
+                // Wait before checking next time
+                let jitter = rand::thread_rng().gen_range(1u64..=30);
+                tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await;
+} else {
                 // Auth error: clear cached user_id so it will be re-fetched next cycle
                 cached_user_id = None;
                 {

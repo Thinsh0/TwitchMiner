@@ -24,7 +24,7 @@ impl TwitchGQL {
         );
 
         let client = Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+            .user_agent("Dalvik/2.1.0 (Linux; U; Android 11; SHIELD Android TV Build/RQ1A.210105.003) tv.twitch.android.app/16.9.0/1690100")
             .build()
             .unwrap_or_default();
 
@@ -49,8 +49,6 @@ impl TwitchGQL {
         headers.insert("Client-ID", self.client_id.parse().unwrap());
         headers.insert("X-Device-Id", self.device_id.parse().unwrap());
         headers.insert("Content-Type", "application/json".parse().unwrap());
-        headers.insert("Origin", "https://www.twitch.tv".parse().unwrap());
-        headers.insert("Referer", "https://www.twitch.tv/".parse().unwrap());
         headers.insert("Accept", "*/*".parse().unwrap());
         headers.insert("Accept-Language", "en-US".parse().unwrap());
         headers.insert("Pragma", "no-cache".parse().unwrap());

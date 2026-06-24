@@ -254,3 +254,29 @@ pub fn is_mining_allowed(schedule: &WorkSchedule) -> bool {
         false
     }
 }
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub enum WatchPurpose {
+    Drop { campaign_id: String, drop_id: String },
+    ChannelPoints,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct WatchRequest {
+    pub channel_login: String,
+    pub channel_id: String,
+    pub stream_id: String,
+    pub game_id: String,
+    pub game_name: String,
+    pub purpose: WatchPurpose,
+    pub priority: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct WatchedChannel {
+    pub request: WatchRequest,
+    pub player_session_id: String,
+    pub started_at: std::time::Instant,
+    pub last_ping_at: Option<std::time::Instant>,
+    pub ping_offset_secs: u64,
+}

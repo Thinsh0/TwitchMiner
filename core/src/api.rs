@@ -24,6 +24,7 @@ impl TwitchGQL {
         );
 
         let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(15))
             .user_agent("Dalvik/2.1.0 (Linux; U; Android 11; SHIELD Android TV Build/RQ1A.210105.003) tv.twitch.android.app/16.9.0/1690100")
             .build()
             .unwrap_or_default();

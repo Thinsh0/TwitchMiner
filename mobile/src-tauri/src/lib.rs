@@ -262,7 +262,7 @@ pub fn run() {
     let streak_miner_state = Arc::new(Mutex::new(StreakMinerState::new()));
     
     // We can load max_concurrent from store, but for simplicity default is 3
-    let engine_state = Arc::new(Mutex::new(EngineState { is_running: false, cancel_token: None }));
+    let engine_state = Arc::new(Mutex::new(EngineState { is_running: false, cancel_token: None, task: None }));
     let engine = Arc::new(ViewingEngine::new(3));
 
     let mut builder = tauri::Builder::default()

@@ -780,6 +780,7 @@ pub async fn get_drop_campaigns(app: AppHandle) -> Result<Vec<DropCampaign>, Str
 #[derive(Clone)]
 struct TargetStream {
     game_id: String,
+    game_name: String,
     streamer_login: String,
     streamer_name: Option<String>,
     streamer_image: Option<String>,
@@ -1083,7 +1084,8 @@ pub async fn start_miner(
                                 .map(|t| {
                                     t.iter().any(|tag| {
                                         tag.get("name").and_then(|name| name.as_str())
-                                            == Some("DropsEnabled")
+                                            .map(|s| s.eq_ignore_ascii_case("DropsEnabled"))
+                                            .unwrap_or(false)
                                     })
                                 })
                                 .unwrap_or(false);
@@ -1135,6 +1137,7 @@ pub async fn start_miner(
 
                             active_streams.push(TargetStream {
                                 game_id: candidate.game_id.clone(),
+                                game_name: candidate.game_name.clone(),
                                 streamer_login,
                                 streamer_name,
                                 streamer_image,
@@ -1181,7 +1184,10 @@ pub async fn start_miner(
                         break;
                     }
                     let jitter = rand::thread_rng().gen_range(1u64..=30);
-                    tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await;
+                    tokio::select! {
+                        _ = cancel_token.cancelled() => break,
+                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)) => {}
+                    }
                     continue;
                 }
                 
@@ -1195,7 +1201,7 @@ pub async fn start_miner(
                         channel_id: stream.channel_id.clone(),
                         stream_id: stream.stream_id.clone(),
                         game_id: stream.game_id.clone(),
-                        game_name: stream.active_drop.1.clone(), // using drop name as fallback game name
+                        game_name: stream.game_name.clone(),
                         purpose: WatchPurpose::Drop {
                             campaign_id: "unknown".to_string(),
                             drop_id: stream.active_drop.0.clone(),
@@ -1207,7 +1213,10 @@ pub async fn start_miner(
 
                 // Wait before checking next time
                 let jitter = rand::thread_rng().gen_range(1u64..=30);
-                tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await;
+                tokio::select! {
+                    _ = cancel_token.cancelled() => break,
+                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)) => {}
+                }
 } else {
                 // Auth error: clear cached user_id so it will be re-fetched next cycle
                 cached_user_id = None;
@@ -1218,7 +1227,10 @@ pub async fn start_miner(
                     s_guard.update_and_notify(&app_clone, new_status);
                 }
                 let jitter = rand::thread_rng().gen_range(1u64..=30);
-                tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)).await;
+                tokio::select! {
+                    _ = cancel_token.cancelled() => break,
+                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(60 + jitter)) => {}
+                }
             }
         }
 
@@ -1259,12 +1271,13 @@ pub async fn stop_miner(
     if let Some(token) = cancel_token {
         token.cancel();
     }
-    if let Some(task) = task {
+    if let Some(mut task) = task {
         // Give the task up to 5s to finish cleanly; abort as last resort
         tokio::select! {
-            _ = task => {}
+            _ = &mut task => {}
             _ = tokio::time::sleep(tokio::time::Duration::from_secs(5)) => {
                 log::warn!("stop_miner: task did not finish in time, aborting.");
+                task.abort();
             }
         }
     }

@@ -94,6 +94,11 @@ impl ViewingEngine {
         let inner = self.inner.lock().await;
         inner.client_session_id.clone()
     }
+
+    pub async fn set_max_concurrent(&self, max: usize) {
+        let mut inner = self.inner.lock().await;
+        inner.max_concurrent = max;
+    }
 }
 
 pub fn build_watch_payload(
@@ -109,7 +114,7 @@ pub fn build_watch_payload(
             "channel_id": channel.request.channel_id,
             "channel": channel.request.channel_login,
             "client_time": client_time,
-            "game": channel.request.game_id,
+            "game": channel.request.game_name,
             "game_id": channel.request.game_id,
             "hidden": false,
             "is_live": true,
@@ -138,7 +143,7 @@ pub fn build_video_play_payload(
             "channel_id": channel.request.channel_id,
             "channel": channel.request.channel_login,
             "client_time": client_time,
-            "game": channel.request.game_id,
+            "game": channel.request.game_name,
             "game_id": channel.request.game_id,
             "hidden": false,
             "is_live": true,
@@ -167,8 +172,11 @@ impl ViewingEngine {
         let client_session_id = self.get_client_session_id().await;
 
         loop {
-            if cancel_token.is_cancelled() {
-                break;
+            tokio::select! {
+                _ = cancel_token.cancelled() => {
+                    break;
+                }
+                _ = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {}
             }
 
             let now = Instant::now();
@@ -207,7 +215,6 @@ impl ViewingEngine {
             }
 
             loop_count += 1;
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
     }
 }
@@ -218,6 +225,7 @@ use tauri::State;
 pub struct EngineState {
     pub is_running: bool,
     pub cancel_token: Option<CancellationToken>,
+    pub task: Option<tokio::task::JoinHandle<()>>,
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
@@ -249,6 +257,13 @@ pub async fn start_engine(
         Ok(s) => s,
         Err(e) => return Err(e.to_string()),
     };
+
+    if let Some(app_config_json) = store.get("app_config") {
+        if let Ok(config) = serde_json::from_value::<crate::models::AppConfig>(app_config_json) {
+            engine_clone.set_max_concurrent(config.bonus.points_farming.max_concurrent as usize).await;
+        }
+    }
+
     
     let gql = Arc::new(TwitchGQL::new());
     
@@ -259,9 +274,11 @@ pub async fn start_engine(
         String::new()
     };
 
-    tokio::spawn(async move {
+    let task = tokio::spawn(async move {
         engine_clone.run(gql, store, user_id, app_clone, cancel_token).await;
     });
+
+    s.task = Some(task);
 
     Ok(())
 }
@@ -274,6 +291,9 @@ pub async fn stop_engine(
     s.is_running = false;
     if let Some(token) = s.cancel_token.take() {
         token.cancel();
+    }
+    if let Some(task) = s.task.take() {
+        task.abort();
     }
     Ok(())
 }

@@ -295,9 +295,10 @@ async fn run_remote(
                     match v["type"].as_str() {
                         Some("snapshot") => {
                             if let Ok(s) = serde_json::from_value::<State>(v["state"].clone()) {
+                                // Link first: whoever sees the new state also sees `Connected`.
+                                let _ = link.send(Link::Connected);
                                 let _ = state_tx.send(Arc::new(s.clone()));
                                 mirror = Some(s);
-                                let _ = link.send(Link::Connected);
                             }
                         }
                         Some("event") => {

@@ -345,6 +345,36 @@ export component ChannelsScreen inherits Page {
         Muted {
             text: @tr("TwitchMiner watches up to {} live channels at once to earn their points. ★ Priority channels are watched before the others.", Bridge.watch-slots);
         }
+        Rectangle {
+            border-radius: Theme.radius-m;
+            background: Theme.inset;
+            HorizontalLayout {
+                padding: 10px;
+                padding-left: 12px;
+                spacing: 16px;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: @tr("Also mine the channels I follow");
+                        color: Theme.text;
+                        font-weight: 600;
+                    }
+                    Muted {
+                        text: Bridge.follows ? @tr("On: every channel you follow on Twitch is in the list below.")
+                            : @tr("Off: only the channels you add here are mined.");
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Toggle {
+                        checked: Bridge.follows;
+                        toggled(v) => { Bridge.set-module-setting("points", "follows", v ? "true" : "false"); }
+                    }
+                }
+            }
+        }
         HorizontalLayout {
             spacing: 6px;
             TextField {
@@ -421,33 +451,6 @@ export component ChannelsScreen inherits Page {
     }
 
     if root.options: Card {
-        HorizontalLayout {
-            spacing: 16px;
-            VerticalLayout {
-                alignment: center;
-                spacing: 2px;
-                horizontal-stretch: 1;
-                Text {
-                    text: @tr("Also mine the channels I follow");
-                    color: Theme.text;
-                    font-weight: 600;
-                }
-                Muted {
-                    text: @tr("Off: only your priority channels are watched.");
-                }
-            }
-            VerticalLayout {
-                alignment: center;
-                Toggle {
-                    checked: Bridge.follows;
-                    toggled(v) => { Bridge.set-module-setting("points", "follows", v ? "true" : "false"); }
-                }
-            }
-        }
-        Rectangle {
-            height: 1px;
-            background: Theme.border;
-        }
         Text {
             text: @tr("When more channels are live than can be watched, watch first:");
             color: Theme.text;

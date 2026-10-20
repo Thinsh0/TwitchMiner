@@ -67,3 +67,13 @@ Les JSON Schema (`settings_schema`, `settings_get(...).schema`) tirent leurs `de
 Pour ajouter un jeu à la liste des drops, l'interface ne peut proposer que les jeux qu'elle connaît déjà : ceux des campagnes (`accounts[].campaigns[].game`) et des chaînes en direct suivies. Un jeu sans campagne en cours doit être tapé exactement.
 
 **Proposition** : une commande `games_search { query }` (GQL `SearchCategories` ou équivalent, hash dans `manifest/twitch.json`) qui renvoie `[{id, name, box_art_url}]`, utilisable pour l'autocomplétion. À refuser ou non au jeton agent selon `access.rs` (trafic sortant).
+
+## 10. Les chaînes suivies sont minées par défaut
+
+`PointsSettings::default()` (`crates/modules/src/points.rs`, ligne `follows: true`) fait miner **toutes** les chaînes suivies sur Twitch dès qu'un compte est ajouté. Avec beaucoup de follows, la liste se remplit de chaînes que l'utilisateur ne voulait pas : en test, il en a exclu 32 une par une (`exclude`) pour s'en débarrasser.
+
+**Demande de l'utilisateur** : ne pas ajouter les chaînes suivies par défaut.
+
+**Proposition** : `follows: false` par défaut (seules les chaînes de `channels` sont minées), et mettre à jour les défauts dans `docs/API.md`. Les installations existantes qui n'ont jamais touché ce réglage changeraient de comportement : prévoir une note de version, ou écrire `follows: true` dans la portée `module:points` des bases existantes lors d'une migration.
+
+En attendant, l'interface montre l'interrupteur « Miner aussi les chaînes que je suis » en tête de l'écran Chaînes.

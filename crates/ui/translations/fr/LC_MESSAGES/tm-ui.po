@@ -1113,9 +1113,6 @@ msgstr "Aucune chaîne pour l'instant. Ajoutes-en une ci-dessus."
 msgid "No channel yet: the channels you follow on Twitch appear here, and you can add others above."
 msgstr "Aucune chaîne pour l'instant : les chaînes que tu suis sur Twitch apparaissent ici, et tu peux en ajouter d'autres ci-dessus."
 
-msgid "Off: only your priority channels are watched."
-msgstr "Désactivé : seules tes chaînes prioritaires sont regardées."
-
 msgid "Order of the priorities"
 msgstr "Ordre des prioritaires"
 
@@ -1166,3 +1163,9 @@ msgstr "Où j'en suis côté points ? Soldes du compte {}."
 
 msgid "In “never mined”: not mined. Click ★ to mine it again."
 msgstr "Dans « jamais minées » : pas minée. Clique sur ★ pour la miner à nouveau."
+
+msgid "On: every channel you follow on Twitch is in the list below."
+msgstr "Activé : toutes les chaînes que tu suis sur Twitch sont dans la liste ci-dessous."
+
+msgid "Off: only the channels you add here are mined."
+msgstr "Désactivé : seules les chaînes que tu ajoutes ici sont minées."

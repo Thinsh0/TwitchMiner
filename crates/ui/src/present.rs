@@ -416,8 +416,8 @@ fn channels(bridge: &Bridge, state: &State, id: &str, account: Option<&Account>)
         sync(bridge.get_my_channels(), Vec::new(), |m| {
             bridge.set_my_channels(m)
         });
-        sync(bridge.get_followed_channels(), Vec::new(), |m| {
-            bridge.set_followed_channels(m)
+        sync(bridge.get_all_channels(), Vec::new(), |m| {
+            bridge.set_all_channels(m)
         });
         return;
     };
@@ -459,6 +459,7 @@ fn channels(bridge: &Bridge, state: &State, id: &str, account: Option<&Account>)
             session_minutes: c.session_minutes as i32,
             watching: account.watching.contains_key(&c.id),
             pending: false,
+            priority: false,
         }
     };
     let by_login = |login: &str| {
@@ -467,38 +468,46 @@ fn channels(bridge: &Bridge, state: &State, id: &str, account: Option<&Account>)
             .values()
             .find(|c| c.login.eq_ignore_ascii_case(login))
     };
+    // Priority channels (the `channels` setting), in their order.
     let mine: Vec<ChannelItem> = configured
         .iter()
         .map(|login| match by_login(login) {
-            Some(c) => item(c),
+            Some(c) => ChannelItem {
+                priority: true,
+                ..item(c)
+            },
             None => ChannelItem {
                 login: login.as_str().into(),
                 name: login.as_str().into(),
                 initial: initial(login).into(),
                 pending: true,
+                priority: true,
                 ..Default::default()
             },
         })
         .collect();
-    let mut followed: Vec<&tm_core::state::Channel> = account
+    let followed: Vec<ChannelItem> = account
         .channels
         .values()
         .filter(|c| c.sources.contains("points"))
         .filter(|c| !configured.iter().any(|l| l.eq_ignore_ascii_case(&c.login)))
+        .map(item)
         .collect();
-    followed.sort_by(|a, b| {
-        b.stream.is_some().cmp(&a.stream.is_some()).then_with(|| {
-            a.display_name
-                .to_lowercase()
-                .cmp(&b.display_name.to_lowercase())
-        })
-    });
-    let followed: Vec<ChannelItem> = followed.into_iter().map(item).collect();
+    // Every channel mined for points, in one list: watched, then live, then the
+    // rest; priority channels first within each group.
+    let mut all: Vec<ChannelItem> = mine.iter().cloned().chain(followed).collect();
+    all.sort_by_key(|c| (!c.watching, !c.live, !c.priority, c.name.to_lowercase()));
+    bridge.set_channels_live(all.iter().filter(|c| c.live).count() as i32);
+    bridge.set_channels_count(all.len() as i32);
+    bridge.set_channels_session_points(account.session.points_earned as i32);
+    bridge.set_watch_slots(
+        tm_core::settings::EngineSettings::from_state(state).max_watch_slots as i32,
+    );
     sync(bridge.get_my_channels(), mine, |m| {
         bridge.set_my_channels(m)
     });
-    sync(bridge.get_followed_channels(), followed, |m| {
-        bridge.set_followed_channels(m)
+    sync(bridge.get_all_channels(), all, |m| {
+        bridge.set_all_channels(m)
     });
     sync(
         bridge.get_excluded_channels(),
@@ -625,6 +634,45 @@ fn chain_minutes(c: &tm_core::twitch::models::Campaign, drop_id: &str, depth: u8
     before + d.required_minutes
 }
 
+/// Game names the engine knows (campaigns, live channels), matching `text`: names
+/// starting with it first, then names containing it. `taken` names are left out.
+pub fn game_matches(account: &Account, text: &str, taken: &[String], max: usize) -> Vec<String> {
+    let q = text.trim().to_lowercase();
+    if q.is_empty() {
+        return Vec::new();
+    }
+    let mut names: Vec<String> = account
+        .campaigns
+        .values()
+        .map(|c| c.game.name.clone())
+        .chain(
+            account
+                .channels
+                .values()
+                .filter_map(|c| c.stream.as_ref()?.game.as_ref().map(|g| g.name.clone())),
+        )
+        .filter(|n| !n.is_empty() && !taken.iter().any(|t| t.eq_ignore_ascii_case(n)))
+        .collect();
+    names.sort_by_key(|n| n.to_lowercase());
+    names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    let mut out: Vec<String> = names
+        .iter()
+        .filter(|n| n.to_lowercase().starts_with(&q))
+        .cloned()
+        .collect();
+    out.extend(
+        names
+            .iter()
+            .filter(|n| {
+                let l = n.to_lowercase();
+                !l.starts_with(&q) && l.contains(&q)
+            })
+            .cloned(),
+    );
+    out.truncate(max);
+    out
+}
+
 /// A point in time for the views (local time, day relative to today).
 pub fn when_at(t: Option<DateTime<Utc>>, now: DateTime<Utc>, lang: i32) -> When {
     let Some(t) = t else {
@@ -740,6 +788,32 @@ pub struct Last {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn game_names_match_by_prefix_then_substring() {
+        let mut acc = Account::default();
+        for (id, name) in [
+            ("1", "Rust"),
+            ("2", "Trust Me"),
+            ("3", "Rocket League"),
+            ("4", "rust"),
+        ] {
+            let c: tm_core::twitch::models::Campaign = serde_json::from_value(serde_json::json!({
+                "id": id, "name": "c", "game": {"id": id, "name": name}, "status": "ACTIVE",
+                "starts_at": null, "ends_at": "2030-01-01T00:00:00Z", "image_url": null,
+                "details_url": null, "link_url": null, "linked": null,
+                "allowed_channels": null, "drops": []
+            }))
+            .unwrap();
+            acc.campaigns.insert(id.into(), c);
+        }
+        assert_eq!(game_matches(&acc, "ru", &[], 6), vec!["Rust", "Trust Me"]);
+        assert_eq!(
+            game_matches(&acc, "r", &["Rust".into()], 6),
+            vec!["Rocket League", "Trust Me"]
+        );
+        assert!(game_matches(&acc, "  ", &[], 6).is_empty());
+    }
 
     #[test]
     fn watch_reasons() {

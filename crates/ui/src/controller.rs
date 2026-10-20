@@ -171,9 +171,27 @@ impl Controller {
         });
         let c = self.clone();
         b.on_list_add(move |key, value| {
-            let value = value.trim().to_string();
+            let mut value = value.trim().to_string();
             if value.is_empty() {
                 return;
+            }
+            // A game typed in another case takes the name Twitch uses.
+            if key.starts_with("drops.") && key != "drops.wanted_rewards" {
+                let canonical = c.on_ui_value(|ui| {
+                    let account = ui.global::<Bridge>().get_account().to_string();
+                    LAST.with(|l| {
+                        l.borrow()
+                            .state
+                            .account(&account)
+                            .map(|a| present::game_matches(a, &value, &[], 50))
+                            .unwrap_or_default()
+                    })
+                    .into_iter()
+                    .find(|n| n.eq_ignore_ascii_case(&value))
+                });
+                if let Some(name) = canonical {
+                    value = name;
+                }
             }
             c.edit_list(&key, move |list| {
                 if !list.iter().any(|v| v.eq_ignore_ascii_case(&value)) {
@@ -372,6 +390,57 @@ impl Controller {
                 Ok(()) => c.toast(ToastKind::Copied, Tone::Success, String::new()),
                 Err(e) => c.toast(ToastKind::Error, Tone::Danger, e.to_string()),
             }
+        });
+        let c = self.clone();
+        b.on_ignore_channel(move |login| {
+            let login = login.to_string();
+            let priority = c.on_ui_value(|ui| {
+                ui.global::<Bridge>()
+                    .get_my_channels()
+                    .iter()
+                    .any(|ch| ch.login.as_str() == login)
+            });
+            let l = login.clone();
+            c.edit_list("points.exclude", move |list| {
+                if !list.iter().any(|v| v.eq_ignore_ascii_case(&l)) {
+                    list.push(l);
+                }
+            });
+            if priority {
+                c.module_call(
+                    "points",
+                    "remove_channel",
+                    json!({ "login": login }),
+                    |_| {},
+                );
+            }
+        });
+        let weak = ui.as_weak();
+        b.on_game_search(move |text| {
+            let Some(ui) = weak.upgrade() else { return };
+            let b = ui.global::<Bridge>();
+            let account = b.get_account().to_string();
+            let matches = LAST.with(|l| {
+                let l = l.borrow();
+                let taken: Vec<String> = ["games", "exclude_games"]
+                    .iter()
+                    .flat_map(|k| {
+                        present::string_list(present::module_setting(
+                            &l.state, &account, "drops", k,
+                        ))
+                    })
+                    .collect();
+                l.state
+                    .account(&account)
+                    .map(|a| present::game_matches(a, &text, &taken, 6))
+                    .unwrap_or_default()
+            });
+            b.set_game_matches(ModelRc::new(VecModel::from(
+                matches
+                    .into_iter()
+                    .map(SharedString::from)
+                    .collect::<Vec<_>>(),
+            )));
         });
         let c = self.clone();
         b.on_activity_changed(move || c.load_activity(false));
@@ -1000,6 +1069,11 @@ impl Controller {
 
     fn toast(&self, kind: ToastKind, tone: Tone, detail: String) {
         self.on_ui(move |ui| push_toast(ui, kind, tone, detail));
+    }
+
+    /// Reads something from the window. Only from the UI thread (view callbacks).
+    fn on_ui_value<R: Default>(&self, f: impl FnOnce(&MainWindow) -> R) -> R {
+        self.0.ui.upgrade().map(|ui| f(&ui)).unwrap_or_default()
     }
 
     fn on_ui(&self, f: impl FnOnce(&MainWindow) + Send + 'static) {

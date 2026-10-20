@@ -167,6 +167,8 @@ export struct ChannelItem {
     watching: bool,
     // Not tracked by the engine yet (just added, or unknown login).
     pending: bool,
+    // In the `channels` setting: watched before the others when live.
+    priority: bool,
 }
 
 export struct ChartBar {
@@ -307,8 +309,13 @@ export global Bridge {
     // Channels (selected account)
     // Channels of the points settings, in priority order.
     in property <[ChannelItem]> my-channels;
-    // Followed on Twitch, farmed after `my-channels` (when `follows` is on).
-    in property <[ChannelItem]> followed-channels;
+    // Every channel mined for points (priority and followed), for the main list.
+    in property <[ChannelItem]> all-channels;
+    in property <int> channels-live;
+    in property <int> channels-count;
+    in property <int> channels-session-points;
+    // engine.max_watch_slots: channels watched at once.
+    in property <int> watch-slots: 2;
     in property <[string]> excluded-channels;
     in property <bool> follows;
     // 0 = my order, 1 = multiplier, 2 = fewest points, 3 = most points
@@ -421,4 +428,9 @@ export global Bridge {
     // A screen was opened (lets the controller load what it shows).
     callback screen-shown();
     callback remove-channel(string);
+    // Never mine this channel again (exclude it, and drop it from the priorities).
+    callback ignore-channel(string);
+    // Autocomplete of game names: the view types, the controller fills `game-matches`.
+    callback game-search(string);
+    in property <[string]> game-matches;
 }

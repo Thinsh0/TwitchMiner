@@ -1,9 +1,10 @@
 // Channels: "where am I with channel points?"
+// One list of every channel mined for points, with its balance. ★ = priority.
 
 import { Theme } from "../theme.slint";
 import { Bridge, ChannelItem } from "../bridge.slint";
 import { Fmt } from "../fmt.slint";
-import { Avatar, Button, ButtonKind, Card, Icon, IconButton, Icons, Muted, Page, Pill, Segmented, TextField, Toggle, Tone } from "../widgets.slint";
+import { Avatar, Button, ButtonKind, Card, Icon, IconButton, Icons, Muted, Page, Pill, TextField, Toggle, Tone } from "../widgets.slint";
 
 component SectionTitle inherits Text {
     font-size: Theme.font-l;
@@ -11,95 +12,159 @@ component SectionTitle inherits Text {
     color: Theme.text;
 }
 
-// One channel: who, live or not, balance and what this session brought.
-component ChannelRow inherits HorizontalLayout {
+component Stat inherits VerticalLayout {
+    in property <string> value;
+    in property <string> label;
+    spacing: 2px;
+    horizontal-stretch: 1;
+    Text {
+        text: root.label;
+        font-size: Theme.font-xs;
+        color: Theme.text-muted;
+    }
+    Text {
+        text: root.value;
+        font-size: Theme.font-xl;
+        font-weight: 700;
+        color: Theme.text;
+    }
+}
+
+component LiveAvatar inherits Rectangle {
     in property <ChannelItem> item;
-    spacing: 12px;
-    Rectangle {
-        width: 40px;
-        height: 40px;
-        Avatar {
-            source: root.item.avatar;
-            initial: root.item.initial;
-            size: 40px;
-            opacity: root.item.live || root.item.pending ? 1 : 0.6;
-        }
-        if root.item.live: Rectangle {
-            x: parent.width - 12px;
-            y: parent.height - 12px;
-            width: 12px;
-            height: 12px;
-            border-radius: 6px;
-            background: Theme.live;
-            border-width: 2px;
-            border-color: Theme.bg;
-        }
+    in property <length> size: 40px;
+    width: size;
+    height: size;
+    Avatar {
+        source: root.item.avatar;
+        initial: root.item.initial;
+        size: root.size;
+        opacity: root.item.live || root.item.pending ? 1 : 0.55;
     }
-    VerticalLayout {
-        alignment: center;
-        spacing: 2px;
-        horizontal-stretch: 1;
-        HorizontalLayout {
-            spacing: 8px;
-            Text {
-                text: root.item.name;
-                font-weight: 700;
-                color: Theme.text;
-                overflow: elide;
-                vertical-alignment: center;
-            }
-            if root.item.watching: Pill {
-                text: @tr("Watched");
-                tone: Tone.accent;
-                icon: Icons.tv;
-            }
-            Rectangle {
-                horizontal-stretch: 1;
-            }
-        }
-        Text {
-            text: root.item.pending ? @tr("Looking for this channel…")
-                : !root.item.live ? @tr("Offline")
-                : root.item.title == "" ? root.item.game
-                : root.item.game == "" ? root.item.title : root.item.game + " · " + root.item.title;
-            font-size: Theme.font-s;
-            color: root.item.live ? Theme.text-muted : Theme.text-faint;
-            overflow: elide;
-        }
+    if root.item.live: Rectangle {
+        x: parent.width - 12px;
+        y: parent.height - 12px;
+        width: 12px;
+        height: 12px;
+        border-radius: 6px;
+        background: Theme.live;
+        border-width: 2px;
+        border-color: Theme.bg;
     }
-    VerticalLayout {
-        alignment: center;
-        spacing: 2px;
-        HorizontalLayout {
-            spacing: 6px;
-            alignment: end;
-            if root.item.multiplier != "": VerticalLayout {
-                alignment: center;
-                Pill {
-                    text: root.item.multiplier;
+}
+
+// One channel: who, live or not, balance, what this session brought, and the two
+// actions (priority, stop mining).
+component ChannelRow inherits Rectangle {
+    in property <ChannelItem> item;
+    height: 60px;
+    border-radius: Theme.radius-m;
+    background: t.has-hover ? Theme.inset : transparent;
+    t := TouchArea { }
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 4px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            LiveAvatar {
+                item: root.item;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: root.item.name;
+                    font-weight: 700;
+                    color: Theme.text;
+                    overflow: elide;
+                    vertical-alignment: center;
+                }
+                if root.item.priority: Pill {
+                    text: @tr("Prioritized");
+                    tone: Tone.accent;
+                    icon: Icons.star;
+                }
+                if root.item.watching: Pill {
+                    text: @tr("Watched now");
                     tone: Tone.success;
+                    icon: Icons.tv;
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
                 }
             }
             Text {
-                text: root.item.points-known ? Fmt.int(root.item.points) : "—";
-                font-size: Theme.font-l;
-                font-weight: 700;
-                color: Theme.text;
+                text: root.item.pending ? @tr("Looking for this channel…")
+                    : !root.item.live ? @tr("Offline")
+                    : root.item.title == "" ? root.item.game
+                    : root.item.game == "" ? root.item.title : root.item.game + " · " + root.item.title;
+                font-size: Theme.font-s;
+                color: root.item.live ? Theme.text-muted : Theme.text-faint;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 1px;
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: end;
+                if root.item.multiplier != "": VerticalLayout {
+                    alignment: center;
+                    Pill {
+                        text: root.item.multiplier;
+                        tone: Tone.success;
+                    }
+                }
+                Text {
+                    text: root.item.points-known ? Fmt.int(root.item.points) : "—";
+                    font-size: Theme.font-l;
+                    font-weight: 700;
+                    color: root.item.points-known ? Theme.text : Theme.text-faint;
+                    horizontal-alignment: right;
+                }
+            }
+            Text {
+                text: root.item.session-points > 0 ? @tr("+{} this session", Fmt.int(root.item.session-points)) : @tr("points");
+                font-size: Theme.font-xs;
+                color: root.item.session-points > 0 ? Theme.success : Theme.text-faint;
                 horizontal-alignment: right;
             }
         }
-        Text {
-            text: root.item.session-points > 0 ? @tr("+{} this session", Fmt.int(root.item.session-points)) : "";
-            font-size: Theme.font-xs;
-            color: Theme.success;
-            horizontal-alignment: right;
+        VerticalLayout {
+            alignment: center;
+            IconButton {
+                icon: Icons.star;
+                tint: root.item.priority ? Theme.accent : Theme.text-faint;
+                tooltip: root.item.priority ? @tr("Remove from priorities") : @tr("Make it a priority");
+                clicked => {
+                    if root.item.priority {
+                        Bridge.remove-channel(root.item.login);
+                    } else {
+                        Bridge.add-channel(root.item.login);
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            IconButton {
+                icon: Icons.ban;
+                tooltip: @tr("Stop mining this channel");
+                clicked => { Bridge.ignore-channel(root.item.login); }
+            }
         }
     }
 }
 
-// My channels, reordered by dragging the handle (order = priority).
-component MyChannelList inherits Rectangle {
-    property <length> row-h: 60px;
+// The order between priority channels, reordered by dragging the handle.
+component PriorityOrder inherits Rectangle {
+    property <length> row-h: 40px;
     property <int> dragging: -1;
     property <int> target: -1;
     property <length> drag-y;
@@ -108,7 +173,7 @@ component MyChannelList inherits Rectangle {
         property <bool> is-dragged: root.dragging == i;
         x: 0;
         width: parent.width;
-        height: root.row-h - 6px;
+        height: root.row-h - 4px;
         y: is-dragged ? root.drag-y
             : root.dragging >= 0 && root.dragging < i && i <= root.target ? (i - 1) * root.row-h
             : root.dragging >= 0 && root.target <= i && i < root.dragging ? (i + 1) * root.row-h
@@ -132,7 +197,7 @@ component MyChannelList inherits Rectangle {
         }
         HorizontalLayout {
             padding-left: 4px;
-            padding-right: 6px;
+            padding-right: 8px;
             spacing: 8px;
             Rectangle {
                 width: 22px;
@@ -165,18 +230,75 @@ component MyChannelList inherits Rectangle {
                     }
                 }
             }
-            ChannelRow {
-                item: ch;
+            Text {
+                text: i + 1;
+                width: 16px;
+                font-size: Theme.font-s;
+                font-weight: 700;
+                color: Theme.accent;
+                vertical-alignment: center;
             }
-            VerticalLayout {
+            Text {
+                text: ch.name;
+                color: Theme.text;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            if ch.live: VerticalLayout {
                 alignment: center;
-                IconButton {
-                    icon: Icons.x;
-                    size: 26px;
-                    tooltip: @tr("Remove this channel");
-                    clicked => { Bridge.remove-channel(ch.login); }
+                Pill {
+                    text: @tr("Live");
+                    tone: Tone.danger;
                 }
             }
+        }
+    }
+}
+
+// "When several channels are live, watch first…": one sentence per choice.
+component OrderChoice inherits Rectangle {
+    in property <int> value;
+    in property <string> text;
+    property <bool> on: Bridge.points-order == value;
+    height: 34px;
+    border-radius: Theme.radius-m;
+    background: t.has-hover ? Theme.inset : transparent;
+    accessible-role: radio-button;
+    accessible-checkable: true;
+    accessible-checked: on;
+    accessible-label: text;
+    accessible-action-default => { t.clicked(); }
+    HorizontalLayout {
+        padding-left: 6px;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 16px;
+                height: 16px;
+                border-radius: 8px;
+                border-width: 2px;
+                border-color: root.on ? Theme.accent : Theme.border-strong;
+                Rectangle {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 4px;
+                    background: root.on ? Theme.accent : transparent;
+                }
+            }
+        }
+        Text {
+            text: root.text;
+            color: Theme.text;
+            vertical-alignment: center;
+        }
+    }
+    t := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            Bridge.set-module-setting("points", "order_by",
+                root.value == 1 ? "\"multiplier\"" : root.value == 2 ? "\"fewest_points\"" : root.value == 3 ? "\"most_points\"" : "\"config\"");
         }
     }
 }
@@ -185,6 +307,7 @@ export component ChannelsScreen inherits Page {
     title: @tr("Channels");
     subtitle: @tr("Where am I with channel points?");
     property <string> draft;
+    property <bool> options;
 
     if !Bridge.points-enabled: Card {
         Muted {
@@ -196,49 +319,32 @@ export component ChannelsScreen inherits Page {
     Card {
         HorizontalLayout {
             spacing: 12px;
-            VerticalLayout {
-                spacing: 2px;
-                horizontal-stretch: 1;
-                SectionTitle {
-                    text: @tr("My channels");
-                }
-                Muted {
-                    text: Bridge.points-order == 0 ? @tr("Watched first, in this order. Drag the handle to reorder.")
-                        : @tr("Your order only breaks ties: the priority below decides first.");
-                }
+            Stat {
+                label: @tr("Channels");
+                value: Bridge.channels-count;
+            }
+            Stat {
+                label: @tr("Live now");
+                value: Bridge.channels-live;
+            }
+            Stat {
+                label: @tr("Earned this session");
+                value: "+" + Fmt.int(Bridge.channels-session-points);
             }
         }
-        HorizontalLayout {
-            spacing: 10px;
-            Text {
-                text: @tr("Priority");
-                font-size: Theme.font-s;
-                color: Theme.text-muted;
-                vertical-alignment: center;
-            }
-            Segmented {
-                horizontal-stretch: 1;
-                items: [
-                    { label: @tr("My order") },
-                    { label: @tr("Multiplier") },
-                    { label: @tr("Fewest points") },
-                    { label: @tr("Most points") },
-                ];
-                selected: Bridge.points-order;
-                picked(i) => {
-                    Bridge.set-module-setting("points", "order_by",
-                        i == 1 ? "\"multiplier\"" : i == 2 ? "\"fewest_points\"" : i == 3 ? "\"most_points\"" : "\"config\"");
-                }
-            }
+    }
+
+    Card {
+        SectionTitle {
+            text: @tr("Your channels");
         }
-        if Bridge.my-channels.length == 0: Muted {
-            text: @tr("No channel of your own yet. Add one below, or rely on the channels you follow.");
+        Muted {
+            text: @tr("TwitchMiner watches up to {} live channels at once to earn their points. ★ Priority channels are watched before the others.", Bridge.watch-slots);
         }
-        MyChannelList { }
         HorizontalLayout {
             spacing: 6px;
             TextField {
-                placeholder: @tr("Channel name (as in twitch.tv/name)");
+                placeholder: @tr("Add a channel (its Twitch name)");
                 text <=> root.draft;
                 accepted => {
                     Bridge.add-channel(root.draft);
@@ -255,20 +361,75 @@ export component ChannelsScreen inherits Page {
                 }
             }
         }
+        if Bridge.all-channels.length == 0: Muted {
+            font-size: Theme.font-m;
+            text: Bridge.follows ? @tr("No channel yet: the channels you follow on Twitch appear here, and you can add others above.")
+                : @tr("No channel yet. Add one above.");
+        }
+        VerticalLayout {
+            spacing: 2px;
+            for ch in Bridge.all-channels: ChannelRow {
+                item: ch;
+            }
+        }
+        if Bridge.all-channels.length > 0: Muted {
+            color: Theme.text-faint;
+            text: @tr("— = balance not known yet: it shows once the channel has been live.");
+        }
     }
 
-    Card {
+    if Bridge.my-channels.length >= 2: Card {
+        SectionTitle {
+            text: @tr("Order of the priorities");
+        }
+        Muted {
+            text: Bridge.points-order == 0 ? @tr("When several priority channels are live, the first one in this list goes first. Drag the handle to change the order.")
+                : @tr("This order only breaks ties: the rule chosen in the options decides first.");
+        }
+        PriorityOrder { }
+    }
+
+    Rectangle {
+        height: 36px;
+        accessible-role: button;
+        accessible-label: @tr("Options");
+        accessible-expandable: true;
+        accessible-expanded: root.options;
+        accessible-action-default => { root.options = !root.options; }
         HorizontalLayout {
-            spacing: 12px;
+            spacing: 6px;
+            alignment: start;
+            Icon {
+                source: root.options ? Icons.chevron-down : Icons.chevron-right;
+                size: 16px;
+            }
+            Text {
+                text: @tr("Options");
+                color: Theme.text-muted;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+        }
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.options = !root.options; }
+        }
+    }
+
+    if root.options: Card {
+        HorizontalLayout {
+            spacing: 16px;
             VerticalLayout {
+                alignment: center;
                 spacing: 2px;
                 horizontal-stretch: 1;
-                SectionTitle {
-                    text: @tr("Followed on Twitch");
+                Text {
+                    text: @tr("Also mine the channels I follow");
+                    color: Theme.text;
+                    font-weight: 600;
                 }
                 Muted {
-                    text: Bridge.follows ? @tr("Watched after your channels. Live channels first.")
-                        : @tr("Turned off: only your channels are watched.");
+                    text: @tr("Off: only your priority channels are watched.");
                 }
             }
             VerticalLayout {
@@ -279,65 +440,71 @@ export component ChannelsScreen inherits Page {
                 }
             }
         }
-        if Bridge.follows: VerticalLayout {
+        Rectangle {
+            height: 1px;
+            background: Theme.border;
+        }
+        Text {
+            text: @tr("When more channels are live than can be watched, watch first:");
+            color: Theme.text;
+            font-weight: 600;
+            wrap: word-wrap;
+        }
+        VerticalLayout {
+            spacing: 2px;
+            OrderChoice {
+                value: 0;
+                text: @tr("My priority channels, in my order");
+            }
+            OrderChoice {
+                value: 1;
+                text: @tr("Where my points multiplier is highest (subscriptions)");
+            }
+            OrderChoice {
+                value: 2;
+                text: @tr("Where I have the fewest points");
+            }
+            OrderChoice {
+                value: 3;
+                text: @tr("Where I have the most points");
+            }
+        }
+        Muted {
+            text: @tr("A channel whose watch streak is not secured yet always goes first.");
+        }
+        if Bridge.excluded-channels.length > 0: VerticalLayout {
             spacing: 6px;
-            for ch in Bridge.followed-channels: Rectangle {
-                height: 54px;
+            Rectangle {
+                height: 1px;
+                background: Theme.border;
+            }
+            Text {
+                text: @tr("Channels never mined");
+                color: Theme.text;
+                font-weight: 600;
+            }
+            for login in Bridge.excluded-channels: Rectangle {
+                height: 32px;
                 border-radius: Theme.radius-m;
-                background: t.has-hover ? Theme.inset : transparent;
-                t := TouchArea { }
+                background: Theme.inset;
                 HorizontalLayout {
-                    padding-left: 8px;
-                    padding-right: 6px;
-                    spacing: 8px;
-                    ChannelRow {
-                        item: ch;
+                    padding-left: 12px;
+                    padding-right: 4px;
+                    Text {
+                        text: login;
+                        color: Theme.text;
+                        font-size: Theme.font-s;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
                     }
                     VerticalLayout {
                         alignment: center;
                         Button {
                             compact: true;
                             kind: ButtonKind.ghost;
-                            text: @tr("Ignore");
-                            clicked => { Bridge.list-add("points.exclude", ch.login); }
+                            text: @tr("Mine again");
+                            clicked => { Bridge.list-remove("points.exclude", login); }
                         }
-                    }
-                }
-            }
-            if Bridge.followed-channels.length == 0: Muted {
-                text: @tr("No followed channel found yet.");
-            }
-        }
-    }
-
-    if Bridge.excluded-channels.length > 0: Card {
-        SectionTitle {
-            text: @tr("Ignored channels");
-        }
-        Muted {
-            text: @tr("Never watched for points, even if you follow them.");
-        }
-        for login in Bridge.excluded-channels: Rectangle {
-            height: 32px;
-            border-radius: Theme.radius-m;
-            background: Theme.inset;
-            HorizontalLayout {
-                padding-left: 12px;
-                padding-right: 4px;
-                Text {
-                    text: login;
-                    color: Theme.text;
-                    font-size: Theme.font-s;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                }
-                VerticalLayout {
-                    alignment: center;
-                    IconButton {
-                        icon: Icons.x;
-                        size: 24px;
-                        tooltip: @tr("Stop ignoring");
-                        clicked => { Bridge.list-remove("points.exclude", login); }
                     }
                 }
             }

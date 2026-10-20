@@ -189,9 +189,6 @@ msgstr "Où j'en suis côté points ?"
 msgid "Where does the engine run?"
 msgstr "Où tourne le moteur ?"
 
-msgid "manifest revision {}"
-msgstr "manifeste révision {}"
-
 msgid "{} is connected. Mining starts."
 msgstr "{} est connecté. Le minage démarre."
 
@@ -516,71 +513,17 @@ msgstr "+{} cette session"
 msgid "Add"
 msgstr "Ajouter"
 
-msgid "Channel name (as in twitch.tv/name)"
-msgstr "Nom de la chaîne (comme dans twitch.tv/nom)"
-
-msgid "Fewest points"
-msgstr "Moins de points"
-
-msgid "Followed on Twitch"
-msgstr "Suivies sur Twitch"
-
-msgid "Ignore"
-msgstr "Ignorer"
-
-msgid "Ignored channels"
-msgstr "Chaînes ignorées"
-
 msgid "Looking for this channel…"
 msgstr "Recherche de la chaîne…"
 
 msgid "Most points"
 msgstr "Plus de points"
 
-msgid "Multiplier"
-msgstr "Multiplicateur"
-
-msgid "My channels"
-msgstr "Mes chaînes"
-
-msgid "My order"
-msgstr "Mon ordre"
-
-msgid "Never watched for points, even if you follow them."
-msgstr "Jamais regardées pour les points, même si tu les suis."
-
-msgid "No channel of your own yet. Add one below, or rely on the channels you follow."
-msgstr "Aucune chaîne à toi pour l'instant. Ajoutes-en une ci-dessous, ou compte sur les chaînes que tu suis."
-
-msgid "No followed channel found yet."
-msgstr "Aucune chaîne suivie trouvée pour l'instant."
-
 msgid "Offline"
 msgstr "Hors ligne"
 
-msgid "Priority"
-msgstr "Priorité"
-
-msgid "Remove this channel"
-msgstr "Retirer cette chaîne"
-
-msgid "Stop ignoring"
-msgstr "Ne plus ignorer"
-
 msgid "The channel points module is turned off (Settings)."
 msgstr "Le module des points de chaîne est désactivé (Réglages)."
-
-msgid "Turned off: only your channels are watched."
-msgstr "Désactivé : seules tes chaînes sont regardées."
-
-msgid "Watched after your channels. Live channels first."
-msgstr "Regardées après tes chaînes. Celles en direct d'abord."
-
-msgid "Watched first, in this order. Drag the handle to reorder."
-msgstr "Regardées en premier, dans cet ordre. Glisse la poignée pour réordonner."
-
-msgid "Your order only breaks ties: the priority below decides first."
-msgstr "Ton ordre ne sert qu'à départager : la priorité ci-dessous décide d'abord."
 
 msgid "+{} points on {}"
 msgstr "+{} points sur {}"
@@ -1133,3 +1076,87 @@ msgstr "TwitchMiner démarre dans la barre système quand tu ouvres ta session, 
 
 msgid "Closing the window keeps TwitchMiner running in the system tray. To stop it, use “Quit” in the tray icon menu."
 msgstr "Fermer la fenêtre laisse TwitchMiner tourner dans la barre système. Pour l'arrêter, utilise « Quitter » dans le menu de l'icône."
+
+msgid "A channel whose watch streak is not secured yet always goes first."
+msgstr "Une chaîne dont la série de visionnage n'est pas encore assurée passe toujours en premier."
+
+msgid "Add a channel (its Twitch name)"
+msgstr "Ajouter une chaîne (son nom Twitch)"
+
+msgid "Also mine the channels I follow"
+msgstr "Miner aussi les chaînes que je suis"
+
+msgid "Channels never mined"
+msgstr "Chaînes jamais minées"
+
+msgid "Earned this session"
+msgstr "Gagnés cette session"
+
+msgid "Live"
+msgstr "En direct"
+
+msgid "Live now"
+msgstr "En direct"
+
+msgid "Make it a priority"
+msgstr "Rendre prioritaire"
+
+msgid "Mine again"
+msgstr "Miner à nouveau"
+
+msgid "My priority channels, in my order"
+msgstr "Mes chaînes prioritaires, dans mon ordre"
+
+msgid "No channel yet. Add one above."
+msgstr "Aucune chaîne pour l'instant. Ajoutes-en une ci-dessus."
+
+msgid "No channel yet: the channels you follow on Twitch appear here, and you can add others above."
+msgstr "Aucune chaîne pour l'instant : les chaînes que tu suis sur Twitch apparaissent ici, et tu peux en ajouter d'autres ci-dessus."
+
+msgid "Off: only your priority channels are watched."
+msgstr "Désactivé : seules tes chaînes prioritaires sont regardées."
+
+msgid "Order of the priorities"
+msgstr "Ordre des prioritaires"
+
+msgid "Remove from priorities"
+msgstr "Retirer des prioritaires"
+
+msgid "Stop mining this channel"
+msgstr "Ne plus miner cette chaîne"
+
+msgid "This order only breaks ties: the rule chosen in the options decides first."
+msgstr "Cet ordre ne sert qu'à départager : la règle choisie dans les options décide d'abord."
+
+msgid "TwitchMiner watches up to {} live channels at once to earn their points. ★ Priority channels are watched before the others."
+msgstr "TwitchMiner regarde jusqu'à {} chaînes en direct à la fois pour gagner leurs points. Les chaînes ★ prioritaires passent avant les autres."
+
+msgid "Watched now"
+msgstr "Regardée"
+
+msgid "When more channels are live than can be watched, watch first:"
+msgstr "Quand plus de chaînes sont en direct qu'il n'est possible d'en regarder, regarder d'abord :"
+
+msgid "When several priority channels are live, the first one in this list goes first. Drag the handle to change the order."
+msgstr "Quand plusieurs chaînes prioritaires sont en direct, la première de cette liste passe avant. Glisse la poignée pour changer l'ordre."
+
+msgid "Where I have the fewest points"
+msgstr "Celles où j'ai le moins de points"
+
+msgid "Where I have the most points"
+msgstr "Celles où j'ai le plus de points"
+
+msgid "Where my points multiplier is highest (subscriptions)"
+msgstr "Celles où mon multiplicateur de points est le plus haut (abonnements)"
+
+msgid "Your channels"
+msgstr "Tes chaînes"
+
+msgid "points"
+msgstr "points"
+
+msgid "— = balance not known yet: it shows once the channel has been live."
+msgstr "— = solde pas encore connu : il s'affiche une fois que la chaîne a été en direct."
+
+msgid "Prioritized"
+msgstr "Prioritaire"

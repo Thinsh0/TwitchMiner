@@ -421,6 +421,7 @@ component GamesSection inherits VerticalLayout {
         ValueList {
             key: "drops.games";
             values: [];
+            suggest: true;
             placeholder: @tr("Add a game…");
         }
         if Bridge.game-suggestions.length > 0: VerticalLayout {
@@ -470,6 +471,7 @@ component GamesSection inherits VerticalLayout {
         ValueList {
             key: "drops.exclude_games";
             values: Bridge.exclude-games;
+            suggest: true;
             placeholder: @tr("Exclude a game…");
         }
     }

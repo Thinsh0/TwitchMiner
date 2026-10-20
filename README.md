@@ -40,6 +40,7 @@ Une page de statut est aussi servie sur **http://127.0.0.1:7878/**. Elle demande
 - [API](docs/API.md) : le contrat pour les interfaces (commandes, événements, état)
 - [Écrire un module](docs/MODULES.md)
 - [Android et OneUI](docs/ANDROID.md) : service de premier plan, Now Bar, Termux
+- [Brief interface](docs/UI_BRIEF.md) : écrans, données et commandes pour l'agent UI
 
 ## Structure
 

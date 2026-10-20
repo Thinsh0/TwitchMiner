@@ -14,8 +14,8 @@ use tm_core::state::{Account, AccountStatus, Level};
 
 use crate::images;
 use crate::{
-    AccountItem, Bridge, DropItem, DropLine, GameItem, Idle, LinkState, LoginItem, MainWindow,
-    NoticeItem, PlanRow, PlanTodo, TodayItem, WatchItem, When,
+    AccountItem, Bridge, ChannelItem, DropItem, DropLine, GameItem, Idle, LinkState, LoginItem,
+    MainWindow, NoticeItem, PlanRow, PlanTodo, TodayItem, WatchItem, When,
 };
 
 /// What the projection needs besides the state.
@@ -68,6 +68,7 @@ pub fn apply(ui: &MainWindow, input: &Input) {
     });
     home(&bridge, state, selected.as_str(), account, input);
     drops(&bridge, state, selected.as_str(), account, input);
+    channels(&bridge, state, selected.as_str(), account);
     sync(bridge.get_accounts(), accounts, |m| bridge.set_accounts(m));
     sync(bridge.get_logins(), logins, |m| bridge.set_logins(m));
     sync(bridge.get_notices(), notices, |m| bridge.set_notices(m));
@@ -406,6 +407,103 @@ fn drops(bridge: &Bridge, state: &State, id: &str, account: Option<&Account>, in
         bridge.get_game_suggestions(),
         suggestions.into_iter().map(Into::into).collect(),
         |m| bridge.set_game_suggestions(m),
+    );
+}
+
+/// The Channels screen: configured channels in priority order, then followed ones.
+fn channels(bridge: &Bridge, state: &State, id: &str, account: Option<&Account>) {
+    let Some(account) = account else {
+        sync(bridge.get_my_channels(), Vec::new(), |m| {
+            bridge.set_my_channels(m)
+        });
+        sync(bridge.get_followed_channels(), Vec::new(), |m| {
+            bridge.set_followed_channels(m)
+        });
+        return;
+    };
+    let setting = |key| module_setting(state, id, "points", key);
+    let configured = string_list(setting("channels"));
+    let excluded = string_list(setting("exclude"));
+    bridge.set_follows(setting("follows").and_then(|v| v.as_bool()).unwrap_or(true));
+    bridge.set_points_enabled(setting("enabled").and_then(|v| v.as_bool()).unwrap_or(true));
+    bridge.set_points_order(match setting("order_by").and_then(|v| v.as_str()) {
+        Some("multiplier") => 1,
+        Some("fewest_points") => 2,
+        Some("most_points") => 3,
+        _ => 0,
+    });
+    let item = |c: &tm_core::state::Channel| {
+        let stream = c.stream.as_ref();
+        ChannelItem {
+            id: c.id.as_str().into(),
+            login: c.login.as_str().into(),
+            initial: initial(&c.display_name).into(),
+            name: c.display_name.as_str().into(),
+            avatar: images::get(c.avatar_url.as_deref()),
+            live: stream.is_some(),
+            game: stream
+                .and_then(|s| s.game.as_ref())
+                .map(|g| g.name.as_str())
+                .unwrap_or_default()
+                .into(),
+            title: stream.map(|s| s.title.as_str()).unwrap_or_default().into(),
+            viewers: stream.map(|s| s.viewers as i32).unwrap_or_default(),
+            points: c.points.unwrap_or_default().min(i32::MAX as u64) as i32,
+            points_known: c.points.is_some(),
+            multiplier: if (c.multiplier - 1.0).abs() < f64::EPSILON {
+                SharedString::new()
+            } else {
+                format!("×{}", (c.multiplier * 100.0).round() / 100.0).into()
+            },
+            session_points: c.session_points as i32,
+            session_minutes: c.session_minutes as i32,
+            watching: account.watching.contains_key(&c.id),
+            pending: false,
+        }
+    };
+    let by_login = |login: &str| {
+        account
+            .channels
+            .values()
+            .find(|c| c.login.eq_ignore_ascii_case(login))
+    };
+    let mine: Vec<ChannelItem> = configured
+        .iter()
+        .map(|login| match by_login(login) {
+            Some(c) => item(c),
+            None => ChannelItem {
+                login: login.as_str().into(),
+                name: login.as_str().into(),
+                initial: initial(login).into(),
+                pending: true,
+                ..Default::default()
+            },
+        })
+        .collect();
+    let mut followed: Vec<&tm_core::state::Channel> = account
+        .channels
+        .values()
+        .filter(|c| c.sources.contains("points"))
+        .filter(|c| !configured.iter().any(|l| l.eq_ignore_ascii_case(&c.login)))
+        .collect();
+    followed.sort_by(|a, b| {
+        b.stream.is_some().cmp(&a.stream.is_some()).then_with(|| {
+            a.display_name
+                .to_lowercase()
+                .cmp(&b.display_name.to_lowercase())
+        })
+    });
+    let followed: Vec<ChannelItem> = followed.into_iter().map(item).collect();
+    sync(bridge.get_my_channels(), mine, |m| {
+        bridge.set_my_channels(m)
+    });
+    sync(bridge.get_followed_channels(), followed, |m| {
+        bridge.set_followed_channels(m)
+    });
+    sync(
+        bridge.get_excluded_channels(),
+        excluded.into_iter().map(Into::into).collect(),
+        |m| bridge.set_excluded_channels(m),
     );
 }
 

@@ -1,0 +1,346 @@
+// Channels: "where am I with channel points?"
+
+import { Theme } from "../theme.slint";
+import { Bridge, ChannelItem } from "../bridge.slint";
+import { Fmt } from "../fmt.slint";
+import { Avatar, Button, ButtonKind, Card, Icon, IconButton, Icons, Muted, Page, Pill, Segmented, TextField, Toggle, Tone } from "../widgets.slint";
+
+component SectionTitle inherits Text {
+    font-size: Theme.font-l;
+    font-weight: 700;
+    color: Theme.text;
+}
+
+// One channel: who, live or not, balance and what this session brought.
+component ChannelRow inherits HorizontalLayout {
+    in property <ChannelItem> item;
+    spacing: 12px;
+    Rectangle {
+        width: 40px;
+        height: 40px;
+        Avatar {
+            source: root.item.avatar;
+            initial: root.item.initial;
+            size: 40px;
+            opacity: root.item.live || root.item.pending ? 1 : 0.6;
+        }
+        if root.item.live: Rectangle {
+            x: parent.width - 12px;
+            y: parent.height - 12px;
+            width: 12px;
+            height: 12px;
+            border-radius: 6px;
+            background: Theme.live;
+            border-width: 2px;
+            border-color: Theme.bg;
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        horizontal-stretch: 1;
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: root.item.name;
+                font-weight: 700;
+                color: Theme.text;
+                overflow: elide;
+                vertical-alignment: center;
+            }
+            if root.item.watching: Pill {
+                text: @tr("Watched");
+                tone: Tone.accent;
+                icon: Icons.tv;
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+        }
+        Text {
+            text: root.item.pending ? @tr("Looking for this channel…")
+                : !root.item.live ? @tr("Offline")
+                : root.item.title == "" ? root.item.game
+                : root.item.game == "" ? root.item.title : root.item.game + " · " + root.item.title;
+            font-size: Theme.font-s;
+            color: root.item.live ? Theme.text-muted : Theme.text-faint;
+            overflow: elide;
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: end;
+            if root.item.multiplier != "": VerticalLayout {
+                alignment: center;
+                Pill {
+                    text: root.item.multiplier;
+                    tone: Tone.success;
+                }
+            }
+            Text {
+                text: root.item.points-known ? Fmt.int(root.item.points) : "—";
+                font-size: Theme.font-l;
+                font-weight: 700;
+                color: Theme.text;
+                horizontal-alignment: right;
+            }
+        }
+        Text {
+            text: root.item.session-points > 0 ? @tr("+{} this session", Fmt.int(root.item.session-points)) : "";
+            font-size: Theme.font-xs;
+            color: Theme.success;
+            horizontal-alignment: right;
+        }
+    }
+}
+
+// My channels, reordered by dragging the handle (order = priority).
+component MyChannelList inherits Rectangle {
+    property <length> row-h: 60px;
+    property <int> dragging: -1;
+    property <int> target: -1;
+    property <length> drag-y;
+    height: Bridge.my-channels.length * row-h;
+    for ch[i] in Bridge.my-channels: Rectangle {
+        property <bool> is-dragged: root.dragging == i;
+        x: 0;
+        width: parent.width;
+        height: root.row-h - 6px;
+        y: is-dragged ? root.drag-y
+            : root.dragging >= 0 && root.dragging < i && i <= root.target ? (i - 1) * root.row-h
+            : root.dragging >= 0 && root.target <= i && i < root.dragging ? (i + 1) * root.row-h
+            : i * root.row-h;
+        animate y {
+            duration: is-dragged ? 0ms : 120ms;
+            easing: ease-out;
+        }
+        z: is-dragged ? 1 : 0;
+        border-radius: Theme.radius-m;
+        background: is-dragged ? Theme.card-hover : Theme.inset;
+        drop-shadow-blur: is-dragged ? 14px : 0px;
+        drop-shadow-color: #00000050;
+        accessible-role: list-item;
+        accessible-label: ch.name;
+        accessible-action-increment => {
+            if i > 0 { Bridge.list-move("points.channels", i, i - 1); }
+        }
+        accessible-action-decrement => {
+            if i + 1 < Bridge.my-channels.length { Bridge.list-move("points.channels", i, i + 1); }
+        }
+        HorizontalLayout {
+            padding-left: 4px;
+            padding-right: 6px;
+            spacing: 8px;
+            Rectangle {
+                width: 22px;
+                Icon {
+                    source: Icons.grip;
+                    size: 16px;
+                    colorize: Theme.text-faint;
+                }
+                TouchArea {
+                    mouse-cursor: grab;
+                    pointer-event(ev) => {
+                        if ev.kind == PointerEventKind.down {
+                            root.dragging = i;
+                            root.target = i;
+                            root.drag-y = i * root.row-h;
+                        }
+                        if ev.kind == PointerEventKind.up || ev.kind == PointerEventKind.cancel {
+                            if root.dragging == i && root.target != i && root.target >= 0 {
+                                Bridge.list-move("points.channels", i, root.target);
+                            }
+                            root.dragging = -1;
+                            root.target = -1;
+                        }
+                    }
+                    moved => {
+                        if root.dragging == i {
+                            root.drag-y = clamp(root.drag-y + self.mouse-y - self.pressed-y, 0px, (Bridge.my-channels.length - 1) * root.row-h);
+                            root.target = round(root.drag-y / root.row-h);
+                        }
+                    }
+                }
+            }
+            ChannelRow {
+                item: ch;
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: Icons.x;
+                    size: 26px;
+                    tooltip: @tr("Remove this channel");
+                    clicked => { Bridge.remove-channel(ch.login); }
+                }
+            }
+        }
+    }
+}
+
+export component ChannelsScreen inherits Page {
+    title: @tr("Channels");
+    subtitle: @tr("Where am I with channel points?");
+    property <string> draft;
+
+    if !Bridge.points-enabled: Card {
+        Muted {
+            font-size: Theme.font-m;
+            text: @tr("The channel points module is turned off (Settings).");
+        }
+    }
+
+    Card {
+        HorizontalLayout {
+            spacing: 12px;
+            VerticalLayout {
+                spacing: 2px;
+                horizontal-stretch: 1;
+                SectionTitle {
+                    text: @tr("My channels");
+                }
+                Muted {
+                    text: Bridge.points-order == 0 ? @tr("Watched first, in this order. Drag the handle to reorder.")
+                        : @tr("Your order only breaks ties: the priority below decides first.");
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            Text {
+                text: @tr("Priority");
+                font-size: Theme.font-s;
+                color: Theme.text-muted;
+                vertical-alignment: center;
+            }
+            Segmented {
+                horizontal-stretch: 1;
+                items: [
+                    { label: @tr("My order") },
+                    { label: @tr("Multiplier") },
+                    { label: @tr("Fewest points") },
+                    { label: @tr("Most points") },
+                ];
+                selected: Bridge.points-order;
+                picked(i) => {
+                    Bridge.set-module-setting("points", "order_by",
+                        i == 1 ? "\"multiplier\"" : i == 2 ? "\"fewest_points\"" : i == 3 ? "\"most_points\"" : "\"config\"");
+                }
+            }
+        }
+        if Bridge.my-channels.length == 0: Muted {
+            text: @tr("No channel of your own yet. Add one below, or rely on the channels you follow.");
+        }
+        MyChannelList { }
+        HorizontalLayout {
+            spacing: 6px;
+            TextField {
+                placeholder: @tr("Channel name (as in twitch.tv/name)");
+                text <=> root.draft;
+                accepted => {
+                    Bridge.add-channel(root.draft);
+                    root.draft = "";
+                }
+            }
+            Button {
+                icon: Icons.plus;
+                text: @tr("Add");
+                enabled: root.draft != "";
+                clicked => {
+                    Bridge.add-channel(root.draft);
+                    root.draft = "";
+                }
+            }
+        }
+    }
+
+    Card {
+        HorizontalLayout {
+            spacing: 12px;
+            VerticalLayout {
+                spacing: 2px;
+                horizontal-stretch: 1;
+                SectionTitle {
+                    text: @tr("Followed on Twitch");
+                }
+                Muted {
+                    text: Bridge.follows ? @tr("Watched after your channels. Live channels first.")
+                        : @tr("Turned off: only your channels are watched.");
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Toggle {
+                    checked: Bridge.follows;
+                    toggled(v) => { Bridge.set-module-setting("points", "follows", v ? "true" : "false"); }
+                }
+            }
+        }
+        if Bridge.follows: VerticalLayout {
+            spacing: 6px;
+            for ch in Bridge.followed-channels: Rectangle {
+                height: 54px;
+                border-radius: Theme.radius-m;
+                background: t.has-hover ? Theme.inset : transparent;
+                t := TouchArea { }
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 6px;
+                    spacing: 8px;
+                    ChannelRow {
+                        item: ch;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Button {
+                            compact: true;
+                            kind: ButtonKind.ghost;
+                            text: @tr("Ignore");
+                            clicked => { Bridge.list-add("points.exclude", ch.login); }
+                        }
+                    }
+                }
+            }
+            if Bridge.followed-channels.length == 0: Muted {
+                text: @tr("No followed channel found yet.");
+            }
+        }
+    }
+
+    if Bridge.excluded-channels.length > 0: Card {
+        SectionTitle {
+            text: @tr("Ignored channels");
+        }
+        Muted {
+            text: @tr("Never watched for points, even if you follow them.");
+        }
+        for login in Bridge.excluded-channels: Rectangle {
+            height: 32px;
+            border-radius: Theme.radius-m;
+            background: Theme.inset;
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 4px;
+                Text {
+                    text: login;
+                    color: Theme.text;
+                    font-size: Theme.font-s;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        icon: Icons.x;
+                        size: 24px;
+                        tooltip: @tr("Stop ignoring");
+                        clicked => { Bridge.list-remove("points.exclude", login); }
+                    }
+                }
+            }
+        }
+    }
+}

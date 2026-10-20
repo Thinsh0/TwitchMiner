@@ -511,3 +511,75 @@ msgstr "{} campagnes"
 
 msgid "{} left"
 msgstr "reste {}"
+
+msgid "+{} this session"
+msgstr "+{} cette session"
+
+msgid "Add"
+msgstr "Ajouter"
+
+msgid "Channel name (as in twitch.tv/name)"
+msgstr "Nom de la chaîne (comme dans twitch.tv/nom)"
+
+msgid "Fewest points"
+msgstr "Moins de points"
+
+msgid "Followed on Twitch"
+msgstr "Suivies sur Twitch"
+
+msgid "Ignore"
+msgstr "Ignorer"
+
+msgid "Ignored channels"
+msgstr "Chaînes ignorées"
+
+msgid "Looking for this channel…"
+msgstr "Recherche de la chaîne…"
+
+msgid "Most points"
+msgstr "Plus de points"
+
+msgid "Multiplier"
+msgstr "Multiplicateur"
+
+msgid "My channels"
+msgstr "Mes chaînes"
+
+msgid "My order"
+msgstr "Mon ordre"
+
+msgid "Never watched for points, even if you follow them."
+msgstr "Jamais regardées pour les points, même si tu les suis."
+
+msgid "No channel of your own yet. Add one below, or rely on the channels you follow."
+msgstr "Aucune chaîne à toi pour l'instant. Ajoutes-en une ci-dessous, ou compte sur les chaînes que tu suis."
+
+msgid "No followed channel found yet."
+msgstr "Aucune chaîne suivie trouvée pour l'instant."
+
+msgid "Offline"
+msgstr "Hors ligne"
+
+msgid "Priority"
+msgstr "Priorité"
+
+msgid "Remove this channel"
+msgstr "Retirer cette chaîne"
+
+msgid "Stop ignoring"
+msgstr "Ne plus ignorer"
+
+msgid "The channel points module is turned off (Settings)."
+msgstr "Le module des points de chaîne est désactivé (Réglages)."
+
+msgid "Turned off: only your channels are watched."
+msgstr "Désactivé : seules tes chaînes sont regardées."
+
+msgid "Watched after your channels. Live channels first."
+msgstr "Regardées après tes chaînes. Celles en direct d'abord."
+
+msgid "Watched first, in this order. Drag the handle to reorder."
+msgstr "Regardées en premier, dans cet ordre. Glisse la poignée pour réordonner."
+
+msgid "Your order only breaks ties: the priority below decides first."
+msgstr "Ton ordre ne sert qu'à départager : la priorité ci-dessous décide d'abord."

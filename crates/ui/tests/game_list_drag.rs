@@ -58,7 +58,7 @@ fn dragging_a_game_handle_moves_it() {
 
     // Two rows down (rows are 40 px apart).
     press_drag_release(&ui, handle, 82.0);
-    assert_eq!(*moved.borrow(), vec![("games".to_string(), 0, 2)]);
+    assert_eq!(*moved.borrow(), vec![("drops.games".to_string(), 0, 2)]);
 
     // A click on the handle without moving does nothing.
     moved.borrow_mut().clear();

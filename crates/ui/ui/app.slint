@@ -7,6 +7,7 @@ import { SettingsScreen } from "screens/settings.slint";
 import { ConnectScreen } from "screens/connect.slint";
 import { PlaceholderScreen } from "screens/placeholder.slint";
 import { DropsScreen } from "screens/drops.slint";
+import { ChannelsScreen } from "screens/channels.slint";
 
 export { Bridge, Theme, ThemeMode }
 
@@ -348,11 +349,7 @@ export component MainWindow inherits Window {
             horizontal-stretch: 1;
             if Bridge.screen == Screen.home: HomeScreen { }
             if Bridge.screen == Screen.drops: DropsScreen { }
-            if Bridge.screen == Screen.channels: PlaceholderScreen {
-                title: @tr("Channels");
-                question: @tr("Where am I with channel points?");
-                icon: Icons.tv;
-            }
+            if Bridge.screen == Screen.channels: ChannelsScreen { }
             if Bridge.screen == Screen.activity: PlaceholderScreen {
                 title: @tr("Activity");
                 question: @tr("What did it bring in?");

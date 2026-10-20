@@ -5,6 +5,7 @@ import { Theme } from "../theme.slint";
 import { Bridge, PlanRow, GameItem, When } from "../bridge.slint";
 import { Fmt } from "../fmt.slint";
 import { Button, ButtonKind, Card, Icon, IconButton, Icons, Muted, Page, Pill, ProgressBar, TextField, Tone } from "../widgets.slint";
+import { ValueList } from "lists.slint";
 
 export global Whens {
     // today at 18:00 · tomorrow at 09:30 · 24/10 at 18:00
@@ -330,10 +331,10 @@ component GameList inherits Rectangle {
         accessible-role: list-item;
         accessible-label: game.name;
         accessible-action-increment => {
-            if i > 0 { Bridge.list-move("games", i, i - 1); }
+            if i > 0 { Bridge.list-move("drops.games", i, i - 1); }
         }
         accessible-action-decrement => {
-            if i + 1 < Bridge.games.length { Bridge.list-move("games", i, i + 1); }
+            if i + 1 < Bridge.games.length { Bridge.list-move("drops.games", i, i + 1); }
         }
         HorizontalLayout {
             padding-left: 4px;
@@ -356,7 +357,7 @@ component GameList inherits Rectangle {
                         }
                         if ev.kind == PointerEventKind.up || ev.kind == PointerEventKind.cancel {
                             if root.dragging == i && root.target != i && root.target >= 0 {
-                                Bridge.list-move("games", i, root.target);
+                                Bridge.list-move("drops.games", i, root.target);
                             }
                             root.dragging = -1;
                             root.target = -1;
@@ -398,64 +399,8 @@ component GameList inherits Rectangle {
                     icon: Icons.x;
                     size: 26px;
                     tooltip: @tr("Remove from the list");
-                    clicked => { Bridge.list-remove("games", game.name); }
+                    clicked => { Bridge.list-remove("drops.games", game.name); }
                 }
-            }
-        }
-    }
-}
-
-// A removable list of short values, with an input to add one.
-component ValueList inherits VerticalLayout {
-    in property <string> key;
-    in property <[string]> values;
-    in property <string> placeholder;
-    property <string> draft;
-    spacing: 6px;
-    for v in root.values: Rectangle {
-        height: 32px;
-        border-radius: Theme.radius-m;
-        background: Theme.inset;
-        HorizontalLayout {
-            padding-left: 12px;
-            padding-right: 4px;
-            Text {
-                text: v;
-                color: Theme.text;
-                font-size: Theme.font-s;
-                vertical-alignment: center;
-                overflow: elide;
-                horizontal-stretch: 1;
-            }
-            VerticalLayout {
-                alignment: center;
-                IconButton {
-                    icon: Icons.x;
-                    size: 24px;
-                    tooltip: @tr("Remove");
-                    clicked => { Bridge.list-remove(root.key, v); }
-                }
-            }
-        }
-    }
-    HorizontalLayout {
-        spacing: 6px;
-        field := TextField {
-            height: 34px;
-            placeholder: root.placeholder;
-            text <=> root.draft;
-            accepted => {
-                Bridge.list-add(root.key, root.draft);
-                root.draft = "";
-            }
-        }
-        Button {
-            compact: true;
-            icon: Icons.plus;
-            enabled: root.draft != "";
-            clicked => {
-                Bridge.list-add(root.key, root.draft);
-                root.draft = "";
             }
         }
     }
@@ -474,7 +419,7 @@ component GamesSection inherits VerticalLayout {
         }
         GameList { }
         ValueList {
-            key: "games";
+            key: "drops.games";
             values: [];
             placeholder: @tr("Add a game…");
         }
@@ -509,7 +454,7 @@ component GamesSection inherits VerticalLayout {
                     }
                     t := TouchArea {
                         mouse-cursor: pointer;
-                        clicked => { Bridge.list-add("games", s); }
+                        clicked => { Bridge.list-add("drops.games", s); }
                     }
                 }
             }
@@ -523,7 +468,7 @@ component GamesSection inherits VerticalLayout {
             text: @tr("Never mined, even with an empty list.");
         }
         ValueList {
-            key: "exclude_games";
+            key: "drops.exclude_games";
             values: Bridge.exclude-games;
             placeholder: @tr("Exclude a game…");
         }
@@ -536,7 +481,7 @@ component GamesSection inherits VerticalLayout {
             text: @tr("Part of a reward name. In a campaign that has one, the goal stops at it instead of the last reward.");
         }
         ValueList {
-            key: "wanted_rewards";
+            key: "drops.wanted_rewards";
             values: Bridge.wanted-rewards;
             placeholder: @tr("Add a reward…");
         }

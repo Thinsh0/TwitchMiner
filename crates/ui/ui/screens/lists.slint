@@ -1,0 +1,60 @@
+import { Theme } from "../theme.slint";
+import { Bridge } from "../bridge.slint";
+import { Button, IconButton, Icons, TextField } from "../widgets.slint";
+
+// A removable list of short values, with an input to add one.
+export component ValueList inherits VerticalLayout {
+    in property <string> key;
+    in property <[string]> values;
+    in property <string> placeholder;
+    property <string> draft;
+    spacing: 6px;
+    for v in root.values: Rectangle {
+        height: 32px;
+        border-radius: Theme.radius-m;
+        background: Theme.inset;
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 4px;
+            Text {
+                text: v;
+                color: Theme.text;
+                font-size: Theme.font-s;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: Icons.x;
+                    size: 24px;
+                    tooltip: @tr("Remove");
+                    clicked => { Bridge.list-remove(root.key, v); }
+                }
+            }
+        }
+    }
+    HorizontalLayout {
+        spacing: 6px;
+        field := TextField {
+            height: 34px;
+            placeholder: root.placeholder;
+            text <=> root.draft;
+            accepted => {
+                Bridge.list-add(root.key, root.draft);
+                root.draft = "";
+            }
+        }
+        Button {
+            compact: true;
+            icon: Icons.plus;
+            enabled: root.draft != "";
+            clicked => {
+                Bridge.list-add(root.key, root.draft);
+                root.draft = "";
+            }
+        }
+    }
+}
+

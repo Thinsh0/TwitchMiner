@@ -147,6 +147,28 @@ export struct PlanRow {
     drops: [DropLine],
 }
 
+export struct ChannelItem {
+    id: string,
+    login: string,
+    name: string,
+    initial: string,
+    avatar: image,
+    live: bool,
+    game: string,
+    title: string,
+    viewers: int,
+    // Balance; `points-known` false = unknown ("—", not 0).
+    points: int,
+    points-known: bool,
+    // "×1.2", empty when 1.
+    multiplier: string,
+    session-points: int,
+    session-minutes: int,
+    watching: bool,
+    // Not tracked by the engine yet (just added, or unknown login).
+    pending: bool,
+}
+
 export struct GameItem {
     name: string,
     // Number of campaigns of this game in the plan.
@@ -199,6 +221,17 @@ export global Bridge {
     in property <[string]> game-suggestions;
     in property <bool> drops-enabled;
 
+    // Channels (selected account)
+    // Channels of the points settings, in priority order.
+    in property <[ChannelItem]> my-channels;
+    // Followed on Twitch, farmed after `my-channels` (when `follows` is on).
+    in property <[ChannelItem]> followed-channels;
+    in property <[string]> excluded-channels;
+    in property <bool> follows;
+    // 0 = my order, 1 = multiplier, 2 = fewest points, 3 = most points
+    in property <int> points-order;
+    in property <bool> points-enabled;
+
     in property <string> version;
     in property <int> manifest-revision;
 
@@ -232,8 +265,13 @@ export global Bridge {
     callback unfocus();
     callback drops-refresh();
     callback drops-claim-all();
-    // Edits of the drops settings: list name (games | exclude_games | wanted_rewards).
+    // Edits of a list setting, `<module>.<key>`: drops.games, drops.exclude_games,
+    // drops.wanted_rewards, points.channels, points.exclude.
     callback list-add(string, string);
     callback list-remove(string, string);
     callback list-move(string, int, int);
+    // Sets one module setting: module, key, JSON value.
+    callback set-module-setting(string, string, string);
+    callback add-channel(string);
+    callback remove-channel(string);
 }

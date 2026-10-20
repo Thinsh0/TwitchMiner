@@ -176,6 +176,34 @@ impl Controller {
                 }
             })
         });
+        let c = self.clone();
+        b.on_set_module_setting(move |module, key, json| {
+            match serde_json::from_str::<Value>(&json) {
+                Ok(value) => c.set_module_setting(&module, &key, value),
+                Err(e) => tracing::warn!(error = %e, %key, "invalid setting value from the view"),
+            }
+        });
+        let c = self.clone();
+        b.on_add_channel(move |login| {
+            let login = login.trim().trim_start_matches('@').to_lowercase();
+            if !login.is_empty() {
+                c.module_call(
+                    "points",
+                    "add_channel",
+                    serde_json::json!({ "login": login }),
+                    |_| {},
+                );
+            }
+        });
+        let c = self.clone();
+        b.on_remove_channel(move |login| {
+            c.module_call(
+                "points",
+                "remove_channel",
+                serde_json::json!({ "login": login.as_str() }),
+                |_| {},
+            )
+        });
         let weak = ui.as_weak();
         crate::images::init(self.0.rt.clone(), move || {
             if let Some(ui) = weak.upgrade() {
@@ -437,29 +465,48 @@ impl Controller {
         });
     }
 
-    /// Edits a list setting of the drops module (`games`, `exclude_games`,
-    /// `wanted_rewards`) from its current value in the state, and saves it where the
-    /// module reads it.
-    fn edit_list(&self, key: &str, f: impl FnOnce(&mut Vec<String>) + Send + 'static) {
-        const MODULE: &str = "drops";
-        if !matches!(key, "games" | "exclude_games" | "wanted_rewards") {
+    /// Edits a list setting (`<module>.<key>`) from its current value in the state.
+    fn edit_list(&self, path: &str, f: impl FnOnce(&mut Vec<String>) + Send + 'static) {
+        let Some((module, key)) = path.split_once('.') else {
+            return;
+        };
+        if !matches!(
+            (module, key),
+            ("drops", "games" | "exclude_games" | "wanted_rewards")
+                | ("points", "channels" | "exclude")
+        ) {
             return;
         }
         let me = self.clone();
-        let key = key.to_string();
+        let (module, key) = (module.to_string(), key.to_string());
         self.on_ui(move |ui| {
             let account = ui.global::<Bridge>().get_account().to_string();
-            let (mut list, scope) = LAST.with(|l| {
-                let l = l.borrow();
-                (
-                    present::string_list(present::module_setting(&l.state, &account, MODULE, &key)),
-                    present::module_setting_scope(&l.state, &account, MODULE, &key),
-                )
+            let mut list = LAST.with(|l| {
+                present::string_list(present::module_setting(
+                    &l.borrow().state,
+                    &account,
+                    &module,
+                    &key,
+                ))
             });
             f(&mut list);
+            me.set_module_setting(&module, &key, serde_json::json!(list));
+        });
+    }
+
+    /// Saves one top-level module setting where the module reads it for the selected
+    /// account (its override if it has one for this key, else the shared scope).
+    fn set_module_setting(&self, module: &str, key: &str, value: Value) {
+        let me = self.clone();
+        let (module, key) = (module.to_string(), key.to_string());
+        self.on_ui(move |ui| {
+            let account = ui.global::<Bridge>().get_account().to_string();
+            let scope = LAST.with(|l| {
+                present::module_setting_scope(&l.borrow().state, &account, &module, &key)
+            });
             me.command(Command::SettingsSet {
                 scope,
-                value: serde_json::json!({ key: list }),
+                value: serde_json::json!({ key: value }),
                 merge: true,
             });
         });

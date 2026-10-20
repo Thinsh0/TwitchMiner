@@ -79,7 +79,10 @@ fn fixture(now: DateTime<Utc>) -> Value {
         "instance_id": "demo",
         "started_at": m(-95),
         "manifest_revision": 2,
-        "settings": {"module:drops": {
+        "settings": {"account:1001/module:points": {
+            "channels": ["rustgod", "zerator", "deadlockdev", "newchannel"],
+            "exclude": ["somebot"]
+        }, "module:drops": {
             "games": ["Rust", "Marvel Rivals", "Valorant", "Deadlock", "Apex Legends"],
             "exclude_games": ["Fortnite"],
             "wanted_rewards": ["Garage Door"]
@@ -108,6 +111,16 @@ fn fixture(now: DateTime<Utc>) -> Value {
                             "started_at": m(-35), "game": game("g9", "Just Chatting")},
                         "points": 152340, "multiplier": 1.2, "sources": ["points"],
                         "session_points": 410, "session_minutes": 21},
+                    "14": {"id": "14", "login": "kamet0", "display_name": "Kamet0",
+                        "avatar_url": null,
+                        "stream": {"id": "s14", "title": "Ranked jusqu'au Master", "viewers": 9120,
+                            "started_at": m(-90), "game": game("g5", "League of Legends")},
+                        "points": 3150, "multiplier": 1.0, "sources": ["points"],
+                        "session_points": 0, "session_minutes": 0},
+                    "15": {"id": "15", "login": "gotaga", "display_name": "Gotaga",
+                        "avatar_url": null, "stream": null,
+                        "points": 870, "multiplier": 2.0, "sources": ["points"],
+                        "session_points": 0, "session_minutes": 0},
                     "13": {"id": "13", "login": "deadlockdev", "display_name": "DeadlockDev",
                         "avatar_url": null, "stream": null,
                         "points": null, "multiplier": 1.0, "sources": ["points"],

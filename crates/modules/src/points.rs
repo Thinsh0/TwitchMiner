@@ -61,6 +61,16 @@ const CONTEXT_REFRESH: Duration = Duration::from_secs(30 * 60);
 const WATCHED_CONTEXT_REFRESH: Duration = Duration::from_secs(4 * 60);
 const FOLLOWS_REFRESH: Duration = Duration::from_secs(60 * 60);
 
+/// Per-broadcast progress persisted across restarts (streak tracking).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Memory {
+    stream_id: String,
+    minutes: u64,
+    streak_done: bool,
+}
+
+const MEMORY_KEY: &str = "broadcasts";
+
 #[derive(Debug, Clone)]
 struct ChannelRt {
     meta: ChannelMeta,
@@ -100,6 +110,12 @@ impl Module for Points {
             recheck: HashMap::new(),
             raids: HashSet::new(),
         };
+        let mut memory: HashMap<String, Memory> = ctx
+            .kv_get(MEMORY_KEY)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
         let mut topics = ctx.pubsub().topic_set();
         let mut ps = ctx.pubsub().subscribe();
         let mut events = ctx.events();
@@ -125,6 +141,7 @@ impl Module for Points {
                 }
                 let users = resolve_channels(&ctx, &settings, &follows).await?;
                 rt.sync(&ctx, users);
+                rt.restore(std::mem::take(&mut memory));
                 let mut wanted = vec![topics::community_points_user(&uid)];
                 for id in rt.channels.keys() {
                     wanted.push(topics::playback(id));
@@ -156,6 +173,7 @@ impl Module for Points {
                     }
                 }
                 _ = poll.tick() => {
+                    rt.save(&ctx).await;
                     rt.poll_status(&ctx).await;
                     rt.refresh_contexts(&ctx, &settings).await;
                     if follows_at.is_some_and(|t| t.elapsed() > FOLLOWS_REFRESH) {
@@ -195,6 +213,7 @@ impl Module for Points {
                 }
             }
         }
+        rt.save(&ctx).await;
         for id in rt.channels.keys() {
             ctx.release_channel(id);
         }
@@ -328,6 +347,42 @@ struct Runtime {
 }
 
 impl Runtime {
+    /// Re-applies persisted per-broadcast progress to channels still on the same broadcast.
+    fn restore(&mut self, memory: HashMap<String, Memory>) {
+        for (id, m) in memory {
+            let Some(ch) = self.channels.get_mut(&id) else {
+                continue;
+            };
+            if ch.stream.as_ref().is_some_and(|s| s.id == m.stream_id) {
+                ch.broadcast_minutes = ch.broadcast_minutes.max(m.minutes);
+                if m.streak_done {
+                    ch.streak_done = Some(m.stream_id);
+                }
+            }
+        }
+    }
+
+    async fn save(&self, ctx: &ModuleContext) {
+        let memory: HashMap<String, Memory> = self
+            .channels
+            .values()
+            .filter_map(|c| {
+                let s = c.stream.as_ref()?;
+                Some((
+                    c.meta.id.clone(),
+                    Memory {
+                        stream_id: s.id.clone(),
+                        minutes: c.broadcast_minutes,
+                        streak_done: c.streak_done.as_deref() == Some(s.id.as_str()),
+                    },
+                ))
+            })
+            .collect();
+        if let Err(e) = ctx.kv_put(MEMORY_KEY, &memory).await {
+            tracing::debug!(error = %e, "could not save broadcast progress");
+        }
+    }
+
     fn sync(&mut self, ctx: &ModuleContext, users: Vec<UserInfo>) {
         let keep: HashSet<String> = users.iter().map(|u| u.id.clone()).collect();
         let removed: Vec<String> = self

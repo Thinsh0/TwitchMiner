@@ -1,7 +1,8 @@
 // The "À faire" zone: every action the user has to take, in one place.
 
 import { Theme } from "../theme.slint";
-import { Bridge, LoginItem, NoticeItem, AccountItem } from "../bridge.slint";
+import { Bridge, LoginItem, NoticeItem, AccountItem, PlanTodo } from "../bridge.slint";
+import { Fmt } from "../fmt.slint";
 import { Button, ButtonKind, Card, Icon, Icons, IconButton, Muted, Tone, Tones } from "../widgets.slint";
 
 export component LoginCard inherits Card {
@@ -155,6 +156,35 @@ export component NoticeCard inherits ActionCard {
     close => { Bridge.dismiss-notice(root.notice.id); }
 }
 
+// A plan entry that needs the user: link the game account, or decide to do it first.
+export component PlanTodoCard inherits ActionCard {
+    in property <PlanTodo> todo;
+    property <string> goal: todo.rewards == "" ? "" : "\n" + @tr("Goal: {}", todo.rewards);
+    icon: todo.kind == "not_linked" ? Icons.link : todo.kind == "at_risk" ? Icons.clock : Icons.alert;
+    tone: todo.kind == "will_miss" ? Tone.danger : todo.kind == "at_risk" ? Tone.warning : Tone.info;
+    title: todo.kind == "not_linked" ? @tr("Link your {} account", todo.game)
+        : todo.kind == "at_risk" ? @tr("{} may not finish in time", todo.game)
+        : @tr("{} will not be finished", todo.game);
+    body: (todo.kind == "not_linked"
+        ? @tr("The campaign “{}” only gives its rewards to accounts linked to the game.", todo.campaign)
+        : todo.kind == "at_risk"
+        ? @tr("About {} of watching left, and it ends in {}. Doing it first secures it.", Fmt.duration(todo.remaining-minutes), Fmt.duration(todo.ends-in))
+        : @tr("About {} would be missing when it ends (in {}). Doing it first gets it, at the expense of the next ones.", Fmt.duration(todo.missing-minutes), Fmt.duration(todo.ends-in)))
+        + goal;
+    if root.todo.kind == "not_linked" && root.todo.link-url != "": Button {
+        kind: ButtonKind.primary;
+        icon: Icons.external;
+        text: @tr("Link my account");
+        clicked => { Bridge.open-url(root.todo.link-url); }
+    }
+    if root.todo.kind != "not_linked": Button {
+        kind: ButtonKind.primary;
+        icon: Icons.star;
+        text: @tr("Do it first");
+        clicked => { Bridge.focus-campaign(root.todo.campaign-id); }
+    }
+}
+
 export component TodoZone inherits VerticalLayout {
     spacing: 10px;
     for login in Bridge.logins: LoginCard {
@@ -164,6 +194,9 @@ export component TodoZone inherits VerticalLayout {
         if acc.status == "auth_required" && Bridge.logins.length == 0: AuthCard {
             account: acc;
         }
+    }
+    for todo in Bridge.plan-todos: PlanTodoCard {
+        todo: todo;
     }
     for notice in Bridge.notices: NoticeCard {
         notice: notice;

@@ -208,3 +208,135 @@ msgstr "Ouvre la page Twitch et valide ce code (il est normalement déjà rempli
 
 msgid "Language"
 msgstr "Langue"
+
+msgid "About {} of watching left, and it ends in {}. Doing it first secures it."
+msgstr "Encore environ {} à regarder, et elle se termine dans {}. La faire en premier la sécurise."
+
+msgid "About {} would be missing when it ends (in {}). Doing it first gets it, at the expense of the next ones."
+msgstr "Il manquerait environ {} à la fin (dans {}). La faire en premier permet de l'avoir, au détriment des suivantes."
+
+msgid "Another device handles this account."
+msgstr "Un autre appareil s'occupe de ce compte."
+
+msgid "Channel points"
+msgstr "Points de chaîne"
+
+msgid "Choosing what to watch…"
+msgstr "Choix de ce qu'il faut regarder…"
+
+msgid "Current drop"
+msgstr "Drop en cours"
+
+msgid "Do it first"
+msgstr "Faire en premier"
+
+msgid "Drops: {}"
+msgstr "Drops : {}"
+
+msgid "Goal: {}"
+msgstr "Objectif : {}"
+
+msgid "Link my account"
+msgstr "Lier mon compte"
+
+msgid "Link your {} account"
+msgstr "Lie ton compte {}"
+
+msgid "Mining"
+msgstr "Minage en cours"
+
+msgid "No drop in progress. The Drops screen shows what is planned."
+msgstr "Aucun drop en cours. L'écran Drops montre ce qui est prévu."
+
+msgid "None of the followed channels is live right now."
+msgstr "Aucune des chaînes suivies n'est en direct pour l'instant."
+
+msgid "Nothing is watched. Bonuses are still collected."
+msgstr "Rien n'est regardé. Les bonus sont toujours récupérés."
+
+msgid "Outside watching hours"
+msgstr "Hors des plages horaires"
+
+msgid "Outside your watching hours: nothing is watched for now."
+msgstr "Hors de tes plages horaires : rien n'est regardé pour l'instant."
+
+msgid "Pause"
+msgstr "Mettre en pause"
+
+msgid "Paused"
+msgstr "En pause"
+
+msgid "Paused: nothing is watched."
+msgstr "En pause : rien n'est regardé."
+
+msgid "Points"
+msgstr "Points"
+
+msgid "Resume"
+msgstr "Reprendre"
+
+msgid "Right now"
+msgstr "En ce moment"
+
+msgid "The campaign “{}” only gives its rewards to accounts linked to the game."
+msgstr "La campagne « {} » ne donne ses récompenses qu'aux comptes liés au jeu."
+
+msgid "This account is mined by {}."
+msgstr "Ce compte est miné par {}."
+
+msgid "Today"
+msgstr "Aujourd'hui"
+
+msgid "TwitchMiner watches in the background."
+msgstr "TwitchMiner regarde en arrière-plan."
+
+msgid "Watch streak"
+msgstr "Série de visionnage"
+
+msgid "Watched"
+msgstr "Regardé"
+
+msgid "Watching resumes at the next time slot."
+msgstr "Le visionnage reprendra à la prochaine plage."
+
+msgid "done in about {}"
+msgstr "fini dans environ {}"
+
+msgid "for {}"
+msgstr "depuis {}"
+
+msgid "then 1 more reward in this campaign"
+msgstr "puis encore 1 récompense dans cette campagne"
+
+msgid "then {} more rewards in this campaign"
+msgstr "puis encore {} récompenses dans cette campagne"
+
+msgid "waiting for a channel"
+msgstr "en attente d'une chaîne"
+
+msgid "{} d"
+msgstr "{} j"
+
+msgid "{} d {} h"
+msgstr "{} j {} h"
+
+msgid "{} h"
+msgstr "{} h"
+
+msgid "{} h {} min"
+msgstr "{} h {} min"
+
+msgid "{} may not finish in time"
+msgstr "{} risque de ne pas finir à temps"
+
+msgid "{} min"
+msgstr "{} min"
+
+msgid "{} viewers"
+msgstr "{} spectateurs"
+
+msgid "{} will not be finished"
+msgstr "{} ne sera pas terminé"
+
+msgid "paused"
+msgstr "en pause"

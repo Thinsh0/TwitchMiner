@@ -5,10 +5,15 @@
 //! `Backend::execute(Command)`: the views (`ui/*.slint`) are a projection of the
 //! engine state (`present`), and every callback becomes a command (`controller`).
 
+// The demo fixture (`demo.rs`) is one large `json!` literal.
+#![recursion_limit = "256"]
+
 slint::include_modules!();
 
 mod controller;
+mod demo;
 mod dev;
+mod images;
 mod prefs;
 mod present;
 mod session;
@@ -34,23 +39,19 @@ pub fn run(runtime: tokio::runtime::Handle, opts: Options) -> anyhow::Result<()>
     let background = opts.background;
     // Development only: `TM_UI_SNAPSHOT=<file.bmp>` keeps the window outside the screen
     // (never covering what the developer is doing) and writes a capture of it every
-    // second, rendered in memory.
+    // second (`Window::take_snapshot`).
     let snapshot = std::env::var_os("TM_UI_SNAPSHOT").map(PathBuf::from);
     let offscreen = snapshot.is_some();
-    let mut backend =
-        slint::BackendSelector::new().with_winit_window_attributes_hook(move |attrs| {
-            let attrs = attrs.with_active(!background && !offscreen);
-            if offscreen {
-                attrs.with_position(slint::winit_030::winit::dpi::PhysicalPosition::new(
-                    -20000, -20000,
-                ))
-            } else {
-                attrs
-            }
-        });
-    if offscreen {
-        backend = backend.renderer_name("software".into());
-    }
+    let backend = slint::BackendSelector::new().with_winit_window_attributes_hook(move |attrs| {
+        let attrs = attrs.with_active(!background && !offscreen);
+        if offscreen {
+            attrs.with_position(slint::winit_030::winit::dpi::PhysicalPosition::new(
+                -20000, -20000,
+            ))
+        } else {
+            attrs
+        }
+    });
     backend.select()?;
     let ui = MainWindow::new()?;
     let prefs = runtime.block_on(prefs::load(opts.data_dir.clone()));
@@ -59,7 +60,8 @@ pub fn run(runtime: tokio::runtime::Handle, opts: Options) -> anyhow::Result<()>
     ui.global::<Theme>()
         .set_mode(theme_from_name(prefs.theme.as_deref()));
     ui.window().set_size(slint::LogicalSize::new(1180.0, 760.0));
-    let target = opts.target.clone().or_else(|| {
+    let demo = std::env::var_os("TM_UI_DEMO").map(|_| Target::Demo);
+    let target = demo.or_else(|| opts.target.clone()).or_else(|| {
         prefs.remote.as_ref().map(|r| Target::Remote {
             url: r.url.clone(),
             token: r.token.clone(),
@@ -75,10 +77,12 @@ pub fn run(runtime: tokio::runtime::Handle, opts: Options) -> anyhow::Result<()>
         std::time::Duration::from_secs(30),
         {
             let weak = ui.as_weak();
+            let ctrl = ctrl.clone();
             move || {
                 if let Some(ui) = weak.upgrade() {
                     controller::render(&ui);
                 }
+                ctrl.refresh_today();
             }
         },
     );

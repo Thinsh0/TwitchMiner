@@ -416,6 +416,7 @@ export component Page inherits Rectangle {
             x: max(0px, (scroll.visible-width - self.width) / 2);
             y: 0;
             width: min(scroll.visible-width, root.max-content-width);
+            height: self.preferred-height;
             padding-left: 28px;
             padding-right: 28px;
             padding-top: 26px;

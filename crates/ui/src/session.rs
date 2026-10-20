@@ -13,7 +13,13 @@ use tm_core::paths::LockError;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
     Local,
-    Remote { url: String, token: String },
+    Remote {
+        url: String,
+        token: String,
+    },
+    /// Canned state for development and screenshots (`TM_UI_DEMO=1`).
+    #[doc(hidden)]
+    Demo,
 }
 
 pub struct Session {
@@ -56,6 +62,11 @@ impl Session {
                     app: Some(app),
                 })
             }
+            Target::Demo => Ok(Self {
+                backend: Arc::new(crate::demo::Demo::new()),
+                target,
+                app: None,
+            }),
             Target::Remote { url, token } => {
                 let remote = Remote::connect(url.trim(), token.trim())
                     .await

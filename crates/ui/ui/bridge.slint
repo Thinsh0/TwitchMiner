@@ -55,6 +55,57 @@ export struct ToastItem {
     tone: Tone,
 }
 
+// A plan entry that needs the user (À faire): not_linked | at_risk | will_miss.
+export struct PlanTodo {
+    kind: string,
+    campaign-id: string,
+    campaign: string,
+    game: string,
+    rewards: string,
+    link-url: string,
+    // Minutes until the campaign ends.
+    ends-in: int,
+    remaining-minutes: int,
+    missing-minutes: int,
+}
+
+export struct WatchItem {
+    channel-id: string,
+    name: string,
+    initial: string,
+    avatar: image,
+    game: string,
+    title: string,
+    viewers: int,
+    // drops | streak | points | other
+    reason: string,
+    // Game for `drops`, raw reason for `other`.
+    reason-detail: string,
+    minutes: int,
+}
+
+export struct DropItem {
+    game: string,
+    campaign: string,
+    reward: string,
+    image: image,
+    current: int,
+    required: int,
+    progress: float,
+    // Minutes until the estimated end; -1 = unknown (not watching the target channel).
+    eta-in: int,
+    remaining-drops: int,
+}
+
+export struct TodayItem {
+    points: int,
+    minutes: int,
+    drops: int,
+}
+
+// Why nothing is watched, when watching is not allowed.
+export enum Idle { none, paused, outside-hours, standby }
+
 export global Bridge {
     // Connection to the engine
     in property <Conn> conn: Conn.starting;
@@ -73,8 +124,21 @@ export global Bridge {
     in property <[AccountItem]> accounts;
     in property <[LoginItem]> logins;
     in property <[NoticeItem]> notices;
+    in property <[PlanTodo]> plan-todos;
     // Number of cards in the "À faire" zone.
     in property <int> todo-count;
+    // Home (selected account)
+    in property <[WatchItem]> watching;
+    in property <bool> has-drop;
+    in property <DropItem> drop;
+    in property <TodayItem> today;
+    in property <bool> paused;
+    in property <Idle> idle;
+    // Peer mining the account (standby).
+    in property <string> idle-detail;
+    // At least one followed channel is live (explains an empty "En ce moment").
+    in property <bool> any-live;
+
     in property <string> version;
     in property <int> manifest-revision;
 
@@ -103,4 +167,6 @@ export global Bridge {
     callback remove-account(string);
     callback theme-changed(int);
     callback language-changed(int);
+    callback set-paused(bool);
+    callback focus-campaign(string);
 }

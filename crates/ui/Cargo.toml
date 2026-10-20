@@ -12,6 +12,7 @@ tm-client.workspace = true
 tm-core.workspace = true
 tokio.workspace = true
 serde.workspace = true
+async-trait.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 anyhow.workspace = true
@@ -19,6 +20,8 @@ tracing.workspace = true
 # unstable-winit-030: window attributes (open without stealing the focus).
 slint = { workspace = true, features = ["unstable-winit-030"] }
 open.workspace = true
+image.workspace = true
+reqwest.workspace = true
 
 [build-dependencies]
 slint-build.workspace = true

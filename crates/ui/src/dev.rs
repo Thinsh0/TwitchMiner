@@ -51,9 +51,16 @@ fn write_bmp(path: &std::path::Path, w: u32, h: u32, rgba: &[u8]) -> std::io::Re
     std::fs::rename(tmp, path)
 }
 
-/// `TM_UI_SCREEN` (home, drops, channels, activity, settings) and `TM_UI_THEME`
-/// (dark, light, oled): start on a given view, for screenshots.
+/// `TM_UI_SCREEN` (home, drops, channels, activity, settings), `TM_UI_THEME`
+/// (dark, light, oled) and `TM_UI_SIZE` (`1180x1000`): start on a given view, for
+/// screenshots.
 pub fn apply_env(ui: &MainWindow) {
+    if let Ok(size) = std::env::var("TM_UI_SIZE")
+        && let Some((w, h)) = size.split_once('x')
+        && let (Ok(w), Ok(h)) = (w.parse::<f32>(), h.parse::<f32>())
+    {
+        ui.window().set_size(slint::LogicalSize::new(w, h));
+    }
     use crate::{Bridge, Screen, Theme};
     if let Ok(s) = std::env::var("TM_UI_SCREEN") {
         let screen = match s.as_str() {

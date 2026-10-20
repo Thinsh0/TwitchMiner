@@ -5602,8 +5602,11 @@ name = "tm-ui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
+ "image",
  "open",
+ "reqwest",
  "serde",
  "serde_json",
  "slint",

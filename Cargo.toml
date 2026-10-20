@@ -56,6 +56,7 @@ clap = { version = "4.5", features = ["derive", "env"] }
 slint = "1.18"
 slint-build = "1.18"
 open = "5"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 [profile.release]
 opt-level = 3

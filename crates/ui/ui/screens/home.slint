@@ -1,7 +1,17 @@
+// Home: "what is happening, and do I need to do anything?"
+// From top to bottom: À faire, En ce moment, Drop en cours, Aujourd'hui + Pause.
+
 import { Theme } from "../theme.slint";
-import { Bridge } from "../bridge.slint";
-import { Button, ButtonKind, Card, Icon, Icons, Muted, Page } from "../widgets.slint";
+import { Bridge, WatchItem, Idle } from "../bridge.slint";
+import { Fmt } from "../fmt.slint";
+import { Avatar, Button, ButtonKind, Card, Icon, Icons, Muted, Page, Pill, ProgressBar, Tone, Tones } from "../widgets.slint";
 import { TodoZone } from "todo.slint";
+
+component SectionLabel inherits Text {
+    font-size: Theme.font-s;
+    font-weight: 700;
+    color: Theme.text-muted;
+}
 
 // First launch: no account yet.
 component Welcome inherits Card {
@@ -34,19 +44,288 @@ component Welcome inherits Card {
     }
 }
 
+component WatchRow inherits HorizontalLayout {
+    in property <WatchItem> item;
+    spacing: 12px;
+    Rectangle {
+        width: 44px;
+        height: 44px;
+        Avatar {
+            source: root.item.avatar;
+            initial: root.item.initial;
+            size: 44px;
+        }
+        // Live badge
+        Rectangle {
+            x: parent.width - 13px;
+            y: parent.height - 13px;
+            width: 13px;
+            height: 13px;
+            border-radius: 6.5px;
+            background: Theme.live;
+            border-width: 2px;
+            border-color: Theme.bg;
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        horizontal-stretch: 1;
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: root.item.name;
+                font-weight: 700;
+                color: Theme.text;
+                overflow: elide;
+            }
+            if root.item.viewers > 0: Text {
+                text: @tr("{} viewers", Fmt.int(root.item.viewers));
+                font-size: Theme.font-s;
+                color: Theme.text-faint;
+                vertical-alignment: center;
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+        }
+        Text {
+            text: root.item.game == "" ? root.item.title : root.item.title == "" ? root.item.game : root.item.game + " · " + root.item.title;
+            font-size: Theme.font-s;
+            color: Theme.text-muted;
+            overflow: elide;
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 4px;
+        HorizontalLayout {
+            alignment: end;
+            Pill {
+                icon: root.item.reason == "drops" ? Icons.gift : root.item.reason == "streak" ? Icons.bolt : root.item.reason == "points" ? Icons.coins : Icons.info;
+                tone: root.item.reason == "drops" ? Tone.accent : root.item.reason == "streak" ? Tone.warning : root.item.reason == "points" ? Tone.success : Tone.neutral;
+                text: root.item.reason == "drops" ? (root.item.reason-detail == "" ? @tr("Drops") : @tr("Drops: {}", root.item.reason-detail))
+                    : root.item.reason == "streak" ? @tr("Watch streak")
+                    : root.item.reason == "points" ? @tr("Channel points") : root.item.reason-detail;
+            }
+        }
+        Text {
+            text: @tr("for {}", Fmt.duration(root.item.minutes));
+            font-size: Theme.font-xs;
+            color: Theme.text-faint;
+            horizontal-alignment: right;
+        }
+    }
+}
+
+component NowCard inherits Card {
+    SectionLabel {
+        text: @tr("Right now");
+    }
+    for item in Bridge.watching: WatchRow {
+        item: item;
+    }
+    if Bridge.watching.length == 0: Muted {
+        font-size: Theme.font-m;
+        text: Bridge.idle == Idle.paused ? @tr("Paused: nothing is watched.")
+            : Bridge.idle == Idle.outside-hours ? @tr("Outside your watching hours: nothing is watched for now.")
+            : Bridge.idle == Idle.standby ? @tr("This account is mined by {}.", Bridge.idle-detail)
+            : Bridge.any-live ? @tr("Choosing what to watch…")
+            : @tr("None of the followed channels is live right now.");
+    }
+}
+
+component DropCard inherits Card {
+    SectionLabel {
+        text: @tr("Current drop");
+    }
+    if !Bridge.has-drop: Muted {
+        font-size: Theme.font-m;
+        text: @tr("No drop in progress. The Drops screen shows what is planned.");
+    }
+    if Bridge.has-drop: HorizontalLayout {
+        spacing: 14px;
+        Rectangle {
+            width: 76px;
+            height: 76px;
+            border-radius: Theme.radius-m;
+            background: Theme.inset;
+            clip: true;
+            if Bridge.drop.image.width == 0: Icon {
+                source: Icons.gift;
+                size: 28px;
+                colorize: Theme.accent;
+            }
+            if Bridge.drop.image.width > 0: Image {
+                source: Bridge.drop.image;
+                width: parent.width;
+                height: parent.height;
+                image-fit: contain;
+            }
+        }
+        VerticalLayout {
+            spacing: 6px;
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: Bridge.drop.reward;
+                font-size: Theme.font-l;
+                font-weight: 700;
+                color: Theme.text;
+                overflow: elide;
+            }
+            Text {
+                text: Bridge.drop.game + " · " + Bridge.drop.campaign;
+                font-size: Theme.font-s;
+                color: Theme.text-muted;
+                overflow: elide;
+            }
+            ProgressBar {
+                progress: Bridge.drop.progress;
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: Fmt.duration(Bridge.drop.current) + " / " + Fmt.duration(Bridge.drop.required);
+                    font-size: Theme.font-s;
+                    color: Theme.text;
+                    font-weight: 600;
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: Bridge.drop.eta-in >= 0 ? @tr("done in about {}", Fmt.duration(Bridge.drop.eta-in))
+                        : Bridge.paused ? @tr("paused") : @tr("waiting for a channel");
+                    font-size: Theme.font-s;
+                    color: Theme.text-muted;
+                }
+            }
+            if Bridge.drop.remaining-drops > 0: Text {
+                text: Bridge.drop.remaining-drops == 1 ? @tr("then 1 more reward in this campaign") : @tr("then {} more rewards in this campaign", Bridge.drop.remaining-drops);
+                font-size: Theme.font-xs;
+                color: Theme.text-faint;
+            }
+        }
+    }
+}
+
+component Stat inherits VerticalLayout {
+    in property <string> value;
+    in property <string> label;
+    in property <image> icon;
+    spacing: 2px;
+    horizontal-stretch: 1;
+    HorizontalLayout {
+        spacing: 6px;
+        Icon {
+            source: root.icon;
+            size: 14px;
+            colorize: Theme.accent;
+        }
+        Text {
+            text: root.label;
+            font-size: Theme.font-xs;
+            color: Theme.text-muted;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+    Text {
+        text: root.value;
+        font-size: Theme.font-xl;
+        font-weight: 700;
+        color: Theme.text;
+    }
+}
+
+component TodayCard inherits Card {
+    SectionLabel {
+        text: @tr("Today");
+    }
+    HorizontalLayout {
+        spacing: 12px;
+        Stat {
+            icon: Icons.coins;
+            label: @tr("Points");
+            value: "+" + Fmt.int(Bridge.today.points);
+        }
+        Stat {
+            icon: Icons.clock;
+            label: @tr("Watched");
+            value: Fmt.duration(Bridge.today.minutes);
+        }
+        Stat {
+            icon: Icons.gift;
+            label: @tr("Drops");
+            value: Bridge.today.drops;
+        }
+    }
+}
+
+component PauseCard inherits Card {
+    highlight: Bridge.paused;
+    HorizontalLayout {
+        spacing: 12px;
+        VerticalLayout {
+            spacing: 3px;
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: Bridge.paused ? @tr("Paused")
+                    : Bridge.idle == Idle.outside-hours ? @tr("Outside watching hours")
+                    : Bridge.idle == Idle.standby ? @tr("Mined by {}", Bridge.idle-detail)
+                    : @tr("Mining");
+                font-weight: 700;
+                font-size: Theme.font-l;
+                color: Theme.text;
+            }
+            Muted {
+                text: Bridge.paused ? @tr("Nothing is watched. Bonuses are still collected.")
+                    : Bridge.idle == Idle.outside-hours ? @tr("Watching resumes at the next time slot.")
+                    : Bridge.idle == Idle.standby ? @tr("Another device handles this account.")
+                    : @tr("TwitchMiner watches in the background.");
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Button {
+                kind: Bridge.paused ? ButtonKind.primary : ButtonKind.secondary;
+                icon: Bridge.paused ? Icons.play : Icons.pause;
+                text: Bridge.paused ? @tr("Resume") : @tr("Pause");
+                clicked => { Bridge.set-paused(!Bridge.paused); }
+            }
+        }
+    }
+}
+
 export component HomeScreen inherits Page {
     title: @tr("Home");
     subtitle: Bridge.accounts.length == 0 ? "" : @tr("What is happening, and is there anything to do?");
 
     if Bridge.todo-count > 0: VerticalLayout {
         spacing: 10px;
-        Text {
+        SectionLabel {
             text: @tr("To do");
-            font-size: Theme.font-s;
-            font-weight: 700;
-            color: Theme.text-muted;
         }
         TodoZone { }
     }
     if Bridge.accounts.length == 0 && Bridge.logins.length == 0: Welcome { }
+    if Bridge.accounts.length > 0: VerticalLayout {
+        spacing: 14px;
+        NowCard { }
+        DropCard { }
+        HorizontalLayout {
+            spacing: 14px;
+            // Same width for both, whatever their content.
+            TodayCard {
+                horizontal-stretch: 1;
+                preferred-width: 0;
+            }
+            PauseCard {
+                horizontal-stretch: 1;
+                preferred-width: 0;
+            }
+        }
+    }
 }

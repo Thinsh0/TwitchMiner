@@ -15,7 +15,7 @@ use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 
 use crate::prefs::{self, Prefs, RemotePrefs};
-use crate::present::{self, Input, Last};
+use crate::present::{self, Input, Last, Today};
 use crate::session::{self, OpenError, Session, Target};
 use crate::{Bridge, Conn, MainWindow, SetupReason, ToastItem, ToastKind, Tone};
 
@@ -108,9 +108,36 @@ impl Controller {
             })
         });
         let weak = ui.as_weak();
+        let c = self.clone();
         b.on_select_account(move |id| {
             if let Some(ui) = weak.upgrade() {
                 ui.global::<Bridge>().set_account(id);
+                render(&ui);
+                c.refresh_today();
+            }
+        });
+        let c = self.clone();
+        b.on_set_paused(move |paused| {
+            c.command(Command::SettingsSet {
+                scope: "engine".into(),
+                value: serde_json::json!({ "paused": paused }),
+                merge: true,
+            })
+        });
+        let c = self.clone();
+        let weak = ui.as_weak();
+        b.on_focus_campaign(move |campaign_id| {
+            let Some(ui) = weak.upgrade() else { return };
+            c.command(Command::ModuleCall {
+                account: ui.global::<Bridge>().get_account().into(),
+                module: "drops".into(),
+                name: "focus".into(),
+                args: serde_json::json!({ "campaign_id": campaign_id.as_str() }),
+            })
+        });
+        let weak = ui.as_weak();
+        crate::images::init(self.0.rt.clone(), move || {
+            if let Some(ui) = weak.upgrade() {
                 render(&ui);
             }
         });
@@ -172,13 +199,16 @@ impl Controller {
                 Ok(new) => {
                     let backend = new.backend.clone();
                     let remote = match &target {
-                        Target::Remote { url, token } => Some(RemotePrefs {
+                        Target::Remote { url, token } => Some(Some(RemotePrefs {
                             url: url.clone(),
                             token: token.clone(),
-                        }),
-                        Target::Local => None,
+                        })),
+                        Target::Local => Some(None),
+                        Target::Demo => None,
                     };
-                    me.update_prefs(|p| p.remote = remote);
+                    if let Some(remote) = remote {
+                        me.update_prefs(|p| p.remote = remote);
+                    }
                     let old = inner.session.lock().await.replace(new);
                     me.watch(backend, &target);
                     if let Some(old) = old {
@@ -205,7 +235,7 @@ impl Controller {
                         OpenError::Failed(msg) => {
                             let (url, token) = match &target {
                                 Target::Remote { url, token } => (url.clone(), token.clone()),
-                                Target::Local => Default::default(),
+                                Target::Local | Target::Demo => Default::default(),
                             };
                             (SetupReason::Failed, msg, url, token)
                         }
@@ -241,7 +271,7 @@ impl Controller {
     fn watch(&self, backend: Arc<dyn Backend>, target: &Target) {
         let remote_url = match target {
             Target::Remote { url, .. } => Some(url.clone()),
-            Target::Local => None,
+            Target::Local | Target::Demo => None,
         };
         *self.0.backend.lock().expect("backend lock") = Some(backend.clone());
         let me = self.clone();
@@ -251,14 +281,23 @@ impl Controller {
             let mut events = backend.events();
             // A local engine's link never changes (its sender is gone): stop polling it.
             let mut link_open = true;
+            let mut first = true;
             loop {
                 let s = state.borrow_and_update().clone();
                 let l = link.borrow_and_update().clone();
                 let remote = remote_url.clone().map(|u| (u, l));
                 me.on_ui(move |ui| {
-                    LAST.with(|last| *last.borrow_mut() = Last { state: s, remote });
+                    LAST.with(|last| {
+                        let mut last = last.borrow_mut();
+                        last.state = s;
+                        last.remote = remote;
+                    });
                     render(ui);
                 });
+                if first {
+                    first = false;
+                    me.refresh_today();
+                }
                 // Wait for the next change, handling events (toasts) in between.
                 loop {
                     tokio::select! {
@@ -282,6 +321,12 @@ impl Controller {
     }
 
     fn on_event(&self, event: &Event) {
+        if matches!(
+            event,
+            Event::PointsEarned { .. } | Event::DropClaimed { .. } | Event::WatchMinute { .. }
+        ) {
+            self.refresh_today();
+        }
         if let Event::LoginFinished { error, account, .. } = event {
             match error {
                 Some(e) => self.toast(ToastKind::Error, Tone::Danger, e.clone()),
@@ -321,6 +366,48 @@ impl Controller {
             {
                 open_url(url);
             }
+        });
+    }
+
+    /// Reloads today's totals of the selected account (`stats` query, not engine state).
+    pub fn refresh_today(&self) {
+        let me = self.clone();
+        self.on_ui(move |ui| {
+            let account = ui.global::<Bridge>().get_account().to_string();
+            if account.is_empty() {
+                return;
+            }
+            let Some(backend) = me.0.backend.lock().expect("backend lock").clone() else {
+                return;
+            };
+            let day = present::today_key(chrono::Utc::now());
+            let Ok(cmd) = serde_json::from_value::<Command>(serde_json::json!({
+                "cmd": "stats", "account": account, "from": day, "to": day,
+            })) else {
+                return;
+            };
+            let ui = me.0.ui.clone();
+            me.0.rt.spawn(async move {
+                let Ok(rows) = backend.execute(cmd).await else {
+                    return;
+                };
+                let sum = |k: &str| {
+                    rows.as_array()
+                        .map(|r| r.iter().filter_map(|x| x[k].as_i64()).sum())
+                        .unwrap_or_default()
+                };
+                let today = Today {
+                    account,
+                    day,
+                    points: sum("points"),
+                    minutes: sum("watch_minutes"),
+                    drops: sum("drops"),
+                };
+                let _ = ui.upgrade_in_event_loop(move |ui| {
+                    LAST.with(|l| l.borrow_mut().today = Some(today));
+                    render(&ui);
+                });
+            });
         });
     }
 
@@ -384,6 +471,8 @@ pub fn render(ui: &MainWindow) {
         let input = Input {
             state: &last.state,
             remote: last.remote.as_ref().map(|(u, l)| (u.as_str(), l)),
+            today: last.today.as_ref(),
+            now: chrono::Utc::now(),
         };
         present::apply(ui, &input);
     });

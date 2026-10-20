@@ -1,0 +1,44 @@
+// Number and duration formatting, in the interface language.
+
+import { Bridge } from "bridge.slint";
+
+export global Fmt {
+    // 45 min · 2 h 05 min · 3 d 4 h
+    pure public function duration(m: int) -> string {
+        if m < 60 {
+            return @tr("{} min", max(m, 0));
+        }
+        if m < 1440 {
+            if mod(m, 60) == 0 {
+                return @tr("{} h", floor(m / 60));
+            }
+            return @tr("{} h {} min", floor(m / 60), pad2(mod(m, 60)));
+        }
+        if mod(m, 1440) < 60 {
+            return @tr("{} d", floor(m / 1440));
+        }
+        return @tr("{} d {} h", floor(m / 1440), floor(mod(m, 1440) / 60));
+    }
+
+    // 12 345 (French) · 12,345 (English)
+    pure public function int(n: int) -> string {
+        let a = abs(n);
+        let sign = n < 0 ? "-" : "";
+        let sep = Bridge.language == 1 ? "," : " ";
+        if a < 1000 {
+            return sign + a;
+        }
+        if a < 1000000 {
+            return sign + floor(a / 1000) + sep + pad3(mod(a, 1000));
+        }
+        return sign + floor(a / 1000000) + sep + pad3(mod(floor(a / 1000), 1000)) + sep + pad3(mod(a, 1000));
+    }
+
+    pure function pad2(x: int) -> string {
+        return x < 10 ? "0" + x : "" + x;
+    }
+
+    pure function pad3(x: int) -> string {
+        return x < 10 ? "00" + x : x < 100 ? "0" + x : "" + x;
+    }
+}

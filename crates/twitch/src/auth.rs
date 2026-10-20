@@ -46,6 +46,9 @@ pub struct TokenResponse {
     pub access_token: String,
     #[serde(default)]
     pub refresh_token: Option<String>,
+    /// Seconds until expiry (`None`/0 = does not expire).
+    #[serde(default)]
+    pub expires_in: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

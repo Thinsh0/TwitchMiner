@@ -30,6 +30,8 @@ struct Inner {
     session_id: String,
     user_agent_index: usize,
     limiter: Semaphore,
+    /// Signalled whenever Twitch answers 401, so the owner can re-validate at once.
+    unauthorized: tokio::sync::Notify,
 }
 
 impl Gql {
@@ -43,6 +45,7 @@ impl Gql {
                 session_id,
                 user_agent_index: rand::random::<u32>() as usize,
                 limiter: Semaphore::new(MAX_CONCURRENCY),
+                unauthorized: tokio::sync::Notify::new(),
             }),
         }
     }
@@ -53,6 +56,11 @@ impl Gql {
 
     pub fn manifest(&self) -> SharedManifest {
         self.inner.manifest.clone()
+    }
+
+    /// Resolves after a request failed with 401 (a permit is kept if nobody waits).
+    pub async fn unauthorized(&self) {
+        self.inner.unauthorized.notified().await
     }
 
     pub fn credentials(&self) -> Arc<Credentials> {
@@ -137,6 +145,14 @@ impl Gql {
         let mut backoff = Backoff::new(Duration::from_millis(500), Duration::from_secs(20));
         loop {
             let attempt = self.send_once(&body, names).await;
+            let unauthorized = match &attempt {
+                Err(Error::Unauthorized) => true,
+                Ok(items) => items.iter().any(|r| matches!(r, Err(Error::Unauthorized))),
+                Err(_) => false,
+            };
+            if unauthorized {
+                self.inner.unauthorized.notify_one();
+            }
             let retry = match &attempt {
                 Err(e) => e.is_transient(),
                 Ok(items) => items

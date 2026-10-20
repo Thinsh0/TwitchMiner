@@ -23,6 +23,7 @@ async fn main() -> anyhow_like::Result {
         TokenResponse {
             access_token: token,
             refresh_token: None,
+            expires_in: None,
         },
         None,
     )

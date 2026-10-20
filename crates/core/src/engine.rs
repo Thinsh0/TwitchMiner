@@ -450,6 +450,7 @@ impl Engine {
                     auth::TokenResponse {
                         access_token,
                         refresh_token,
+                        expires_in: None,
                     },
                     None,
                 )

@@ -53,14 +53,15 @@ fn set_status(shared: &Shared, account: &str, status: AccountStatus) {
 }
 
 /// Validates the credentials, refreshing them when possible.
-/// `Ok(None)` = the user must log in again.
+/// `Ok(None)` = the user must log in again. Otherwise also returns the token's
+/// remaining lifetime in seconds (0 = does not expire).
 async fn ensure_valid(
     shared: &Shared,
     creds: &Credentials,
-) -> tm_twitch::Result<Option<Credentials>> {
+) -> tm_twitch::Result<Option<(Credentials, u64)>> {
     let net = shared.net();
     match auth::validate(&net, &creds.access_token).await {
-        Ok(_) => Ok(Some(creds.clone())),
+        Ok(v) => Ok(Some((creds.clone(), v.expires_in))),
         Err(tm_twitch::Error::Unauthorized) => {
             let Some(refresh) = &creds.refresh_token else {
                 return Ok(None);
@@ -77,7 +78,7 @@ async fn ensure_valid(
                     if t.refresh_token.is_some() {
                         c.refresh_token = t.refresh_token;
                     }
-                    Ok(Some(c))
+                    Ok(Some((c, t.expires_in.unwrap_or(0))))
                 }
                 Err(tm_twitch::Error::Unauthorized) => Ok(None),
                 Err(e) => Err(e),
@@ -85,6 +86,14 @@ async fn ensure_valid(
         }
         Err(e) => Err(e),
     }
+}
+
+/// When to check the token next: hourly, or a few minutes before it expires.
+fn next_check(expires_in: u64) -> Duration {
+    if expires_in == 0 {
+        return TOKEN_CHECK_EVERY;
+    }
+    Duration::from_secs(expires_in.saturating_sub(300).max(60)).min(TOKEN_CHECK_EVERY)
 }
 
 async fn run(
@@ -99,7 +108,7 @@ async fn run(
     // 1. Make sure the token works (retrying network failures forever).
     let mut backoff =
         tm_twitch::net::Backoff::new(Duration::from_secs(5), Duration::from_secs(300));
-    let creds = loop {
+    let (creds, mut expires_in) = loop {
         match ensure_valid(&shared, &account.credentials).await {
             Ok(Some(c)) => break c,
             Ok(None) => {
@@ -207,14 +216,24 @@ async fn run(
             }
         });
     }
+    let mut last_check = tokio::time::Instant::now();
     loop {
         tokio::select! {
             _ = cancel.cancelled() => break,
-            _ = tokio::time::sleep(TOKEN_CHECK_EVERY) => {}
+            _ = tokio::time::sleep(next_check(expires_in)) => {}
             _ = auth_failed.cancelled() => {}
+            _ = gql.unauthorized() => {
+                // At most one 401-triggered validation per minute.
+                if last_check.elapsed() < Duration::from_secs(60) {
+                    continue;
+                }
+                tracing::info!("Twitch rejected the token, re-validating");
+            }
         }
+        last_check = tokio::time::Instant::now();
         match ensure_valid(&shared, &creds.load()).await {
-            Ok(Some(c)) => {
+            Ok(Some((c, exp))) => {
+                expires_in = exp;
                 if *creds.load_full() != c {
                     creds.store(Arc::new(c.clone()));
                     account.credentials = c;
@@ -391,5 +410,18 @@ async fn supervise(
             _ = cancel.cancelled() => return,
             _ = tokio::time::sleep(delay) => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_checks_follow_expiry() {
+        assert_eq!(next_check(0), TOKEN_CHECK_EVERY);
+        assert_eq!(next_check(30), Duration::from_secs(60));
+        assert_eq!(next_check(1800), Duration::from_secs(1500));
+        assert_eq!(next_check(86_400), TOKEN_CHECK_EVERY);
     }
 }

@@ -8,14 +8,21 @@
 //! | `POST /api/v1/command` | body = `Command` JSON, returns `{ok, data|error}`       |
 //! | `GET  /api/v1/logs`    | recent log lines (`?n=200`)                            |
 //! | `GET  /api/v1/ws`      | snapshot + live events + commands (`?logs=1` for logs) |
+//! | `POST /api/v1/mcp`     | Model Context Protocol endpoint for AI agents          |
 //!
 //! Auth: `Authorization: Bearer <token>` or `?token=<token>` (for browsers' WebSocket).
+//! The full token can do everything; the agent token is restricted (see `access`).
+
+pub mod access;
+mod mcp;
+
+pub use access::Access;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Query, Request, State};
+use axum::extract::{Extension, Query, Request, State};
 use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -25,7 +32,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tm_core::logging::LogBuffer;
-use tm_core::{Command, Engine};
+use tm_core::{ApiResult, Command, Engine};
 use tokio::sync::broadcast::error::RecvError;
 
 #[derive(Clone)]
@@ -33,6 +40,8 @@ pub struct ServerConfig {
     pub bind: SocketAddr,
     /// `None` disables authentication (only sensible on a loopback address).
     pub token: Option<String>,
+    /// Restricted token for AI agents (see [`access`]).
+    pub agent_token: Option<String>,
     pub logs: Option<LogBuffer>,
 }
 
@@ -40,6 +49,7 @@ pub struct ServerConfig {
 struct AppState {
     engine: Engine,
     token: Option<Arc<str>>,
+    agent_token: Option<Arc<str>>,
     logs: Option<LogBuffer>,
 }
 
@@ -57,6 +67,7 @@ pub fn router(engine: Engine, cfg: &ServerConfig) -> Router {
     let state = AppState {
         engine,
         token: cfg.token.as_deref().map(Arc::from),
+        agent_token: cfg.agent_token.as_deref().map(Arc::from),
         logs: cfg.logs.clone(),
     };
     let api = Router::new()
@@ -64,6 +75,7 @@ pub fn router(engine: Engine, cfg: &ServerConfig) -> Router {
         .route("/command", post(post_command))
         .route("/logs", get(get_logs))
         .route("/ws", get(ws_upgrade))
+        .route("/mcp", post(mcp_post).get(mcp_get))
         .route_layer(middleware::from_fn_with_state(state.clone(), auth));
     Router::new()
         .route("/", get(dashboard))
@@ -105,10 +117,11 @@ struct TokenQuery {
 async fn auth(
     State(st): State<AppState>,
     Query(q): Query<TokenQuery>,
-    req: Request,
+    mut req: Request,
     next: Next,
 ) -> Response {
-    let Some(expected) = &st.token else {
+    let Some(full) = &st.token else {
+        req.extensions_mut().insert(Access::Full);
         return next.run(req).await;
     };
     let header_token = req
@@ -117,15 +130,25 @@ async fn auth(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .map(str::to_string);
-    let given = header_token.or(q.token);
-    if given
-        .as_deref()
-        .is_some_and(|g| constant_time_eq(g.as_bytes(), expected.as_bytes()))
-    {
-        next.run(req).await
+    let given = header_token.or(q.token).unwrap_or_default();
+    let matches = |t: &str| constant_time_eq(given.as_bytes(), t.as_bytes());
+    let access = if matches(full) {
+        Some(Access::Full)
+    } else if st.agent_token.as_deref().is_some_and(matches) {
+        Some(Access::Agent)
     } else {
-        (StatusCode::UNAUTHORIZED, Json(json!({"ok": false, "error": {"code": "unauthorized", "message": "missing or bad token"}})))
-            .into_response()
+        None
+    };
+    match access {
+        Some(a) => {
+            req.extensions_mut().insert(a);
+            next.run(req).await
+        }
+        None => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"ok": false, "error": {"code": "unauthorized", "message": "missing or bad token"}})),
+        )
+            .into_response(),
     }
 }
 
@@ -181,8 +204,37 @@ async fn health(State(st): State<AppState>) -> Json<Value> {
     }))
 }
 
-async fn get_state(State(st): State<AppState>) -> Json<Value> {
-    Json(json!(st.engine.store().snapshot()))
+async fn get_state(
+    State(st): State<AppState>,
+    Extension(access): Extension<Access>,
+) -> Json<Value> {
+    let mut state = json!(st.engine.store().snapshot());
+    if access == Access::Agent {
+        access::redact_state(&mut state);
+    }
+    Json(state)
+}
+
+/// Executes a command with access control; agents get secrets masked in the answer.
+pub async fn run_command(engine: &Engine, access: Access, cmd: Command) -> ApiResult {
+    access::authorize(access, &cmd)?;
+    let scope = match &cmd {
+        Command::SettingsGet { scope, .. } => Some(scope.clone()),
+        _ => None,
+    };
+    let is_snapshot = matches!(cmd, Command::Snapshot);
+    let mut out = engine.execute(cmd).await?;
+    if access == Access::Agent {
+        if is_snapshot {
+            access::redact_state(&mut out);
+        }
+        if let Some(scope) = scope {
+            for k in ["raw", "effective"] {
+                access::redact_settings(&scope, &mut out[k]);
+            }
+        }
+    }
+    Ok(out)
 }
 
 fn reply(r: tm_core::ApiResult) -> Value {
@@ -192,10 +244,14 @@ fn reply(r: tm_core::ApiResult) -> Value {
     }
 }
 
-async fn post_command(State(st): State<AppState>, body: axum::body::Bytes) -> Response {
+async fn post_command(
+    State(st): State<AppState>,
+    Extension(access): Extension<Access>,
+    body: axum::body::Bytes,
+) -> Response {
     match serde_json::from_slice::<Command>(&body) {
         Ok(cmd) => {
-            let r = st.engine.execute(cmd).await;
+            let r = run_command(&st.engine, access, cmd).await;
             let status = if r.is_ok() {
                 StatusCode::OK
             } else {
@@ -233,11 +289,56 @@ struct WsQuery {
 
 async fn ws_upgrade(
     State(st): State<AppState>,
+    Extension(access): Extension<Access>,
     Query(q): Query<WsQuery>,
     ws: WebSocketUpgrade,
 ) -> Response {
     let logs = q.logs.unwrap_or(0) == 1;
-    ws.on_upgrade(move |socket| ws_session(st, socket, logs))
+    ws.on_upgrade(move |socket| ws_session(st, access, socket, logs))
+}
+
+/// MCP Streamable HTTP: JSON-RPC message or batch in, JSON out (202 for notifications only).
+async fn mcp_post(
+    State(st): State<AppState>,
+    Extension(access): Extension<Access>,
+    body: axum::body::Bytes,
+) -> Response {
+    let msg: Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(e) => {
+            let err = json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32700, "message": e.to_string()}});
+            return (StatusCode::BAD_REQUEST, Json(err)).into_response();
+        }
+    };
+    let out = match msg {
+        Value::Array(batch) => {
+            let mut replies = Vec::new();
+            for m in batch {
+                if let Some(r) = mcp::handle(&st.engine, access, m).await {
+                    replies.push(r);
+                }
+            }
+            (!replies.is_empty()).then_some(Value::Array(replies))
+        }
+        m => mcp::handle(&st.engine, access, m).await,
+    };
+    match out {
+        Some(v) => Json(v).into_response(),
+        None => StatusCode::ACCEPTED.into_response(),
+    }
+}
+
+/// No server-initiated stream: clients fall back to plain request/response.
+async fn mcp_get() -> StatusCode {
+    StatusCode::METHOD_NOT_ALLOWED
+}
+
+fn snapshot_msg(access: Access, state: &tm_core::State) -> String {
+    let mut s = json!(state);
+    if access == Access::Agent {
+        access::redact_state(&mut s);
+    }
+    json!({"type": "snapshot", "api_version": API_VERSION, "state": s}).to_string()
 }
 
 /// Client → server: `{ "id": <any>, "cmd": { "cmd": "...", ... } }`.
@@ -248,14 +349,12 @@ struct WsRequest {
     cmd: Value,
 }
 
-async fn ws_session(st: AppState, socket: WebSocket, with_logs: bool) {
+async fn ws_session(st: AppState, access: Access, socket: WebSocket, with_logs: bool) {
     let (mut tx, mut rx) = socket.split();
     let (snapshot, mut events) = st.engine.store().snapshot_and_subscribe();
     let mut last_seq = snapshot.seq;
     if tx
-        .send(Message::text(
-            json!({"type": "snapshot", "api_version": API_VERSION, "state": snapshot}).to_string(),
-        ))
+        .send(Message::text(snapshot_msg(access, &snapshot)))
         .await
         .is_err()
     {
@@ -275,7 +374,11 @@ async fn ws_session(st: AppState, socket: WebSocket, with_logs: bool) {
                     if env.seq <= last_seq { continue; }
                     last_seq = env.seq;
                     // `event` is an `Envelope`: {seq, ts, type, ...fields}.
-                    let msg = json!({"type": "event", "event": env.as_ref()});
+                    let mut event = json!(env.as_ref());
+                    if access == Access::Agent {
+                        access::redact_envelope(&env.event, &mut event);
+                    }
+                    let msg = json!({"type": "event", "event": event});
                     if tx.send(Message::text(msg.to_string())).await.is_err() { return; }
                 }
                 Err(RecvError::Lagged(_)) => {
@@ -283,7 +386,7 @@ async fn ws_session(st: AppState, socket: WebSocket, with_logs: bool) {
                     let (s, rx2) = st.engine.store().snapshot_and_subscribe();
                     events = rx2;
                     last_seq = s.seq;
-                    if tx.send(Message::text(json!({"type": "snapshot", "api_version": API_VERSION, "state": s}).to_string())).await.is_err() { return; }
+                    if tx.send(Message::text(snapshot_msg(access, &s))).await.is_err() { return; }
                 }
                 Err(RecvError::Closed) => return,
             },
@@ -312,7 +415,7 @@ async fn ws_session(st: AppState, socket: WebSocket, with_logs: bool) {
                 let out = reply_tx.clone();
                 tokio::spawn(async move {
                     let mut r = match serde_json::from_value::<Command>(req.cmd) {
-                        Ok(cmd) => reply(engine.execute(cmd).await),
+                        Ok(cmd) => reply(run_command(&engine, access, cmd).await),
                         Err(e) => json!({"ok": false, "error": {"code": "bad_command", "message": e.to_string()}}),
                     };
                     r["type"] = json!("reply");

@@ -14,7 +14,7 @@ path = "src/main.rs"
 tm-app.workspace = true
 tm-core.workspace = true
 tm-twitch.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["io-std"] }
 futures-util.workspace = true
 clap.workspace = true
 serde_json.workspace = true

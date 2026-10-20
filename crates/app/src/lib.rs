@@ -56,11 +56,13 @@ pub struct App {
     pub paths: Paths,
     pub logs: LogBuffer,
     pub api_token: String,
+    /// Restricted token to give to AI agents (MCP endpoint).
+    pub agent_token: String,
     stop: Arc<Notify>,
     _log: LogHandle,
 }
 
-const TOKEN_KV: (&str, &str) = ("server", "token");
+const TOKEN_NS: &str = "server";
 
 impl App {
     pub async fn start(opts: AppOptions) -> anyhow::Result<Self> {
@@ -84,13 +86,15 @@ impl App {
 
         let api_token = match opts.api.as_ref().and_then(|a| a.token.clone()) {
             Some(t) => t,
-            None => stored_token(&engine).await?,
+            None => token_in(engine.store().db(), TokenKind::Full).await?,
         };
+        let agent_token = token_in(engine.store().db(), TokenKind::Agent).await?;
         let stop = Arc::new(Notify::new());
         if let Some(api) = opts.api {
             let cfg = tm_server::ServerConfig {
                 bind: api.bind,
                 token: Some(api_token.clone()),
+                agent_token: Some(agent_token.clone()),
                 logs: Some(log.buffer.clone()),
             };
             let engine = engine.clone();
@@ -111,6 +115,7 @@ impl App {
             paths,
             logs: log.buffer.clone(),
             api_token,
+            agent_token,
             stop,
             _log: log,
         })
@@ -123,26 +128,52 @@ impl App {
     }
 }
 
-async fn stored_token(engine: &Engine) -> anyhow::Result<String> {
-    let db = engine.store().db();
-    if let Some(Value::String(t)) = db.kv_get(TOKEN_KV.0.into(), TOKEN_KV.1.into()).await? {
+/// Which API token to read or create.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenKind {
+    /// Full access (owner, apps).
+    Full,
+    /// Restricted access for AI agents (MCP).
+    Agent,
+}
+
+impl TokenKind {
+    fn key(self) -> &'static str {
+        match self {
+            TokenKind::Full => "token",
+            TokenKind::Agent => "agent_token",
+        }
+    }
+}
+
+async fn token_in(db: &tm_core::db::Db, kind: TokenKind) -> anyhow::Result<String> {
+    if let Some(Value::String(t)) = db.kv_get(TOKEN_NS.into(), kind.key().into()).await? {
         return Ok(t);
     }
     let t = tm_server::generate_token();
-    db.kv_put(TOKEN_KV.0.into(), TOKEN_KV.1.into(), json!(t))
+    db.kv_put(TOKEN_NS.into(), kind.key().into(), json!(t))
         .await?;
     Ok(t)
 }
 
-/// Reads (or creates) the API token without starting the engine.
-pub async fn read_api_token(data_dir: Option<PathBuf>) -> anyhow::Result<String> {
+/// Reads (or creates) an API token without starting the engine.
+pub async fn read_token(data_dir: Option<PathBuf>, kind: TokenKind) -> anyhow::Result<String> {
     let paths = Paths::resolve(data_dir)?;
     let db = tm_core::db::Db::open(&paths.db_file())?;
-    if let Some(Value::String(t)) = db.kv_get(TOKEN_KV.0.into(), TOKEN_KV.1.into()).await? {
-        return Ok(t);
-    }
+    token_in(&db, kind).await
+}
+
+/// Replaces an API token. A running daemon keeps the old one until it restarts.
+pub async fn rotate_token(data_dir: Option<PathBuf>, kind: TokenKind) -> anyhow::Result<String> {
+    let paths = Paths::resolve(data_dir)?;
+    let db = tm_core::db::Db::open(&paths.db_file())?;
     let t = tm_server::generate_token();
-    db.kv_put(TOKEN_KV.0.into(), TOKEN_KV.1.into(), json!(t))
+    db.kv_put(TOKEN_NS.into(), kind.key().into(), json!(t))
         .await?;
     Ok(t)
+}
+
+/// Reads (or creates) the full-access API token without starting the engine.
+pub async fn read_api_token(data_dir: Option<PathBuf>) -> anyhow::Result<String> {
+    read_token(data_dir, TokenKind::Full).await
 }

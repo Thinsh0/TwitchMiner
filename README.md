@@ -13,6 +13,7 @@ Moteur sans interface, modulaire, pilotable par une API locale. Les interfaces (
 - **Historique et statistiques** par jour et par chaîne.
 - **Un seul dossier de données** (une base SQLite), un état unique synchronisé en temps réel.
 - **Résistant aux changements de Twitch** : les identifiants volatils sont dans un manifeste mis à jour à distance, sans recompiler.
+- **Agents IA** (Hermes, OpenClaw, Claude…) : serveur MCP intégré, avec un jeton restreint.
 - Proxy HTTP (y compris WebSocket), mode portable, journaux tournants.
 
 ## Démarrage rapide
@@ -50,6 +51,7 @@ Guide complet : [docs/SERVER.md](docs/SERVER.md). Un seul moteur par dossier de 
 - [Android et OneUI](docs/ANDROID.md) : service de premier plan, Now Bar, Termux
 - [Brief interface](docs/UI_BRIEF.md) : écrans, données et commandes pour l'agent UI
 - [Serveur maison + PC + téléphone](docs/SERVER.md) : Tailscale, instance principale / secondaire, bascule automatique
+- [Agent IA](docs/AGENT.md) : serveur MCP (HTTP et stdio), jeton agent, skill pour Hermes / OpenClaw
 
 ## Structure
 

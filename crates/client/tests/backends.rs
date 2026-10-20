@@ -37,6 +37,7 @@ async fn local_and_remote_mirror_the_same_state() {
     let cfg = tm_server::ServerConfig {
         bind: addr,
         token: Some("secret".into()),
+        agent_token: Some("agent".into()),
         logs: None,
     };
     tokio::spawn(tm_server::serve_on(
@@ -79,6 +80,29 @@ async fn local_and_remote_mirror_the_same_state() {
         .await
         .unwrap_err();
     assert_eq!(bad.code, "invalid");
+
+    // The agent token works but cannot change sensitive engine settings.
+    let agent = Remote::connect(&format!("http://{addr}"), "agent")
+        .await
+        .unwrap();
+    assert_eq!(*agent.link().borrow(), Link::Connected);
+    let denied = agent
+        .execute(Command::SettingsSet {
+            scope: "engine".into(),
+            value: json!({"proxy": "http://evil:1"}),
+            merge: true,
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(denied.code, "forbidden");
+    agent
+        .execute(Command::SettingsSet {
+            scope: "engine".into(),
+            value: json!({"paused": true}),
+            merge: true,
+        })
+        .await
+        .unwrap();
 
     // Wrong token is refused.
     let intruder = Remote::connect(&format!("http://{addr}"), "wrong")

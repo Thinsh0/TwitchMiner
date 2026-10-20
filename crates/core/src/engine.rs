@@ -47,7 +47,8 @@ pub(crate) struct Shared {
     net: ArcSwap<Net>,
     accounts: tokio::sync::Mutex<HashMap<String, AccountRuntime>>,
     logins: Mutex<HashMap<String, CancellationToken>>,
-    _lock: DataLock,
+    /// Released explicitly at shutdown: background tasks may still hold `Shared` briefly.
+    lock: std::sync::Mutex<Option<DataLock>>,
 }
 
 impl Shared {
@@ -134,7 +135,7 @@ impl Engine {
             net: ArcSwap::from_pointee(net),
             accounts: tokio::sync::Mutex::new(HashMap::new()),
             logins: Mutex::new(HashMap::new()),
-            _lock: lock,
+            lock: std::sync::Mutex::new(Some(lock)),
         });
         let engine = Engine { shared };
 
@@ -199,6 +200,9 @@ impl Engine {
         // Pending writes are queued before this call; then fold the WAL into the file.
         if let Err(e) = self.shared.store.db().checkpoint().await {
             tracing::warn!(error = %e, "database checkpoint failed");
+        }
+        if let Ok(mut lock) = self.shared.lock.lock() {
+            lock.take();
         }
     }
 

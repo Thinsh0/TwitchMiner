@@ -56,7 +56,22 @@ enum Cmd {
         action: Ctl,
     },
     /// Print the API token (creating it if needed).
-    ApiToken,
+    ApiToken {
+        /// Print the restricted token meant for AI agents instead.
+        #[arg(long)]
+        agent: bool,
+        /// Replace the token with a new one (takes effect when the daemon restarts).
+        #[arg(long)]
+        rotate: bool,
+    },
+    /// MCP server over stdio for AI agents (Hermes, OpenClaw, Claude…), bridged to
+    /// the running daemon. Uses the agent token by default.
+    Mcp {
+        #[arg(long, default_value = "http://127.0.0.1:7878", env = "TM_API_URL")]
+        url: String,
+        #[arg(long, env = "TM_MCP_TOKEN")]
+        token: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -149,10 +164,21 @@ fn real_main() -> anyhow::Result<()> {
         match command {
             Cmd::Run { bind, no_api, log } => run(cli.data_dir, bind, no_api, log).await,
             Cmd::Ctl { url, token, action } => ctl(cli.data_dir, url, token, action).await,
-            Cmd::ApiToken => {
-                println!("{}", tm_app::read_api_token(cli.data_dir).await?);
+            Cmd::ApiToken { agent, rotate } => {
+                let kind = if agent {
+                    tm_app::TokenKind::Agent
+                } else {
+                    tm_app::TokenKind::Full
+                };
+                let token = if rotate {
+                    tm_app::rotate_token(cli.data_dir, kind).await?
+                } else {
+                    tm_app::read_token(cli.data_dir, kind).await?
+                };
+                println!("{token}");
                 Ok(())
             }
+            Cmd::Mcp { url, token } => mcp_stdio(cli.data_dir, url, token).await,
         }
     })
 }
@@ -191,6 +217,66 @@ async fn run(
     wait_for_signal().await;
     tracing::info!("shutting down");
     app.shutdown().await;
+    Ok(())
+}
+
+/// Relays MCP JSON-RPC lines between stdio and the daemon's `/api/v1/mcp`.
+/// stdout carries the protocol only; diagnostics go to stderr.
+async fn mcp_stdio(
+    data_dir: Option<PathBuf>,
+    url: String,
+    token: Option<String>,
+) -> anyhow::Result<()> {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let token = match token {
+        Some(t) => t,
+        None => tm_app::read_token(data_dir, tm_app::TokenKind::Agent).await?,
+    };
+    let endpoint = format!("{}/api/v1/mcp", url.trim_end_matches('/'));
+    let http = reqwest::Client::builder().no_proxy().build()?;
+    let mut lines = BufReader::new(tokio::io::stdin()).lines();
+    let mut stdout = tokio::io::stdout();
+    while let Some(line) = lines.next_line().await? {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let resp = http
+            .post(&endpoint)
+            .bearer_auth(&token)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .body(line.clone())
+            .send()
+            .await;
+        // Answer requests (not notifications) so the agent never waits forever.
+        let fail = |message: String| {
+            eprintln!("twitchminer mcp: {message}");
+            let id = serde_json::from_str::<Value>(&line)
+                .ok()
+                .and_then(|v| v.get("id").cloned())?;
+            Some(
+                json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": message}})
+                    .to_string(),
+            )
+        };
+        let reply = match resp {
+            Ok(r) if r.status() == reqwest::StatusCode::ACCEPTED => None,
+            Ok(r) if r.status().is_success() => Some(r.text().await.unwrap_or_default()),
+            Ok(r) => {
+                let status = r.status();
+                let body: Value = r.json().await.unwrap_or_default();
+                let why = body["error"]["message"]
+                    .as_str()
+                    .unwrap_or("request refused");
+                fail(format!("daemon answered {status}: {why}"))
+            }
+            Err(e) => fail(format!("TwitchMiner daemon unreachable at {url}: {e}")),
+        };
+        let Some(reply) = reply else { continue };
+        stdout.write_all(reply.trim().as_bytes()).await?;
+        stdout.write_all(b"\n").await?;
+        stdout.flush().await?;
+    }
     Ok(())
 }
 

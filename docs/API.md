@@ -52,6 +52,7 @@ Si le client prend trop de retard (`RecvError::Lagged`), il reprend un snapshot.
 Adresse par défaut : `127.0.0.1:7878` (`--bind`). Authentification par jeton :
 - en-tête `Authorization: Bearer <token>`, ou paramètre `?token=<token>` (pratique pour le WebSocket d'un navigateur) ;
 - le jeton est généré au premier lancement et stocké dans la base. Pour le lire : `twitchminer api-token`.
+- un second jeton, **agent** (`twitchminer api-token --agent`), donne un accès restreint pour les agents IA : certaines commandes sont refusées (`forbidden`) et les secrets sont masqués (`***`) dans l'état, les réglages et les événements. Détails : [AGENT.md](AGENT.md).
 
 | Route | Description |
 |---|---|
@@ -60,6 +61,7 @@ Adresse par défaut : `127.0.0.1:7878` (`--bind`). Authentification par jeton :
 | `POST /api/v1/command` | corps = une `Command`. Réponse `{"ok":true,"data":…}` ou `{"ok":false,"error":{"code","message"}}` |
 | `GET /api/v1/logs?n=200` | dernières lignes de journal `[{ts, level, target, message}]` |
 | `GET /api/v1/ws[?logs=1]` | flux temps réel, voir ci-dessous |
+| `POST /api/v1/mcp` | serveur MCP (JSON-RPC 2.0, Streamable HTTP en réponses JSON) pour les agents IA, voir [AGENT.md](AGENT.md) |
 
 ### Messages WebSocket
 
@@ -98,7 +100,7 @@ Les commandes s'exécutent en parallèle : utilisez `id` pour associer chaque r�
 | `notice_dismiss` | `id` | `{}` |
 | `backup` | `path?` | `{path}`. Copie cohérente de la base, faisable à chaud. Par défaut dans `<data>/backups/`. Pour restaurer : arrêter, puis remplacer `twitchminer.db` |
 
-Codes d'erreur : `not_found`, `invalid`, `auth`, `module`, `unavailable`, `timeout`, `manifest`, `internal`, `bad_command`, `unauthorized`.
+Codes d'erreur : `not_found`, `invalid`, `auth`, `module`, `unavailable`, `timeout`, `manifest`, `internal`, `bad_command`, `unauthorized`, `forbidden` (jeton agent).
 
 ### Actions des modules (`module_call`)
 

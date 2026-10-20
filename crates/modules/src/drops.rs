@@ -580,6 +580,40 @@ impl Runtime {
             t.last_progress = Instant::now();
             return false;
         }
+        // Still live and still on the campaign's game?
+        if let Some(c) = self.campaigns.get(&t.campaign_id) {
+            let special = ctx
+                .gql()
+                .manifest()
+                .load()
+                .special_game_ids
+                .contains(&c.game.id);
+            if let Ok(mut users) = ctx
+                .gql()
+                .users_by_id(std::slice::from_ref(&t.channel.id))
+                .await
+            {
+                let stream = users.pop().flatten().and_then(|u| u.stream);
+                let on_game = stream
+                    .as_ref()
+                    .and_then(|s| s.game.as_ref())
+                    .is_some_and(|g| {
+                        special || g.id == c.game.id || norm(&g.name) == norm(&c.game.name)
+                    });
+                if !on_game {
+                    tracing::info!(channel = %t.channel.login, online = stream.is_some(), "drops channel left the game, switching");
+                    self.banned_channels.insert(
+                        t.channel.id.clone(),
+                        Instant::now() + Duration::from_secs(10 * 60),
+                    );
+                    self.target = None;
+                    return true;
+                }
+            }
+        }
+        let Some(t) = &mut self.target else {
+            return false;
+        };
         match ctx.gql().current_drop(&t.channel.id).await {
             Ok(Some(cur)) => {
                 if t.last_minutes.is_none_or(|m| cur.current_minutes > m) {

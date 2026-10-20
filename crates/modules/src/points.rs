@@ -56,6 +56,9 @@ impl Default for PointsSettings {
 const STREAK_MINUTES: u64 = 7;
 const ONLINE_RECHECK: Duration = Duration::from_secs(60);
 const CONTEXT_REFRESH: Duration = Duration::from_secs(30 * 60);
+/// Watched channels are re-checked often so bonus chests are claimed even if
+/// PubSub misses the `claim-available` message.
+const WATCHED_CONTEXT_REFRESH: Duration = Duration::from_secs(4 * 60);
 const FOLLOWS_REFRESH: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Debug, Clone)]
@@ -385,12 +388,19 @@ impl Runtime {
 
     /// Loads balance / pending bonus for online channels not refreshed recently.
     async fn refresh_contexts(&mut self, ctx: &ModuleContext, s: &PointsSettings) {
+        let watched: HashSet<String> = ctx.store().read(|st| {
+            st.accounts
+                .get(ctx.account_id())
+                .map(|a| a.watching.keys().cloned().collect())
+                .unwrap_or_default()
+        });
         for ch in self.channels.values_mut() {
-            if ch.stream.is_none()
-                || ch
-                    .last_context
-                    .is_some_and(|t| t.elapsed() < CONTEXT_REFRESH)
-            {
+            let every = if watched.contains(&ch.meta.id) {
+                WATCHED_CONTEXT_REFRESH
+            } else {
+                CONTEXT_REFRESH
+            };
+            if ch.stream.is_none() || ch.last_context.is_some_and(|t| t.elapsed() < every) {
                 continue;
             }
             ch.last_context = Some(Instant::now());

@@ -1,0 +1,206 @@
+# French translation of the TwitchMiner interface.
+# Source strings are the @tr() texts of crates/ui/ui/**/*.slint.
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: fr\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+msgid "API token"
+msgstr "Jeton d'API"
+
+msgid "Accounts"
+msgstr "Comptes"
+
+msgid "Action failed: {}"
+msgstr "L'action a échoué : {}"
+
+msgid "Active"
+msgstr "Actif"
+
+msgid "Activity"
+msgstr "Activité"
+
+msgid "Add an account"
+msgstr "Ajouter un compte"
+
+msgid "Advanced"
+msgstr "Avancé"
+
+msgid "Appearance"
+msgstr "Apparence"
+
+msgid "Back"
+msgstr "Retour"
+
+msgid "Cancel"
+msgstr "Annuler"
+
+msgid "Change…"
+msgstr "Changer…"
+
+msgid "Channels"
+msgstr "Chaînes"
+
+msgid "Code valid until {}"
+msgstr "Code valable jusqu'à {}"
+
+msgid "Connect"
+msgstr "Se connecter"
+
+msgid "Connect a Twitch account"
+msgstr "Connecter un compte Twitch"
+
+msgid "Connecting…"
+msgstr "Connexion…"
+
+msgid "Control a TwitchMiner running elsewhere (home server, another PC). Nothing is mined on this computer."
+msgstr "Piloter un TwitchMiner qui tourne ailleurs (serveur maison, autre PC). Rien n'est miné sur cet ordinateur."
+
+msgid "Could not reach the engine: {}"
+msgstr "Impossible de joindre le moteur : {}"
+
+msgid "Dark"
+msgstr "Sombre"
+
+msgid "Dismiss"
+msgstr "Fermer"
+
+msgid "Drops"
+msgstr "Drops"
+
+msgid "Engine"
+msgstr "Moteur"
+
+msgid "Engine on this PC"
+msgstr "Moteur sur ce PC"
+
+msgid "Error"
+msgstr "Erreur"
+
+msgid "Handled by another device"
+msgstr "Géré par un autre appareil"
+
+msgid "Home"
+msgstr "Accueil"
+
+msgid "Light"
+msgstr "Clair"
+
+msgid "Mined by {}"
+msgstr "Miné par {}"
+
+msgid "No account yet."
+msgstr "Aucun compte pour l'instant."
+
+msgid "OLED"
+msgstr "OLED"
+
+msgid "OLED uses pure black, to save battery on OLED screens."
+msgstr "OLED utilise un noir pur, pour économiser la batterie des écrans OLED."
+
+msgid "On the machine running the engine, the token is shown by: twitchminer api-token"
+msgstr "Sur la machine qui fait tourner le moteur, le jeton s'affiche avec : twitchminer api-token"
+
+msgid "On this computer"
+msgstr "Sur cet ordinateur"
+
+msgid "Open the Twitch page"
+msgstr "Ouvrir la page Twitch"
+
+msgid "Open the Twitch page, sign in if needed, then enter this code:"
+msgstr "Ouvre la page Twitch, connecte-toi si besoin, puis saisis ce code :"
+
+msgid "Reconnect"
+msgstr "Se reconnecter"
+
+msgid "Remote engine"
+msgstr "Moteur distant"
+
+msgid "Remote engine unreachable"
+msgstr "Moteur distant injoignable"
+
+msgid "Remote server"
+msgstr "Serveur distant"
+
+msgid "Remove"
+msgstr "Retirer"
+
+msgid "Remove this account"
+msgstr "Retirer ce compte"
+
+msgid "Remove this account from TwitchMiner?"
+msgstr "Retirer ce compte de TwitchMiner ?"
+
+msgid "Settings"
+msgstr "Réglages"
+
+msgid "Sign-in required"
+msgstr "Connexion requise"
+
+msgid "Starting"
+msgstr "Démarrage"
+
+msgid "Starting the engine…"
+msgstr "Démarrage du moteur…"
+
+msgid "Stopped"
+msgstr "Arrêté"
+
+msgid "The engine runs inside this application, with its data in this computer's TwitchMiner folder."
+msgstr "Le moteur tourne dans l'application, avec ses données dans le dossier TwitchMiner de cet ordinateur."
+
+msgid "The engine runs inside this application."
+msgstr "Le moteur tourne dans l'application."
+
+msgid "The interface is the same in both cases."
+msgstr "L'interface est la même dans les deux cas."
+
+msgid "Theme"
+msgstr "Thème"
+
+msgid "This screen is coming in a next step."
+msgstr "Cet écran arrive dans une prochaine étape."
+
+msgid "To do"
+msgstr "À faire"
+
+msgid "Twitch no longer accepts this account's session. Nothing is mined for it until you reconnect."
+msgstr "Twitch n'accepte plus la session de ce compte. Rien n'est miné pour lui tant que tu ne te reconnectes pas."
+
+
+msgid "TwitchMiner watches streams for you, in the background and at the lowest quality, to collect drops and channel points. Start by connecting your Twitch account."
+msgstr "TwitchMiner regarde des streams pour toi, en arrière-plan et en qualité minimale, pour récupérer les drops et les points de chaîne. Commence par connecter ton compte Twitch."
+
+msgid "Use this computer"
+msgstr "Utiliser ce PC"
+
+msgid "Welcome to TwitchMiner"
+msgstr "Bienvenue dans TwitchMiner"
+
+msgid "What did it bring in?"
+msgstr "Qu'est-ce que ça a rapporté ?"
+
+msgid "What is happening, and is there anything to do?"
+msgstr "Qu'est-ce qui se passe, et dois-je faire quelque chose ?"
+
+msgid "What, in which order, and why?"
+msgstr "Quoi, dans quel ordre, et pourquoi ?"
+
+msgid "Where am I with channel points?"
+msgstr "Où j'en suis côté points ?"
+
+msgid "Where does the engine run?"
+msgstr "Où tourne le moteur ?"
+
+msgid "manifest revision {}"
+msgstr "manifeste révision {}"
+
+msgid "{} is connected. Mining starts."
+msgstr "{} est connecté. Le minage démarre."
+
+msgid "{} must sign in again"
+msgstr "{} doit se reconnecter"
+
+msgid "TwitchMiner is already running on this computer. Connect to it as a remote server: the address and token are pre-filled."
+msgstr "TwitchMiner tourne déjà sur cet ordinateur. Connecte-toi à lui comme serveur distant : l'adresse et le jeton sont déjà remplis."

@@ -1,0 +1,100 @@
+// The contract between the Rust controller and the views. Everything shown comes from
+// these properties (derived from the engine state); everything done goes through these
+// callbacks (turned into engine commands).
+
+import { Tone } from "widgets.slint";
+
+export enum Screen { home, drops, channels, activity, settings }
+
+// What the window shows: starting up, the "choose an engine" screen, or the app.
+export enum Conn { starting, setup, ready }
+
+export enum LinkState { local, connected, connecting, down }
+
+// Why the "choose an engine" screen is shown.
+export enum SetupReason { none, busy, failed }
+
+export enum ToastKind { plain, error, login-ok }
+
+export struct AccountItem {
+    id: string,
+    name: string,
+    login: string,
+    initial: string,
+    avatar: image,
+    // running | starting | stopped | auth_required | error | standby
+    status: string,
+    // Peer name (standby) or error message.
+    detail: string,
+    enabled: bool,
+}
+
+export struct LoginItem {
+    flow-id: string,
+    code: string,
+    url: string,
+    // Local time, `HH:MM`.
+    expires-at: string,
+}
+
+export struct NoticeItem {
+    id: string,
+    // info | warning | error
+    level: string,
+    message: string,
+}
+
+export struct ToastItem {
+    id: int,
+    kind: ToastKind,
+    // Message from the engine (error message) or already-composed text.
+    detail: string,
+    tone: Tone,
+}
+
+export global Bridge {
+    // Connection to the engine
+    in property <Conn> conn: Conn.starting;
+    in property <LinkState> link: LinkState.local;
+    // Remote URL, or the reason of the last disconnection.
+    in property <string> link-detail;
+    // Setup screen: why it is shown (`setup-detail`: pid or error), pre-filled fields.
+    in property <SetupReason> setup-reason;
+    in property <string> setup-detail;
+    in property <string> setup-url;
+    in property <string> setup-token;
+    in property <bool> setup-can-cancel;
+    in property <bool> connecting;
+
+    // Engine data
+    in property <[AccountItem]> accounts;
+    in property <[LoginItem]> logins;
+    in property <[NoticeItem]> notices;
+    // Number of cards in the "À faire" zone.
+    in property <int> todo-count;
+    in property <string> version;
+    in property <int> manifest-revision;
+
+    // Ephemeral feedback (command errors, confirmations)
+    in property <[ToastItem]> toasts;
+
+    // View state (never engine state)
+    in-out property <Screen> screen: Screen.home;
+    // Selected account id; empty = the only / first account.
+    in-out property <string> account;
+    in-out property <bool> login-busy;
+
+    callback select-account(string);
+    callback login-start();
+    callback login-cancel(string);
+    callback open-url(string);
+    callback connect-remote(string, string);
+    callback use-local();
+    callback show-setup();
+    callback cancel-setup();
+    callback dismiss-notice(string);
+    callback dismiss-toast(int);
+    callback set-account-enabled(string, bool);
+    callback remove-account(string);
+    callback theme-changed(int);
+}

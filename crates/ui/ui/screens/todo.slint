@@ -1,0 +1,171 @@
+// The "À faire" zone: every action the user has to take, in one place.
+
+import { Theme } from "../theme.slint";
+import { Bridge, LoginItem, NoticeItem, AccountItem } from "../bridge.slint";
+import { Button, ButtonKind, Card, Icon, Icons, IconButton, Muted, Tone, Tones } from "../widgets.slint";
+
+export component LoginCard inherits Card {
+    in property <LoginItem> login;
+    highlight: true;
+    spacing: 14px;
+    HorizontalLayout {
+        spacing: 10px;
+        Icon {
+            source: Icons.user;
+            colorize: Theme.accent;
+        }
+        Text {
+            text: @tr("Connect a Twitch account");
+            font-size: Theme.font-l;
+            font-weight: 700;
+            color: Theme.text;
+            vertical-alignment: center;
+        }
+    }
+    Muted {
+        text: @tr("Open the Twitch page, sign in if needed, then enter this code:");
+        font-size: Theme.font-m;
+    }
+    HorizontalLayout {
+        alignment: start;
+        Rectangle {
+            background: Theme.inset;
+            border-radius: Theme.radius-m;
+            border-width: 1px;
+            border-color: Theme.border;
+            HorizontalLayout {
+                padding-left: 22px;
+                padding-right: 22px;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                Text {
+                    text: root.login.code;
+                    font-size: 40px;
+                    font-weight: 800;
+                    letter-spacing: 6px;
+                    color: Theme.text;
+                    font-family: "Consolas";
+                }
+            }
+        }
+    }
+    Muted {
+        text: root.login.url;
+    }
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: start;
+        Button {
+            kind: ButtonKind.primary;
+            icon: Icons.external;
+            text: @tr("Open the Twitch page");
+            clicked => { Bridge.open-url(root.login.url); }
+        }
+        Button {
+            kind: ButtonKind.ghost;
+            text: @tr("Cancel");
+            clicked => { Bridge.login-cancel(root.login.flow-id); }
+        }
+        Text {
+            text: @tr("Code valid until {}", root.login.expires-at);
+            color: Theme.text-faint;
+            font-size: Theme.font-s;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// One action card: icon, title, explanation, buttons on the right.
+export component ActionCard inherits Card {
+    in property <image> icon: Icons.alert;
+    in property <Tone> tone: Tone.warning;
+    in property <string> title;
+    in property <string> body;
+    in property <bool> closable;
+    callback close();
+    inner-padding: 14px;
+    HorizontalLayout {
+        spacing: 12px;
+        Rectangle {
+            width: 34px;
+            height: 34px;
+            border-radius: Theme.radius-m;
+            background: Tones.bg(root.tone);
+            Icon {
+                source: root.icon;
+                colorize: Tones.fg(root.tone);
+            }
+        }
+        VerticalLayout {
+            spacing: 3px;
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: root.title;
+                font-weight: 600;
+                color: Theme.text;
+                wrap: word-wrap;
+            }
+            if root.body != "": Muted {
+                text: root.body;
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: end;
+            VerticalLayout {
+                alignment: center;
+                HorizontalLayout {
+                    spacing: 8px;
+                    @children
+                }
+            }
+            if root.closable: VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: Icons.x;
+                    tooltip: @tr("Dismiss");
+                    clicked => { root.close(); }
+                }
+            }
+        }
+    }
+}
+
+export component AuthCard inherits ActionCard {
+    in property <AccountItem> account;
+    icon: Icons.user;
+    tone: Tone.danger;
+    title: @tr("{} must sign in again", account.name);
+    body: @tr("Twitch no longer accepts this account's session. Nothing is mined for it until you reconnect.");
+    Button {
+        kind: ButtonKind.primary;
+        text: @tr("Reconnect");
+        busy: Bridge.login-busy;
+        clicked => { Bridge.login-start(); }
+    }
+}
+
+export component NoticeCard inherits ActionCard {
+    in property <NoticeItem> notice;
+    icon: notice.level == "info" ? Icons.info : Icons.alert;
+    tone: notice.level == "error" ? Tone.danger : notice.level == "warning" ? Tone.warning : Tone.info;
+    title: notice.message;
+    closable: true;
+    close => { Bridge.dismiss-notice(root.notice.id); }
+}
+
+export component TodoZone inherits VerticalLayout {
+    spacing: 10px;
+    for login in Bridge.logins: LoginCard {
+        login: login;
+    }
+    for acc in Bridge.accounts: VerticalLayout {
+        if acc.status == "auth_required" && Bridge.logins.length == 0: AuthCard {
+            account: acc;
+        }
+    }
+    for notice in Bridge.notices: NoticeCard {
+        notice: notice;
+    }
+}

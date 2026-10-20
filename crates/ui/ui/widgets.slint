@@ -1,0 +1,446 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+
+export global Icons {
+    out property <image> logo: @image-url("icons/logo.svg");
+    out property <image> home: @image-url("icons/home.svg");
+    out property <image> gift: @image-url("icons/gift.svg");
+    out property <image> tv: @image-url("icons/tv.svg");
+    out property <image> chart: @image-url("icons/chart.svg");
+    out property <image> settings: @image-url("icons/settings.svg");
+    out property <image> pause: @image-url("icons/pause.svg");
+    out property <image> play: @image-url("icons/play.svg");
+    out property <image> plus: @image-url("icons/plus.svg");
+    out property <image> refresh: @image-url("icons/refresh.svg");
+    out property <image> external: @image-url("icons/external.svg");
+    out property <image> user: @image-url("icons/user.svg");
+    out property <image> check: @image-url("icons/check.svg");
+    out property <image> alert: @image-url("icons/alert.svg");
+    out property <image> x: @image-url("icons/x.svg");
+    out property <image> link: @image-url("icons/link.svg");
+    out property <image> clock: @image-url("icons/clock.svg");
+    out property <image> grip: @image-url("icons/grip.svg");
+    out property <image> server: @image-url("icons/server.svg");
+    out property <image> monitor: @image-url("icons/monitor.svg");
+    out property <image> chevron-down: @image-url("icons/chevron-down.svg");
+    out property <image> chevron-right: @image-url("icons/chevron-right.svg");
+    out property <image> coins: @image-url("icons/coins.svg");
+    out property <image> trash: @image-url("icons/trash.svg");
+    out property <image> bolt: @image-url("icons/bolt.svg");
+    out property <image> star: @image-url("icons/star.svg");
+    out property <image> info: @image-url("icons/info.svg");
+    out property <image> copy: @image-url("icons/copy.svg");
+}
+
+export enum ButtonKind { primary, secondary, ghost, danger }
+
+export enum Tone { neutral, accent, success, warning, danger, info }
+
+export global Tones {
+    pure public function fg(t: Tone) -> color {
+        if t == Tone.accent { return Theme.accent; }
+        if t == Tone.success { return Theme.success; }
+        if t == Tone.warning { return Theme.warning; }
+        if t == Tone.danger { return Theme.danger; }
+        if t == Tone.info { return Theme.info; }
+        return Theme.text-muted;
+    }
+    pure public function bg(t: Tone) -> color {
+        if t == Tone.accent { return Theme.accent-soft; }
+        if t == Tone.success { return Theme.success-soft; }
+        if t == Tone.warning { return Theme.warning-soft; }
+        if t == Tone.danger { return Theme.danger-soft; }
+        if t == Tone.info { return Theme.info-soft; }
+        return Theme.inset;
+    }
+}
+
+// Fixed-size image, centred in whatever height the layout gives it.
+export component Icon inherits Rectangle {
+    in property <image> source <=> img.source;
+    in property <brush> colorize <=> img.colorize;
+    in property <length> size: 18px;
+    min-width: size;
+    max-width: size;
+    min-height: size;
+    img := Image {
+        width: root.size;
+        height: root.size;
+        colorize: Theme.text-muted;
+        image-fit: contain;
+    }
+}
+
+export component Card inherits Rectangle {
+    in property <length> inner-padding: Theme.pad;
+    in property <length> spacing: 10px;
+    in property <bool> highlight: false;
+    background: Theme.card;
+    border-radius: Theme.radius-l;
+    border-width: 1px;
+    border-color: highlight ? Theme.accent : Theme.border;
+    drop-shadow-blur: Theme.is-light ? 18px : 0px;
+    drop-shadow-color: #1a10330f;
+    drop-shadow-offset-y: 2px;
+    VerticalLayout {
+        padding: root.inner-padding;
+        spacing: root.spacing;
+        @children
+    }
+}
+
+export component Button inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <ButtonKind> kind: ButtonKind.secondary;
+    in property <bool> enabled: true;
+    in property <bool> busy: false;
+    in property <bool> compact: false;
+    callback clicked();
+
+    property <bool> active: enabled && !busy;
+    property <color> fg: kind == ButtonKind.primary ? Theme.on-accent
+        : kind == ButtonKind.danger ? Theme.danger
+        : kind == ButtonKind.ghost ? Theme.text-muted : Theme.text;
+    property <color> base: kind == ButtonKind.primary ? Theme.accent-strong
+        : kind == ButtonKind.danger ? Theme.danger-soft
+        : kind == ButtonKind.ghost ? transparent : Theme.inset;
+
+    height: compact ? 28px : 36px;
+    border-radius: Theme.radius-m;
+    border-width: kind == ButtonKind.secondary ? 1px : 0px;
+    border-color: Theme.border;
+    background: !active ? base.with-alpha(base.to-hsv().alpha * 0.5)
+        : touch.pressed ? base.darker(0.15)
+        : touch.has-hover ? (kind == ButtonKind.primary ? Theme.accent : kind == ButtonKind.ghost ? Theme.inset : base.brighter(0.25)) : base;
+    opacity: active ? 1 : 0.6;
+    animate background { duration: 100ms; }
+
+    accessible-role: button;
+    accessible-label: text;
+    accessible-action-default => { touch.clicked(); }
+
+    HorizontalLayout {
+        padding-left: compact ? 10px : 14px;
+        padding-right: compact ? 10px : 14px;
+        spacing: 7px;
+        alignment: center;
+        if icon.width > 0: Icon {
+            source: root.busy ? Icons.refresh : root.icon;
+            size: compact ? 14px : 16px;
+            colorize: root.fg;
+        }
+        if root.text != "": Text {
+            text: root.text;
+            color: root.fg;
+            font-size: compact ? Theme.font-s : Theme.font-m;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.active;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component IconButton inherits Rectangle {
+    in property <image> icon;
+    in property <string> tooltip;
+    in property <length> size: 30px;
+    in property <color> tint: Theme.text-muted;
+    callback clicked();
+    width: size;
+    height: size;
+    border-radius: Theme.radius-s;
+    background: touch.pressed ? Theme.border-strong : touch.has-hover ? Theme.inset : transparent;
+    accessible-role: button;
+    accessible-label: tooltip;
+    Icon {
+        source: root.icon;
+        size: root.size * 0.55;
+        colorize: touch.has-hover ? Theme.text : root.tint;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component Pill inherits Rectangle {
+    in property <string> text;
+    in property <Tone> tone: Tone.neutral;
+    in property <image> icon;
+    height: 22px;
+    border-radius: 11px;
+    background: Tones.bg(tone);
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 9px;
+        spacing: 5px;
+        alignment: start;
+        if icon.width > 0: Icon {
+            source: root.icon;
+            size: 12px;
+            colorize: Tones.fg(root.tone);
+        }
+        Text {
+            text: root.text;
+            color: Tones.fg(root.tone);
+            font-size: Theme.font-xs;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component Dot inherits Rectangle {
+    in property <color> tint: Theme.success;
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+    background: tint;
+}
+
+export component ProgressBar inherits Rectangle {
+    in property <float> progress;
+    in property <color> tint: Theme.accent;
+    height: 6px;
+    border-radius: self.height / 2;
+    background: Theme.inset;
+    clip: true;
+    Rectangle {
+        x: 0;
+        width: parent.width * clamp(root.progress, 0, 1);
+        height: parent.height;
+        border-radius: parent.border-radius;
+        background: root.tint;
+        animate width { duration: 300ms; easing: ease-out; }
+    }
+}
+
+export component TextField inherits Rectangle {
+    in property <string> placeholder;
+    in-out property <string> text <=> input.text;
+    in property <InputType> input-type: InputType.text;
+    in property <bool> enabled: true;
+    out property <bool> has-focus: input.has-focus;
+    callback accepted();
+    callback edited(string);
+    height: 38px;
+    border-radius: Theme.radius-m;
+    background: Theme.inset;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent : Theme.border;
+    clip: true;
+    forward-focus: input;
+    accessible-role: text-input;
+    accessible-placeholder-text: placeholder;
+    Text {
+        x: 12px;
+        width: parent.width - 24px;
+        height: parent.height;
+        visible: input.text == "";
+        text: root.placeholder;
+        color: Theme.text-faint;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    input := TextInput {
+        x: 12px;
+        width: parent.width - 24px;
+        height: parent.height;
+        enabled: root.enabled;
+        single-line: true;
+        input-type: root.input-type;
+        color: Theme.text;
+        selection-background-color: Theme.accent-soft;
+        selection-foreground-color: Theme.text;
+        vertical-alignment: center;
+        accepted => { root.accepted(); }
+        edited => { root.edited(self.text); }
+    }
+}
+
+// Controlled toggle: shows `checked`, reports the requested value. The real value comes
+// back from the engine state.
+export component Toggle inherits Rectangle {
+    in property <bool> checked;
+    in property <bool> enabled: true;
+    callback toggled(bool);
+    width: 38px;
+    height: 22px;
+    border-radius: 11px;
+    background: checked ? Theme.accent-strong : Theme.border-strong;
+    opacity: enabled ? 1 : 0.5;
+    animate background { duration: 120ms; }
+    accessible-role: switch;
+    accessible-checkable: true;
+    accessible-checked: checked;
+    accessible-action-default => { root.toggled(!root.checked); }
+    Rectangle {
+        width: 16px;
+        height: 16px;
+        y: 3px;
+        x: root.checked ? parent.width - 19px : 3px;
+        border-radius: 8px;
+        background: #ffffff;
+        animate x { duration: 120ms; easing: ease-out; }
+    }
+    TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.toggled(!root.checked); }
+    }
+}
+
+export struct SegmentItem {
+    label: string,
+    icon: image,
+}
+
+export component Segmented inherits Rectangle {
+    in property <[SegmentItem]> items;
+    in property <int> selected;
+    callback picked(int);
+    height: 34px;
+    border-radius: Theme.radius-m;
+    background: Theme.inset;
+    border-width: 1px;
+    border-color: Theme.border;
+    HorizontalLayout {
+        padding: 3px;
+        spacing: 3px;
+        for item[i] in root.items: Rectangle {
+            accessible-role: tab;
+            accessible-label: item.label;
+            accessible-item-selected: i == root.selected;
+            accessible-action-default => { root.picked(i); }
+            border-radius: Theme.radius-s + 1px;
+            background: i == root.selected ? Theme.card-hover : t.has-hover ? Theme.inset : transparent;
+            drop-shadow-blur: i == root.selected ? 6px : 0px;
+            drop-shadow-color: #00000030;
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 6px;
+                alignment: center;
+                if item.icon.width > 0: Icon {
+                    source: item.icon;
+                    size: 14px;
+                    colorize: i == root.selected ? Theme.accent : Theme.text-muted;
+                }
+                Text {
+                    text: item.label;
+                    font-size: Theme.font-s;
+                    font-weight: i == root.selected ? 600 : 400;
+                    color: i == root.selected ? Theme.text : Theme.text-muted;
+                    vertical-alignment: center;
+                }
+            }
+            t := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.picked(i); }
+            }
+        }
+    }
+}
+
+export component Avatar inherits Rectangle {
+    in property <image> source;
+    in property <string> initial;
+    in property <length> size: 32px;
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    background: Theme.accent-soft;
+    clip: true;
+    if root.source.width == 0: Text {
+        text: root.initial == "" ? "?" : root.initial;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        font-size: root.size * 0.42;
+        font-weight: 700;
+        color: Theme.accent;
+    }
+    if root.source.width > 0: Image {
+        source: root.source;
+        width: root.size;
+        height: root.size;
+        image-fit: cover;
+    }
+}
+
+export component SectionHeader inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> subtitle;
+    spacing: 8px;
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        Text {
+            text: root.title;
+            font-size: Theme.font-l;
+            font-weight: 700;
+            color: Theme.text;
+        }
+        if root.subtitle != "": Text {
+            text: root.subtitle;
+            font-size: Theme.font-s;
+            color: Theme.text-muted;
+            wrap: word-wrap;
+        }
+    }
+    @children
+}
+
+export component Muted inherits Text {
+    color: Theme.text-muted;
+    font-size: Theme.font-s;
+    wrap: word-wrap;
+}
+
+// A screen: scrollable column with a title, centred and width-limited on large windows.
+export component Page inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <length> max-content-width: 960px;
+    scroll := ScrollView {
+        width: 100%;
+        height: 100%;
+        content-width: self.visible-width;
+        content-height: column.preferred-height + 48px;
+        column := VerticalLayout {
+            x: max(0px, (scroll.visible-width - self.width) / 2);
+            y: 0;
+            width: min(scroll.visible-width, root.max-content-width);
+            padding-left: 28px;
+            padding-right: 28px;
+            padding-top: 26px;
+            padding-bottom: 24px;
+            spacing: 18px;
+            HorizontalLayout {
+                spacing: 12px;
+                VerticalLayout {
+                    spacing: 3px;
+                    alignment: center;
+                    Text {
+                        text: root.title;
+                        font-size: Theme.font-xxl;
+                        font-weight: 700;
+                        color: Theme.text;
+                    }
+                    if root.subtitle != "": Text {
+                        text: root.subtitle;
+                        color: Theme.text-muted;
+                        font-size: Theme.font-m;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+            @children
+        }
+    }
+}

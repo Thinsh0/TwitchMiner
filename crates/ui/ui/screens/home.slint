@@ -1,0 +1,52 @@
+import { Theme } from "../theme.slint";
+import { Bridge } from "../bridge.slint";
+import { Button, ButtonKind, Card, Icon, Icons, Muted, Page } from "../widgets.slint";
+import { TodoZone } from "todo.slint";
+
+// First launch: no account yet.
+component Welcome inherits Card {
+    inner-padding: 28px;
+    spacing: 14px;
+    Image {
+        source: Icons.logo;
+        width: 52px;
+        height: 52px;
+    }
+    Text {
+        text: @tr("Welcome to TwitchMiner");
+        font-size: Theme.font-xl;
+        font-weight: 700;
+        color: Theme.text;
+    }
+    Muted {
+        font-size: Theme.font-m;
+        text: @tr("TwitchMiner watches streams for you, in the background and at the lowest quality, to collect drops and channel points. Start by connecting your Twitch account.");
+    }
+    HorizontalLayout {
+        alignment: start;
+        Button {
+            kind: ButtonKind.primary;
+            icon: Icons.user;
+            text: @tr("Connect a Twitch account");
+            busy: Bridge.login-busy;
+            clicked => { Bridge.login-start(); }
+        }
+    }
+}
+
+export component HomeScreen inherits Page {
+    title: @tr("Home");
+    subtitle: Bridge.accounts.length == 0 ? "" : @tr("What is happening, and is there anything to do?");
+
+    if Bridge.todo-count > 0: VerticalLayout {
+        spacing: 10px;
+        Text {
+            text: @tr("To do");
+            font-size: Theme.font-s;
+            font-weight: 700;
+            color: Theme.text-muted;
+        }
+        TodoZone { }
+    }
+    if Bridge.accounts.length == 0 && Bridge.logins.length == 0: Welcome { }
+}

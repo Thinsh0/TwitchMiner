@@ -1,0 +1,156 @@
+// "Where does the engine run?": local engine or remote daemon (URL + token).
+
+import { Theme } from "../theme.slint";
+import { Bridge, SetupReason } from "../bridge.slint";
+import { Button, ButtonKind, Card, Icon, Icons, Muted, TextField, Tone, Tones } from "../widgets.slint";
+
+export component ConnectScreen inherits Rectangle {
+    property <string> url: Bridge.setup-url;
+    property <string> token: Bridge.setup-token;
+
+    VerticalLayout {
+        alignment: center;
+        padding: 24px;
+        HorizontalLayout {
+            alignment: center;
+            VerticalLayout {
+                width: min(560px, root.width - 48px);
+                spacing: 14px;
+                HorizontalLayout {
+                    spacing: 12px;
+                    Image {
+                        source: Icons.logo;
+                        width: 40px;
+                        height: 40px;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 2px;
+                        Text {
+                            text: @tr("Where does the engine run?");
+                            font-size: Theme.font-xl;
+                            font-weight: 700;
+                            color: Theme.text;
+                        }
+                        Muted {
+                            text: @tr("The interface is the same in both cases.");
+                        }
+                    }
+                }
+
+                if Bridge.setup-reason != SetupReason.none: Rectangle {
+                    border-radius: Theme.radius-m;
+                    background: Tones.bg(Tone.warning);
+                    HorizontalLayout {
+                        padding: 12px;
+                        spacing: 10px;
+                        Icon {
+                            source: Icons.info;
+                            colorize: Theme.warning;
+                        }
+                        Text {
+                            text: Bridge.setup-reason == SetupReason.busy
+                                ? @tr("TwitchMiner is already running on this computer. Connect to it as a remote server: the address and token are pre-filled.")
+                                : @tr("Could not reach the engine: {}", Bridge.setup-detail);
+                            color: Theme.text;
+                            wrap: word-wrap;
+                            horizontal-stretch: 1;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                Card {
+                    HorizontalLayout {
+                        spacing: 12px;
+                        Icon {
+                            source: Icons.monitor;
+                            size: 22px;
+                            colorize: Theme.accent;
+                        }
+                        VerticalLayout {
+                            spacing: 3px;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: @tr("On this computer");
+                                font-weight: 700;
+                                font-size: Theme.font-l;
+                                color: Theme.text;
+                            }
+                            Muted {
+                                text: @tr("The engine runs inside this application, with its data in this computer's TwitchMiner folder.");
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Button {
+                                text: @tr("Use this computer");
+                                enabled: !Bridge.connecting;
+                                clicked => { Bridge.use-local(); }
+                            }
+                        }
+                    }
+                }
+
+                Card {
+                    spacing: 12px;
+                    HorizontalLayout {
+                        spacing: 12px;
+                        Icon {
+                            source: Icons.server;
+                            size: 22px;
+                            colorize: Theme.accent;
+                        }
+                        VerticalLayout {
+                            spacing: 3px;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: @tr("Remote server");
+                                font-weight: 700;
+                                font-size: Theme.font-l;
+                                color: Theme.text;
+                            }
+                            Muted {
+                                text: @tr("Control a TwitchMiner running elsewhere (home server, another PC). Nothing is mined on this computer.");
+                            }
+                        }
+                    }
+                    url-field := TextField {
+                        placeholder: "http://192.168.1.10:7878";
+                        text <=> root.url;
+                        accepted => { token-field.focus(); }
+                    }
+                    token-field := TextField {
+                        placeholder: @tr("API token");
+                        input-type: InputType.password;
+                        text <=> root.token;
+                        accepted => { Bridge.connect-remote(root.url, root.token); }
+                    }
+                    Muted {
+                        text: @tr("On the machine running the engine, the token is shown by: twitchminer api-token");
+                        color: Theme.text-faint;
+                    }
+                    HorizontalLayout {
+                        alignment: start;
+                        Button {
+                            kind: ButtonKind.primary;
+                            text: Bridge.connecting ? @tr("Connecting…") : @tr("Connect");
+                            busy: Bridge.connecting;
+                            enabled: root.url != "" && root.token != "";
+                            clicked => { Bridge.connect-remote(root.url, root.token); }
+                        }
+                    }
+                }
+
+                if Bridge.setup-can-cancel: HorizontalLayout {
+                    alignment: start;
+                    Button {
+                        kind: ButtonKind.ghost;
+                        text: @tr("Back");
+                        clicked => { Bridge.cancel-setup(); }
+                    }
+                }
+            }
+        }
+    }
+}

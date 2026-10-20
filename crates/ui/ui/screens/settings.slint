@@ -1,0 +1,245 @@
+import { Theme, ThemeMode } from "../theme.slint";
+import { Bridge, AccountItem, LinkState, Screen } from "../bridge.slint";
+import { Avatar, Button, ButtonKind, Card, Icon, IconButton, Icons, Muted, Page, Pill, Segmented, SegmentItem, Toggle, Tone } from "../widgets.slint";
+
+export global Labels {
+    pure public function account-status(s: string) -> string {
+        if s == "running" { return @tr("Active"); }
+        if s == "starting" { return @tr("Starting"); }
+        if s == "auth_required" { return @tr("Sign-in required"); }
+        if s == "error" { return @tr("Error"); }
+        if s == "standby" { return @tr("Handled by another device"); }
+        return @tr("Stopped");
+    }
+    pure public function account-tone(s: string) -> Tone {
+        if s == "running" { return Tone.success; }
+        if s == "starting" { return Tone.info; }
+        if s == "auth_required" || s == "error" { return Tone.danger; }
+        if s == "standby" { return Tone.accent; }
+        return Tone.neutral;
+    }
+}
+
+component SettingRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> help;
+    spacing: 16px;
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        horizontal-stretch: 1;
+        Text {
+            text: root.label;
+            color: Theme.text;
+            font-weight: 600;
+        }
+        if root.help != "": Muted {
+            text: root.help;
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        @children
+    }
+}
+
+component AccountRow inherits Rectangle {
+    in property <AccountItem> account;
+    property <bool> confirm;
+    min-height: 56px;
+    border-radius: Theme.radius-m;
+    background: Theme.inset;
+    HorizontalLayout {
+        padding: 10px;
+        padding-left: 12px;
+        spacing: 12px;
+        Avatar {
+            source: root.account.avatar;
+            initial: root.account.initial;
+            size: 36px;
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: root.account.name;
+                    font-weight: 600;
+                    color: Theme.text;
+                    vertical-alignment: center;
+                }
+                Pill {
+                    text: Labels.account-status(root.account.status);
+                    tone: Labels.account-tone(root.account.status);
+                }
+            }
+            Muted {
+                text: root.account.status == "standby" ? @tr("Mined by {}", root.account.detail)
+                    : root.account.detail != "" ? root.account.detail : "@" + root.account.login;
+            }
+        }
+        if !root.confirm: HorizontalLayout {
+            spacing: 10px;
+            VerticalLayout {
+                alignment: center;
+                Toggle {
+                    checked: root.account.enabled;
+                    toggled(v) => { Bridge.set-account-enabled(root.account.id, v); }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: Icons.trash;
+                    tooltip: @tr("Remove this account");
+                    clicked => { root.confirm = true; }
+                }
+            }
+        }
+        if root.confirm: HorizontalLayout {
+            spacing: 8px;
+            Muted {
+                text: @tr("Remove this account from TwitchMiner?");
+                vertical-alignment: center;
+            }
+            VerticalLayout {
+                alignment: center;
+                Button {
+                    kind: ButtonKind.danger;
+                    compact: true;
+                    text: @tr("Remove");
+                    clicked => {
+                        root.confirm = false;
+                        Bridge.remove-account(root.account.id);
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Button {
+                    kind: ButtonKind.ghost;
+                    compact: true;
+                    text: @tr("Cancel");
+                    clicked => { root.confirm = false; }
+                }
+            }
+        }
+    }
+}
+
+export component SettingsScreen inherits Page {
+    title: @tr("Settings");
+    property <bool> advanced;
+
+    Card {
+        Text {
+            text: @tr("Appearance");
+            font-size: Theme.font-l;
+            font-weight: 700;
+            color: Theme.text;
+        }
+        SettingRow {
+            label: @tr("Theme");
+            help: @tr("OLED uses pure black, to save battery on OLED screens.");
+            Segmented {
+                width: 260px;
+                items: [
+                    { label: @tr("Dark") },
+                    { label: @tr("Light") },
+                    { label: @tr("OLED") },
+                ];
+                selected: Theme.mode == ThemeMode.light ? 1 : Theme.mode == ThemeMode.oled ? 2 : 0;
+                picked(i) => {
+                    Theme.mode = i == 1 ? ThemeMode.light : i == 2 ? ThemeMode.oled : ThemeMode.dark;
+                    Bridge.theme-changed(i);
+                }
+            }
+        }
+    }
+
+    Card {
+        HorizontalLayout {
+            Text {
+                text: @tr("Accounts");
+                font-size: Theme.font-l;
+                font-weight: 700;
+                color: Theme.text;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            Button {
+                compact: true;
+                icon: Icons.plus;
+                text: @tr("Add an account");
+                busy: Bridge.login-busy;
+                clicked => {
+                    Bridge.login-start();
+                    Bridge.screen = Screen.home;
+                }
+            }
+        }
+        if Bridge.accounts.length == 0: Muted {
+            text: @tr("No account yet.");
+        }
+        for acc in Bridge.accounts: AccountRow {
+            account: acc;
+        }
+    }
+
+    // Advanced, folded by default.
+    Rectangle {
+        height: 36px;
+        accessible-role: button;
+        accessible-label: @tr("Advanced");
+        accessible-expandable: true;
+        accessible-expanded: root.advanced;
+        accessible-action-default => { root.advanced = !root.advanced; }
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            Icon {
+                source: root.advanced ? Icons.chevron-down : Icons.chevron-right;
+                size: 16px;
+            }
+            Text {
+                text: @tr("Advanced");
+                color: Theme.text-muted;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+        }
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.advanced = !root.advanced; }
+        }
+    }
+
+    if root.advanced: Card {
+        Text {
+            text: @tr("Engine");
+            font-size: Theme.font-l;
+            font-weight: 700;
+            color: Theme.text;
+        }
+        SettingRow {
+            label: Bridge.link == LinkState.local ? @tr("On this computer") : @tr("Remote server");
+            help: Bridge.link == LinkState.local
+                ? @tr("The engine runs inside this application.")
+                : Bridge.link-detail;
+            Button {
+                compact: true;
+                icon: Icons.server;
+                text: @tr("Change…");
+                clicked => { Bridge.show-setup(); }
+            }
+        }
+    }
+
+    Muted {
+        text: "TwitchMiner " + Bridge.version + " · " + @tr("manifest revision {}", Bridge.manifest-revision);
+        color: Theme.text-faint;
+    }
+}

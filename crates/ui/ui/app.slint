@@ -1,0 +1,371 @@
+import { Palette } from "std-widgets.slint";
+import { Theme, ThemeMode } from "theme.slint";
+import { Bridge, Conn, LinkState, Screen, AccountItem, ToastItem, ToastKind } from "bridge.slint";
+import { Avatar, Dot, Icon, IconButton, Icons, Muted, Tone, Tones } from "widgets.slint";
+import { HomeScreen } from "screens/home.slint";
+import { SettingsScreen } from "screens/settings.slint";
+import { ConnectScreen } from "screens/connect.slint";
+import { PlaceholderScreen } from "screens/placeholder.slint";
+
+export { Bridge, Theme, ThemeMode }
+
+component NavItem inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <Screen> target;
+    in property <int> badge;
+    property <bool> active: Bridge.screen == target;
+    height: 38px;
+    border-radius: Theme.radius-m;
+    background: active ? Theme.accent-soft : touch.has-hover ? Theme.inset : transparent;
+    accessible-role: tab;
+    accessible-label: label;
+    accessible-item-selected: active;
+    accessible-action-default => { Bridge.screen = root.target; }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 10px;
+        spacing: 11px;
+        Icon {
+            source: root.icon;
+            colorize: root.active ? Theme.accent : Theme.text-muted;
+        }
+        Text {
+            text: root.label;
+            color: root.active ? Theme.text : Theme.text-muted;
+            font-weight: root.active ? 600 : 400;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        if root.badge > 0: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: max(18px, badge-text.preferred-width + 10px);
+                height: 18px;
+                border-radius: 9px;
+                background: Theme.accent-strong;
+                badge-text := Text {
+                    text: root.badge;
+                    color: Theme.on-accent;
+                    font-size: Theme.font-xs;
+                    font-weight: 700;
+                }
+            }
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Bridge.screen = root.target; }
+    }
+}
+
+component LinkIndicator inherits Rectangle {
+    height: 40px;
+    border-radius: Theme.radius-m;
+    background: touch.has-hover ? Theme.inset : transparent;
+    property <color> dot: Bridge.link == LinkState.local || Bridge.link == LinkState.connected ? Theme.success
+        : Bridge.link == LinkState.connecting ? Theme.warning : Theme.danger;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 10px;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Dot {
+                tint: root.dot;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 1px;
+            Text {
+                text: Bridge.link == LinkState.local ? @tr("Engine on this PC")
+                    : Bridge.link == LinkState.connected ? @tr("Remote engine")
+                    : Bridge.link == LinkState.connecting ? @tr("Connecting…") : @tr("Remote engine unreachable");
+                font-size: Theme.font-s;
+                color: Theme.text-muted;
+                overflow: elide;
+            }
+            if Bridge.link != LinkState.local: Text {
+                text: Bridge.link-detail;
+                font-size: Theme.font-xs;
+                color: Theme.text-faint;
+                overflow: elide;
+            }
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Bridge.screen = Screen.settings; }
+    }
+}
+
+// Shown when several accounts exist: filters the four screens.
+component AccountPicker inherits Rectangle {
+    height: 44px;
+    border-radius: Theme.radius-m;
+    background: touch.has-hover ? Theme.inset : transparent;
+    border-width: 1px;
+    border-color: Theme.border;
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 8px;
+        for acc in Bridge.accounts: VerticalLayout {
+            alignment: center;
+            if acc.id == Bridge.account: HorizontalLayout {
+                spacing: 8px;
+                Avatar {
+                    source: acc.avatar;
+                    initial: acc.initial;
+                    size: 26px;
+                }
+                Text {
+                    text: acc.name;
+                    color: Theme.text;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+        Icon {
+            source: Icons.chevron-down;
+            size: 14px;
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { popup.show(); }
+    }
+    popup := PopupWindow {
+        x: 0;
+        y: root.height + 4px;
+        width: root.width;
+        Rectangle {
+            background: Theme.is-light ? #ffffff : #1b1924;
+            border-radius: Theme.radius-m;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: 16px;
+            drop-shadow-color: #00000050;
+            VerticalLayout {
+                padding: 4px;
+                for acc in Bridge.accounts: Rectangle {
+                    height: 38px;
+                    border-radius: Theme.radius-s;
+                    background: t.has-hover ? Theme.inset : transparent;
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        spacing: 8px;
+                        Avatar {
+                            source: acc.avatar;
+                            initial: acc.initial;
+                            size: 24px;
+                        }
+                        Text {
+                            text: acc.name;
+                            color: Theme.text;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        if acc.id == Bridge.account: Icon {
+                            source: Icons.check;
+                            size: 14px;
+                            colorize: Theme.accent;
+                        }
+                    }
+                    t := TouchArea {
+                        clicked => { Bridge.select-account(acc.id); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component Sidebar inherits Rectangle {
+    width: 228px;
+    background: Theme.sidebar;
+    Rectangle {
+        x: parent.width - 1px;
+        width: 1px;
+        background: Theme.border;
+    }
+    VerticalLayout {
+        padding: 14px;
+        padding-top: 18px;
+        spacing: 4px;
+        HorizontalLayout {
+            padding-left: 6px;
+            padding-bottom: 14px;
+            spacing: 10px;
+            Image {
+                source: Icons.logo;
+                width: 28px;
+                height: 28px;
+            }
+            Text {
+                text: "TwitchMiner";
+                font-size: Theme.font-l;
+                font-weight: 700;
+                color: Theme.text;
+                vertical-alignment: center;
+            }
+        }
+        if Bridge.accounts.length > 1: AccountPicker { }
+        NavItem {
+            icon: Icons.home;
+            label: @tr("Home");
+            target: Screen.home;
+            badge: Bridge.todo-count;
+        }
+        NavItem {
+            icon: Icons.gift;
+            label: @tr("Drops");
+            target: Screen.drops;
+        }
+        NavItem {
+            icon: Icons.tv;
+            label: @tr("Channels");
+            target: Screen.channels;
+        }
+        NavItem {
+            icon: Icons.chart;
+            label: @tr("Activity");
+            target: Screen.activity;
+        }
+        Rectangle {
+            vertical-stretch: 1;
+        }
+        NavItem {
+            icon: Icons.settings;
+            label: @tr("Settings");
+            target: Screen.settings;
+        }
+        Rectangle {
+            height: 1px;
+            background: Theme.border;
+        }
+        LinkIndicator { }
+    }
+}
+
+component Toasts inherits VerticalLayout {
+    spacing: 8px;
+    alignment: end;
+    for toast in Bridge.toasts: Rectangle {
+        border-radius: Theme.radius-m;
+        background: Theme.is-light ? #ffffff : #1d1b26;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        drop-shadow-blur: 18px;
+        drop-shadow-color: #00000055;
+        HorizontalLayout {
+            padding: 12px;
+            padding-right: 6px;
+            spacing: 10px;
+            Rectangle {
+                width: 4px;
+                border-radius: 2px;
+                background: Tones.fg(toast.tone);
+            }
+            Text {
+                text: toast.kind == ToastKind.error ? @tr("Action failed: {}", toast.detail)
+                    : toast.kind == ToastKind.login-ok ? @tr("{} is connected. Mining starts.", toast.detail) : toast.detail;
+                color: Theme.text;
+                wrap: word-wrap;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: Icons.x;
+                    size: 24px;
+                    clicked => { Bridge.dismiss-toast(toast.id); }
+                }
+            }
+        }
+    }
+}
+
+component Starting inherits Rectangle {
+    VerticalLayout {
+        alignment: center;
+        spacing: 14px;
+        HorizontalLayout {
+            alignment: center;
+            Image {
+                source: Icons.logo;
+                width: 56px;
+                height: 56px;
+            }
+        }
+        HorizontalLayout {
+            alignment: center;
+            Muted {
+                text: @tr("Starting the engine…");
+                font-size: Theme.font-m;
+            }
+        }
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "TwitchMiner";
+    icon: Icons.logo;
+    preferred-width: 1180px;
+    preferred-height: 760px;
+    min-width: 820px;
+    min-height: 540px;
+    background: Theme.bg;
+    default-font-size: Theme.font-m;
+
+    property <bool> light: Theme.is-light;
+    init => { Palette.color-scheme = Theme.is-light ? ColorScheme.light : ColorScheme.dark; }
+    changed light => { Palette.color-scheme = Theme.is-light ? ColorScheme.light : ColorScheme.dark; }
+
+    Rectangle {
+        x: -260px;
+        y: -320px;
+        width: 820px;
+        height: 820px;
+        background: Theme.bg-glow;
+    }
+
+    if Bridge.conn == Conn.starting: Starting { }
+    if Bridge.conn == Conn.setup: ConnectScreen { }
+    if Bridge.conn == Conn.ready: HorizontalLayout {
+        Sidebar { }
+        Rectangle {
+            horizontal-stretch: 1;
+            if Bridge.screen == Screen.home: HomeScreen { }
+            if Bridge.screen == Screen.drops: PlaceholderScreen {
+                title: @tr("Drops");
+                question: @tr("What, in which order, and why?");
+                icon: Icons.gift;
+            }
+            if Bridge.screen == Screen.channels: PlaceholderScreen {
+                title: @tr("Channels");
+                question: @tr("Where am I with channel points?");
+                icon: Icons.tv;
+            }
+            if Bridge.screen == Screen.activity: PlaceholderScreen {
+                title: @tr("Activity");
+                question: @tr("What did it bring in?");
+                icon: Icons.chart;
+            }
+            if Bridge.screen == Screen.settings: SettingsScreen { }
+        }
+    }
+
+    Toasts {
+        x: parent.width - self.width - 20px;
+        y: parent.height - self.height - 20px;
+        width: 360px;
+    }
+}

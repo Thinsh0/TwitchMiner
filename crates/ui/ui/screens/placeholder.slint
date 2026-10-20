@@ -1,0 +1,25 @@
+import { Theme } from "../theme.slint";
+import { Card, Icon, Muted, Page } from "../widgets.slint";
+
+// Temporary content for screens that are not built yet.
+export component PlaceholderScreen inherits Page {
+    in property <image> icon;
+    in property <string> question;
+    subtitle: question;
+    Card {
+        inner-padding: 28px;
+        HorizontalLayout {
+            spacing: 12px;
+            alignment: start;
+            Icon {
+                source: root.icon;
+                size: 22px;
+            }
+            Muted {
+                text: @tr("This screen is coming in a next step.");
+                font-size: Theme.font-m;
+                vertical-alignment: center;
+            }
+        }
+    }
+}

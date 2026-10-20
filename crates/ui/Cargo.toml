@@ -1,0 +1,23 @@
+[package]
+name = "tm-ui"
+description = "Native TwitchMiner interface (Slint), shared by the desktop and Android launchers"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+tm-app.workspace = true
+tm-client.workspace = true
+tm-core.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+# unstable-winit-030: window attributes (open without stealing the focus).
+slint = { workspace = true, features = ["unstable-winit-030"] }
+open.workspace = true
+
+[build-dependencies]
+slint-build.workspace = true

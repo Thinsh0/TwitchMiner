@@ -1,0 +1,56 @@
+import { Palette } from "std-widgets.slint";
+
+export enum ThemeMode { dark, light, oled }
+
+// Design tokens. Every colour of the interface comes from here.
+export global Theme {
+    in-out property <ThemeMode> mode: ThemeMode.dark;
+    out property <bool> is-light: mode == ThemeMode.light;
+
+    // Surfaces
+    out property <color> bg: mode == ThemeMode.light ? #f5f4f9 : mode == ThemeMode.oled ? #000000 : #0c0b12;
+    out property <brush> bg-glow: mode == ThemeMode.light ? @radial-gradient(circle, #7c4dff1c 0%, #7c4dff00 70%)
+        : mode == ThemeMode.oled ? transparent : @radial-gradient(circle, #9b6bff26 0%, #9b6bff00 70%);
+    out property <color> sidebar: mode == ThemeMode.light ? #ffffffb3 : mode == ThemeMode.oled ? #000000 : #ffffff05;
+    out property <color> card: mode == ThemeMode.light ? #ffffffcc : mode == ThemeMode.oled ? #ffffff0a : #ffffff0b;
+    out property <color> card-hover: mode == ThemeMode.light ? #ffffff : mode == ThemeMode.oled ? #ffffff12 : #ffffff12;
+    out property <color> inset: mode == ThemeMode.light ? #1a10330a : #ffffff08;
+    out property <color> border: mode == ThemeMode.light ? #1a103314 : mode == ThemeMode.oled ? #ffffff17 : #ffffff12;
+    out property <color> border-strong: mode == ThemeMode.light ? #1a103326 : #ffffff24;
+
+    // Text
+    out property <color> text: mode == ThemeMode.light ? #17141f : #eceaf3;
+    out property <color> text-muted: mode == ThemeMode.light ? #5c5769 : #a19dae;
+    out property <color> text-faint: mode == ThemeMode.light ? #8a8596 : #6f6b7c;
+
+    // Accent (violet) and semantic colours
+    out property <color> accent: mode == ThemeMode.light ? #7444f0 : #a07bff;
+    out property <color> accent-strong: mode == ThemeMode.light ? #6232e0 : #8b5cf6;
+    out property <color> accent-soft: mode == ThemeMode.light ? #7444f01a : #a07bff24;
+    out property <color> on-accent: #ffffff;
+    out property <color> success: mode == ThemeMode.light ? #12965c : #3ddc91;
+    out property <color> success-soft: mode == ThemeMode.light ? #12965c1a : #3ddc911f;
+    out property <color> warning: mode == ThemeMode.light ? #b86e00 : #f6b84b;
+    out property <color> warning-soft: mode == ThemeMode.light ? #b86e001a : #f6b84b1f;
+    out property <color> danger: mode == ThemeMode.light ? #d0303c : #f4676f;
+    out property <color> danger-soft: mode == ThemeMode.light ? #d0303c1a : #f4676f1f;
+    out property <color> info: mode == ThemeMode.light ? #2a6fd6 : #6cb4ff;
+    out property <color> info-soft: mode == ThemeMode.light ? #2a6fd61a : #6cb4ff1f;
+    out property <color> live: #eb0400;
+
+    // Metrics
+    out property <length> radius-s: 6px;
+    out property <length> radius-m: 10px;
+    out property <length> radius-l: 14px;
+    out property <length> gap: 12px;
+    out property <length> pad: 16px;
+
+    // Type scale
+    out property <length> font-xs: 11px;
+    out property <length> font-s: 12px;
+    out property <length> font-m: 14px;
+    out property <length> font-l: 16px;
+    out property <length> font-xl: 20px;
+    out property <length> font-xxl: 28px;
+}
+

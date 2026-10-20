@@ -75,8 +75,10 @@ impl TimedDrop {
     pub fn is_complete(&self) -> bool {
         self.required_minutes > 0 && self.current_minutes >= self.required_minutes
     }
+    /// Twitch only hands out a `dropInstanceID` once the drop is earned, so its
+    /// presence is enough (minute counters can lag behind).
     pub fn can_claim(&self) -> bool {
-        !self.claimed && self.claim_id.is_some() && self.is_complete()
+        !self.claimed && self.claim_id.is_some()
     }
 }
 

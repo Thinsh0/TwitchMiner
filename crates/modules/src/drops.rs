@@ -767,6 +767,17 @@ impl Runtime {
 
     async fn claim_all(&mut self, ctx: &ModuleContext) -> Vec<String> {
         let mut done = Vec::new();
+        // Completed drops without an instance id: use the id format Twitch accepts.
+        let user = ctx.account_id().to_string();
+        for c in self.campaigns.values_mut() {
+            for d in c
+                .drops
+                .iter_mut()
+                .filter(|d| !d.claimed && d.claim_id.is_none() && d.is_complete())
+            {
+                d.claim_id = Some(format!("{user}#{}#{}", c.id, d.id));
+            }
+        }
         let claimable: Vec<(String, String, String, String, String)> = self
             .campaigns
             .values()

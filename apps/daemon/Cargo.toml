@@ -1,0 +1,24 @@
+[package]
+name = "twitchminer"
+description = "TwitchMiner headless daemon and command-line client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "twitchminer"
+path = "src/main.rs"
+
+[dependencies]
+tm-core.workspace = true
+tm-modules.workspace = true
+tm-server.workspace = true
+tm-twitch.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+reqwest.workspace = true

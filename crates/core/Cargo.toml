@@ -1,0 +1,28 @@
+[package]
+name = "tm-core"
+description = "TwitchMiner engine: single state store, persistence, scheduling, module runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+tm-twitch.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
+anyhow.workspace = true
+futures-util.workspace = true
+parking_lot.workspace = true
+arc-swap.workspace = true
+rusqlite.workspace = true
+directories.workspace = true
+rand.workspace = true

@@ -46,7 +46,7 @@ async fn main() -> anyhow_like::Result {
         .nth(1)
         .unwrap_or_else(|| "zackrawrr".into());
     let user = gql
-        .users_by_login(&[channel.clone()])
+        .users_by_login(std::slice::from_ref(&channel))
         .await?
         .pop()
         .flatten()
@@ -62,7 +62,7 @@ async fn main() -> anyhow_like::Result {
     );
     let ctx = gql.channel_points_context(&channel).await?;
     println!("points ctx: {ctx:?}");
-    let drops = gql.available_drops(&[user.id.clone()]).await?;
+    let drops = gql.available_drops(std::slice::from_ref(&user.id)).await?;
     println!(
         "available drops campaigns: {:?}",
         drops[0].iter().map(|c| &c.name).collect::<Vec<_>>()

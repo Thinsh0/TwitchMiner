@@ -14,7 +14,14 @@ pub fn client_config() -> Arc<ClientConfig> {
     CONFIG.get_or_init(|| Arc::new(build())).clone()
 }
 
+/// Installs `ring` as the process-wide rustls provider so that any TLS client
+/// (including ones built outside this crate) works. Idempotent.
+pub fn install_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 fn build() -> ClientConfig {
+    install_crypto_provider();
     let mut roots = RootCertStore::empty();
     roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let native = rustls_native_certs::load_native_certs();

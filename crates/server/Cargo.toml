@@ -1,0 +1,17 @@
+[package]
+name = "tm-server"
+description = "Local HTTP + WebSocket API exposing the TwitchMiner engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+tm-core.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
+axum.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+rand.workspace = true

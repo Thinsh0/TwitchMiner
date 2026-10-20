@@ -283,14 +283,14 @@ impl Gql {
             let mut last = None;
             for e in arr(&follows, "edges") {
                 last = s(e, "cursor");
-                if let Some(n) = e.get("node") {
-                    if let Some(id) = s(n, "id") {
-                        out.push(ChannelRef {
-                            id,
-                            login: s(n, "login"),
-                            display_name: s(n, "displayName"),
-                        });
-                    }
+                if let Some(n) = e.get("node")
+                    && let Some(id) = s(n, "id")
+                {
+                    out.push(ChannelRef {
+                        id,
+                        login: s(n, "login"),
+                        display_name: s(n, "displayName"),
+                    });
                 }
             }
             let more = follows

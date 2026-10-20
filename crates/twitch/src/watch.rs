@@ -243,12 +243,11 @@ pub fn lowest_variant(master: &str) -> Option<String> {
                 .find_map(|kv| kv.strip_prefix("BANDWIDTH="))
                 .and_then(|v| v.parse().ok())
                 .or(Some(u64::MAX - 1));
-        } else if line.starts_with("http") {
-            if let Some(bw) = pending_bw.take() {
-                if best.as_ref().is_none_or(|(b, _)| bw < *b) {
-                    best = Some((bw, line.to_string()));
-                }
-            }
+        } else if line.starts_with("http")
+            && let Some(bw) = pending_bw.take()
+            && best.as_ref().is_none_or(|(b, _)| bw < *b)
+        {
+            best = Some((bw, line.to_string()));
         }
     }
     best.map(|(_, u)| u)

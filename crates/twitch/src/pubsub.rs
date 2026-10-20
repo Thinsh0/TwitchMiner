@@ -292,10 +292,10 @@ async fn session(
     let mut pending: HashMap<String, Vec<String>> = HashMap::new();
 
     let initial: Vec<String> = topics.lock().iter().cloned().collect();
-    if !initial.is_empty() {
-        if let Err(e) = send_listen(inner, &mut sink, "LISTEN", initial, &mut pending).await {
-            return Exit::Reconnect(e);
-        }
+    if !initial.is_empty()
+        && let Err(e) = send_listen(inner, &mut sink, "LISTEN", initial, &mut pending).await
+    {
+        return Exit::Reconnect(e);
     }
 
     let jitter = Duration::from_millis(rand::random::<u64>() % 30_000);

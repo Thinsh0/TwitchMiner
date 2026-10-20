@@ -87,8 +87,8 @@ impl Module for Notify {
                     let Some(call) = call else { return Ok(()) };
                     let reply = if call.name == "test" {
                         let text = format!("TwitchMiner test notification for {}", ctx.login());
-                        send_all(&http, &settings.targets, &text, &json!({"type": "test"})).await;
-                        Ok(json!({"sent": settings.targets.len()}))
+                        let errors = send_all(&http, &settings.targets, &text, &json!({"type": "test"})).await;
+                        Ok(json!({"sent": settings.targets.len() - errors.len(), "errors": errors}))
                     } else {
                         Err(format!("unknown call `{}`", call.name))
                     };
@@ -210,12 +210,22 @@ fn format_event(ctx: &ModuleContext, s: &NotifySettings, env: &Envelope) -> Opti
     Some(text)
 }
 
-async fn send_all(http: &reqwest::Client, targets: &[Target], text: &str, event: &Value) {
+/// Sends to every target; returns one error message per failed target.
+async fn send_all(
+    http: &reqwest::Client,
+    targets: &[Target],
+    text: &str,
+    event: &Value,
+) -> Vec<String> {
+    let mut errors = Vec::new();
     for t in targets {
         if let Err(e) = send(http, t, text, event).await {
-            tracing::warn!(error = %e, "notification failed");
+            let msg = format!("{e:#}");
+            tracing::warn!(error = %msg, "notification failed");
+            errors.push(msg);
         }
     }
+    errors
 }
 
 async fn send(http: &reqwest::Client, t: &Target, text: &str, event: &Value) -> anyhow::Result<()> {

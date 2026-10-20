@@ -160,7 +160,10 @@ fn add_cors(r: &mut Response) {
 /// Minimal built-in status page (uses only the public WebSocket API).
 async fn dashboard() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "text/html; charset=utf-8"), (header::CACHE_CONTROL, "no-cache")],
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
         include_str!("dashboard.html"),
     )
 }

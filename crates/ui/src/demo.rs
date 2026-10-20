@@ -57,9 +57,16 @@ impl Backend for Demo {
         Ok(match q["cmd"].as_str() {
             Some("stats") => demo_stats(&q),
             Some("history") => demo_history(&q),
+            // Schemas as published by the engine (snapshot, development only).
+            Some("modules_list") => schemas()["modules"].clone(),
+            Some("settings_get") if q["scope"] == "engine" => schemas()["engine"].clone(),
             _ => Value::Null,
         })
     }
+}
+
+fn schemas() -> Value {
+    serde_json::from_str(include_str!("demo_schemas.json")).unwrap_or_default()
 }
 
 /// Daily rows over the asked period (a deterministic wave), or totals per channel.
@@ -196,7 +203,11 @@ fn fixture(now: DateTime<Utc>) -> Value {
         "instance_id": "demo",
         "started_at": m(-95),
         "manifest_revision": 2,
-        "settings": {"account:1001/module:points": {
+        "settings": {"engine": {
+            "active_hours": [{"days": [1, 2, 3, 4, 5], "start": "18:00", "end": "02:00"},
+                             {"days": [6, 7], "start": "10:00", "end": "23:30"}]
+        }, "module:predictions": {"enabled": true, "percent": 2.5},
+        "account:1001/module:points": {
             "channels": ["rustgod", "zerator", "deadlockdev", "newchannel"],
             "exclude": ["somebot"]
         }, "module:drops": {

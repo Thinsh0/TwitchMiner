@@ -8,7 +8,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use serde_json::Value;
+use serde_json::{Value, json};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use tm_client::Backend;
 use tm_core::{ApiResult, Command, Event};
@@ -16,15 +16,22 @@ use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 
 use crate::activity;
+use crate::forms;
 use crate::prefs::{self, Prefs, RemotePrefs};
 use crate::present::{self, Input, Last, Today};
-use crate::session::{self, OpenError, Session, Target};
-use crate::{Bridge, Conn, MainWindow, SetupReason, ToastItem, ToastKind, Tone};
+use crate::session::{self, LocalInfo, OpenError, Session, Target};
+use crate::settings;
+use crate::{
+    Bridge, Conn, LogItem, MainWindow, SetupReason, ToastItem, ToastKind, Tone, UpdateInfo,
+};
 
 thread_local! {
     /// Last state seen, on the UI thread (re-rendered by the timer).
     static LAST: RefCell<Last> = RefCell::new(Last::default());
 }
+
+/// Where the local engine serves its API when the option is on (same as the daemon).
+const DEFAULT_API_BIND: &str = "127.0.0.1:7878";
 
 /// How long a toast stays on screen.
 const TOAST_TTL: Duration = Duration::from_secs(6);
@@ -40,6 +47,8 @@ struct Inner {
     session: tokio::sync::Mutex<Option<Session>>,
     watcher: Mutex<Option<JoinHandle<()>>>,
     prefs: Mutex<Prefs>,
+    /// Logs and tokens of the local engine (none with a remote one).
+    local: Mutex<Option<LocalInfo>>,
 }
 
 impl Controller {
@@ -52,6 +61,7 @@ impl Controller {
             session: tokio::sync::Mutex::new(None),
             watcher: Mutex::new(None),
             prefs: Mutex::new(prefs),
+            local: Mutex::new(None),
         }))
     }
 
@@ -186,6 +196,177 @@ impl Controller {
             }
         });
         let c = self.clone();
+        b.on_setting_toggle(move |section, path, v| c.write_setting(&section, &path, json!(v)));
+        let c = self.clone();
+        b.on_setting_text(move |section, path, text| {
+            let Some(field) = settings::field(&section, &path) else {
+                return;
+            };
+            match forms::parse(&field, &text) {
+                Ok(v) => c.write_setting(&section, &path, v),
+                Err(()) => {
+                    c.toast(ToastKind::Invalid, Tone::Warning, String::new());
+                    c.on_ui(|ui| {
+                        settings::invalidate();
+                        render(ui);
+                    });
+                }
+            }
+        });
+        let c = self.clone();
+        b.on_setting_pick(move |section, path, i| {
+            let value = settings::field(&section, &path)
+                .and_then(|f| f.options.get(i.max(0) as usize).cloned());
+            if let Some(v) = value {
+                c.write_setting(&section, &path, json!(v));
+            }
+        });
+        let c = self.clone();
+        b.on_setting_list_add(move |section, path, value| {
+            let value = value.trim().to_string();
+            if value.is_empty() {
+                return;
+            }
+            c.edit_setting(&section, &path, move |v| {
+                let mut list = present::string_list(Some(v));
+                if !list.contains(&value) {
+                    list.push(value);
+                }
+                *v = json!(list);
+            })
+        });
+        let c = self.clone();
+        b.on_setting_list_remove(move |section, path, value| {
+            c.edit_setting(&section, &path, move |v| {
+                let mut list = present::string_list(Some(v));
+                list.retain(|x| x != value.as_str());
+                *v = json!(list);
+            })
+        });
+        let c = self.clone();
+        b.on_setting_reset(move |section, path| {
+            let default = forms::get(&settings::defaults(&section), &path).clone();
+            c.write_setting(&section, &path, default);
+        });
+        let c = self.clone();
+        b.on_hours_add(move || {
+            c.edit_setting("engine", "active_hours", |v| {
+                let mut list = v.as_array().cloned().unwrap_or_default();
+                list.push(json!({"days": [], "start": "18:00", "end": "02:00"}));
+                *v = json!(list);
+            })
+        });
+        let c = self.clone();
+        b.on_hours_remove(move |i| {
+            c.edit_setting("engine", "active_hours", move |v| {
+                if let Some(list) = v.as_array_mut()
+                    && (i as usize) < list.len()
+                {
+                    list.remove(i as usize);
+                }
+            })
+        });
+        let c = self.clone();
+        b.on_hours_toggle_day(move |i, day| {
+            c.edit_setting("engine", "active_hours", move |v| {
+                if let Some(list) = v.as_array_mut() {
+                    settings::toggle_day(list, i as usize, day as u64 + 1);
+                }
+            })
+        });
+        let c = self.clone();
+        b.on_hours_set(move |i, start, end| {
+            let valid = |t: &str| {
+                let Some((h, m)) = t.trim().split_once(':') else {
+                    return false;
+                };
+                matches!((h.parse::<u32>(), m.parse::<u32>()), (Ok(h), Ok(m)) if h < 24 && m < 60)
+            };
+            if !valid(&start) || !valid(&end) {
+                c.toast(ToastKind::Invalid, Tone::Warning, String::new());
+                c.on_ui(|ui| {
+                    settings::invalidate();
+                    render(ui);
+                });
+                return;
+            }
+            c.edit_setting("engine", "active_hours", move |v| {
+                if let Some(w) = v.as_array_mut().and_then(|l| l.get_mut(i as usize)) {
+                    w["start"] = json!(start.trim());
+                    w["end"] = json!(end.trim());
+                }
+            })
+        });
+        let c = self.clone();
+        b.on_logs_refresh(move || c.refresh_logs());
+        let c = self.clone();
+        b.on_set_api(move |enabled, bind| {
+            let bind = bind.trim().to_string();
+            let api = if enabled {
+                let bind = if bind.is_empty() {
+                    DEFAULT_API_BIND.to_string()
+                } else {
+                    bind
+                };
+                if bind.parse::<std::net::SocketAddr>().is_err() {
+                    c.toast(ToastKind::Invalid, Tone::Warning, String::new());
+                    return;
+                }
+                Some(bind)
+            } else {
+                None
+            };
+            c.update_prefs(|p| p.api = api);
+            c.restart_local();
+        });
+        let c = self.clone();
+        b.on_update_check(move || {
+            let me = c.clone();
+            c.run(Command::UpdateCheck, move |r| {
+                if let Ok(v) = r {
+                    let info = UpdateInfo {
+                        checked: true,
+                        available: v["update_available"].as_bool().unwrap_or_default(),
+                        latest: v["latest"].as_str().unwrap_or_default().into(),
+                        url: v["url"].as_str().unwrap_or_default().into(),
+                    };
+                    me.on_ui(move |ui| ui.global::<Bridge>().set_update_info(info));
+                }
+            })
+        });
+        let c = self.clone();
+        b.on_manifest_refresh(move || {
+            let me = c.clone();
+            c.run(Command::ManifestRefresh, move |r| {
+                if let Ok(v) = r {
+                    let detail = if v["updated"].as_bool() == Some(true) {
+                        v["revision"].to_string()
+                    } else {
+                        String::new()
+                    };
+                    me.toast(ToastKind::Manifest, Tone::Success, detail);
+                }
+            })
+        });
+        let c = self.clone();
+        b.on_backup(move || {
+            let me = c.clone();
+            c.run(Command::Backup { path: None }, move |r| {
+                if let Ok(v) = r {
+                    let path = v["path"].as_str().unwrap_or_default().to_string();
+                    me.toast(ToastKind::Backup, Tone::Success, path);
+                }
+            })
+        });
+        let c = self.clone();
+        b.on_copy_text(move |text| {
+            let copied = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text.as_str()));
+            match copied {
+                Ok(()) => c.toast(ToastKind::Copied, Tone::Success, String::new()),
+                Err(e) => c.toast(ToastKind::Error, Tone::Danger, e.to_string()),
+            }
+        });
+        let c = self.clone();
         b.on_activity_changed(move || c.load_activity(false));
         let c = self.clone();
         b.on_screen_shown(move || c.load_activity(false));
@@ -272,9 +453,31 @@ impl Controller {
             if target == Target::Local {
                 me.close().await;
             }
-            match Session::open(target.clone(), inner.data_dir.clone()).await {
+            let api = inner
+                .prefs
+                .lock()
+                .expect("prefs lock")
+                .api
+                .as_deref()
+                .and_then(|a| a.parse().ok());
+            match Session::open(target.clone(), inner.data_dir.clone(), api).await {
                 Ok(new) => {
                     let backend = new.backend.clone();
+                    let local = new.local();
+                    let (agent, full) = local
+                        .as_ref()
+                        .map(|l| (l.agent_token.clone(), l.api_token.clone()))
+                        .unwrap_or_default();
+                    *inner.local.lock().expect("local lock") = local;
+                    let is_local = target == Target::Local;
+                    let api_bind = api.map(|a| a.to_string()).unwrap_or_default();
+                    me.on_ui(move |ui| {
+                        let b = ui.global::<Bridge>();
+                        b.set_agent_token(agent.into());
+                        b.set_api_token(full.into());
+                        b.set_api_bind(api_bind.into());
+                        b.set_local_engine(is_local);
+                    });
                     let remote = match &target {
                         Target::Remote { url, token } => Some(Some(RemotePrefs {
                             url: url.clone(),
@@ -375,6 +578,8 @@ impl Controller {
                     first = false;
                     me.refresh_today();
                     me.load_activity(false);
+                    me.load_schemas(backend.clone());
+                    me.refresh_logs();
                 }
                 // Wait for the next change, handling events (toasts) in between.
                 loop {
@@ -444,6 +649,108 @@ impl Controller {
             {
                 open_url(url);
             }
+        });
+    }
+
+    /// Restarts the local engine (to apply the API option); nothing for a remote one.
+    fn restart_local(&self) {
+        let me = self.clone();
+        let inner = self.0.clone();
+        self.0.rt.spawn(async move {
+            let local = inner
+                .session
+                .lock()
+                .await
+                .as_ref()
+                .is_some_and(|s| s.target == Target::Local);
+            if local {
+                me.close().await;
+                me.open(Target::Local, false);
+            }
+        });
+    }
+
+    /// Writes one setting (`section` = module id or `engine`, dotted `path`).
+    fn write_setting(&self, section: &str, path: &str, value: Value) {
+        let me = self.clone();
+        let (section, path) = (section.to_string(), path.to_string());
+        self.on_ui(move |ui| {
+            let account = ui.global::<Bridge>().get_account().to_string();
+            let scope =
+                LAST.with(|l| settings::scope_for(&l.borrow().state, &account, &section, &path));
+            me.command(Command::SettingsSet {
+                scope,
+                value: forms::patch(&path, value),
+                merge: true,
+            });
+        });
+    }
+
+    /// Edits one setting from its effective value.
+    fn edit_setting(&self, section: &str, path: &str, f: impl FnOnce(&mut Value) + Send + 'static) {
+        let me = self.clone();
+        let (section, path) = (section.to_string(), path.to_string());
+        self.on_ui(move |ui| {
+            let account = ui.global::<Bridge>().get_account().to_string();
+            let mut value = LAST.with(|l| {
+                let eff = settings::effective(&l.borrow().state, &account, &section);
+                forms::get(&eff, &path).clone()
+            });
+            f(&mut value);
+            me.write_setting(&section, &path, value);
+        });
+    }
+
+    /// Loads the settings schemas (once per session).
+    fn load_schemas(&self, backend: Arc<dyn Backend>) {
+        let ui = self.0.ui.clone();
+        self.0.rt.spawn(async move {
+            let modules = backend.execute(Command::ModulesList).await;
+            let engine = backend
+                .execute(Command::SettingsGet {
+                    scope: "engine".into(),
+                    account: None,
+                })
+                .await;
+            if let (Ok(modules), Ok(engine)) = (modules, engine) {
+                let _ = ui.upgrade_in_event_loop(move |ui| {
+                    settings::set_schemas(&modules, &engine);
+                    render(&ui);
+                });
+            }
+        });
+    }
+
+    /// Recent lines of the local engine's log (not available for a remote engine).
+    fn refresh_logs(&self) {
+        let logs = self
+            .0
+            .local
+            .lock()
+            .expect("local lock")
+            .as_ref()
+            .map(|l| l.logs.clone());
+        self.on_ui(move |ui| {
+            let b = ui.global::<Bridge>();
+            b.set_logs_available(logs.is_some());
+            let lines: Vec<LogItem> = logs
+                .map(|l| l.recent(300))
+                .unwrap_or_default()
+                .into_iter()
+                .rev()
+                .map(|l| LogItem {
+                    time: l
+                        .ts
+                        .with_timezone(&chrono::Local)
+                        .format("%d/%m %H:%M:%S")
+                        .to_string()
+                        .into(),
+                    level: l.level.to_lowercase().into(),
+                    target: l.target.into(),
+                    message: l.message.into(),
+                })
+                .collect();
+            b.set_logs(ModelRc::new(VecModel::from(lines)));
         });
     }
 
@@ -739,6 +1046,7 @@ pub fn render(ui: &MainWindow) {
             now: chrono::Utc::now(),
         };
         present::apply(ui, &input);
+        settings::render(ui, &last.state);
     });
 }
 

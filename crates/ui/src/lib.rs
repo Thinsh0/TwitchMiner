@@ -14,10 +14,12 @@ mod activity;
 mod controller;
 mod demo;
 mod dev;
+mod forms;
 mod images;
 mod prefs;
 mod present;
 mod session;
+mod settings;
 
 use std::path::PathBuf;
 

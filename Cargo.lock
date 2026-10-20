@@ -5602,6 +5602,7 @@ name = "tm-ui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arboard",
  "async-trait",
  "chrono",
  "i-slint-backend-testing",

@@ -15,6 +15,8 @@ pub struct Prefs {
     pub language: Option<String>,
     /// Engine to reconnect to at start; `None` = local engine.
     pub remote: Option<RemotePrefs>,
+    /// Address the local engine serves its API on (`127.0.0.1:7878`); `None` = no API.
+    pub api: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

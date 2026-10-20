@@ -1,0 +1,693 @@
+{
+  "engine": {
+    "defaults": {
+      "active_hours": [],
+      "agent_enabled": false,
+      "history_retention_days": 180,
+      "manifest_auto_update": true,
+      "manifest_url": "https://raw.githubusercontent.com/Thinsh0/TwitchMiner/HEAD/manifest/twitch.json",
+      "max_watch_slots": 2,
+      "paused": false,
+      "peers": [],
+      "proxy": null,
+      "releases_url": "https://api.github.com/repos/Thinsh0/TwitchMiner/releases/latest",
+      "role": "primary",
+      "update_check": true
+    },
+    "effective": {
+      "active_hours": [],
+      "agent_enabled": false,
+      "history_retention_days": 180,
+      "manifest_auto_update": true,
+      "manifest_url": "https://raw.githubusercontent.com/Thinsh0/TwitchMiner/HEAD/manifest/twitch.json",
+      "max_watch_slots": 2,
+      "paused": false,
+      "peers": [],
+      "proxy": null,
+      "releases_url": "https://api.github.com/repos/Thinsh0/TwitchMiner/releases/latest",
+      "role": "primary",
+      "update_check": true
+    },
+    "raw": null,
+    "schema": {
+      "$defs": {
+        "Peer": {
+          "properties": {
+            "name": {
+              "default": null,
+              "description": "Display name (defaults to the URL).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "token": {
+              "default": null,
+              "description": "The peer's API token (`twitchminer api-token` on that machine).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "url": {
+              "description": "Base URL of the peer's API, e.g. `http://100.64.0.2:7878`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "type": "object"
+        },
+        "Role": {
+          "enum": [
+            "primary",
+            "secondary"
+          ],
+          "type": "string"
+        },
+        "TimeWindow": {
+          "description": "A daily time window in local time. `end` before `start` spans midnight.",
+          "properties": {
+            "days": {
+              "default": [],
+              "description": "ISO weekdays (1 = Monday … 7 = Sunday) on which the window *starts*; empty = every day.",
+              "items": {
+                "format": "uint8",
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "end": {
+              "description": "`HH:MM`",
+              "type": "string"
+            },
+            "start": {
+              "description": "`HH:MM`",
+              "type": "string"
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "active_hours": {
+          "default": [],
+          "description": "When non-empty, watching only happens inside these local-time windows.",
+          "items": {
+            "$ref": "#/$defs/TimeWindow"
+          },
+          "type": "array"
+        },
+        "agent_enabled": {
+          "default": false,
+          "description": "AI agent access: the MCP endpoint and the agent token. Off = both refused.",
+          "type": "boolean"
+        },
+        "history_retention_days": {
+          "default": 180,
+          "description": "History rows older than this are deleted (statistics are kept forever).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "manifest_auto_update": {
+          "default": true,
+          "type": "boolean"
+        },
+        "manifest_url": {
+          "default": "https://raw.githubusercontent.com/Thinsh0/TwitchMiner/HEAD/manifest/twitch.json",
+          "description": "Where to look for manifest updates (GQL hashes, client ids).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_watch_slots": {
+          "default": 2,
+          "description": "Channels watched at the same time per account (Twitch credits at most 2).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "paused": {
+          "default": false,
+          "description": "Global pause: nothing is watched (modules keep tracking and claiming).",
+          "type": "boolean"
+        },
+        "peers": {
+          "default": [],
+          "description": "Other TwitchMiner instances (e.g. a home server reachable through Tailscale).",
+          "items": {
+            "$ref": "#/$defs/Peer"
+          },
+          "type": "array"
+        },
+        "proxy": {
+          "default": null,
+          "description": "HTTP proxy for every connection (`http://user:pass@host:port`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "releases_url": {
+          "default": "https://api.github.com/repos/Thinsh0/TwitchMiner/releases/latest",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/Role",
+          "default": "primary",
+          "description": "`secondary` instances leave an account to any reachable peer already mining it\n(and take over when that peer goes away). `primary` instances only warn."
+        },
+        "update_check": {
+          "default": true,
+          "description": "Check GitHub releases for a newer version of the application.",
+          "type": "boolean"
+        }
+      },
+      "title": "EngineSettings",
+      "type": "object"
+    },
+    "scope": "engine"
+  },
+  "modules": [
+    {
+      "default_settings": {
+        "alerts": {
+          "at_risk": true,
+          "new_campaign": true,
+          "not_linked": true,
+          "will_miss": true
+        },
+        "auto_claim": true,
+        "badges_emotes": true,
+        "discovery_channels": 8,
+        "enabled": true,
+        "exclude_games": [],
+        "fill_partial": true,
+        "games": [],
+        "refresh_minutes": 60,
+        "require_linked": true,
+        "restricted_max_channels": 50,
+        "safety_factor": 1.25,
+        "safety_minutes": 120,
+        "wanted_rewards": []
+      },
+      "description": "Finds drop campaigns, watches eligible streams and claims rewards automatically.",
+      "id": "drops",
+      "name": "Drops",
+      "settings_schema": {
+        "$defs": {
+          "AlertSettings": {
+            "properties": {
+              "at_risk": {
+                "default": true,
+                "type": "boolean"
+              },
+              "new_campaign": {
+                "default": true,
+                "type": "boolean"
+              },
+              "not_linked": {
+                "default": true,
+                "type": "boolean"
+              },
+              "will_miss": {
+                "default": true,
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "alerts": {
+            "$ref": "#/$defs/AlertSettings",
+            "default": {
+              "at_risk": true,
+              "new_campaign": true,
+              "not_linked": true,
+              "will_miss": true
+            },
+            "description": "Alerts (event `drop_alert`) for campaigns of the `games` list."
+          },
+          "auto_claim": {
+            "default": true,
+            "type": "boolean"
+          },
+          "badges_emotes": {
+            "default": true,
+            "description": "Farm badge/emote-only campaigns (they need no game account link).",
+            "type": "boolean"
+          },
+          "discovery_channels": {
+            "default": 8,
+            "description": "Channels sampled per game when looking for campaigns without the dashboard.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "enabled": {
+            "default": true,
+            "type": "boolean"
+          },
+          "exclude_games": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "fill_partial": {
+            "default": true,
+            "description": "Spend spare time on campaigns that cannot be completed (their first rewards).",
+            "type": "boolean"
+          },
+          "games": {
+            "default": [],
+            "description": "Wanted games in priority order (names, case-insensitive). Empty = every eligible game.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "refresh_minutes": {
+            "default": 60,
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "require_linked": {
+            "default": true,
+            "description": "Skip campaigns whose game account is known not to be linked.",
+            "type": "boolean"
+          },
+          "restricted_max_channels": {
+            "default": 50,
+            "description": "Campaigns limited to fewer channels than this (esports…) are farmed first\nwhenever one of their channels is live.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "safety_factor": {
+            "default": 1.25,
+            "description": "A campaign is \"at risk\" when `needed × safety_factor + safety_minutes` does not fit\nbefore it ends. The margin never excludes a campaign.",
+            "format": "double",
+            "type": "number"
+          },
+          "safety_minutes": {
+            "default": 120,
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "wanted_rewards": {
+            "default": [],
+            "description": "Wanted rewards (part of the reward name, case-insensitive). In a campaign that\nhas one, the objective stops at it; other campaigns are farmed to their last reward.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "title": "DropsSettings",
+        "type": "object"
+      }
+    },
+    {
+      "default_settings": {
+        "channels": [],
+        "claim_bonus": true,
+        "claim_moments": true,
+        "enabled": true,
+        "exclude": [],
+        "follows": true,
+        "join_raids": true,
+        "order_by": "config",
+        "refresh_minutes": 5,
+        "watch_streak": true
+      },
+      "description": "Watches your channels to earn channel points, claims bonus chests, joins raids, claims moments and keeps watch streaks.",
+      "id": "points",
+      "name": "Channel points",
+      "settings_schema": {
+        "$defs": {
+          "OrderBy": {
+            "oneOf": [
+              {
+                "const": "config",
+                "description": "`channels` order, then followed channels.",
+                "type": "string"
+              },
+              {
+                "const": "multiplier",
+                "description": "Highest points multiplier first (subscriptions earn more), then config order.",
+                "type": "string"
+              },
+              {
+                "const": "fewest_points",
+                "description": "Channels where you have the fewest points first.",
+                "type": "string"
+              },
+              {
+                "const": "most_points",
+                "description": "Channels where you have the most points first.",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "channels": {
+            "default": [],
+            "description": "Channel logins, highest priority first.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "claim_bonus": {
+            "default": true,
+            "type": "boolean"
+          },
+          "claim_moments": {
+            "default": true,
+            "type": "boolean"
+          },
+          "enabled": {
+            "default": true,
+            "type": "boolean"
+          },
+          "exclude": {
+            "default": [],
+            "description": "Logins never farmed (useful with `follows`).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "follows": {
+            "default": true,
+            "description": "Also farm followed channels (after `channels`).",
+            "type": "boolean"
+          },
+          "join_raids": {
+            "default": true,
+            "type": "boolean"
+          },
+          "order_by": {
+            "$ref": "#/$defs/OrderBy",
+            "default": "config",
+            "description": "How to rank channels competing for the watch slots (after streaks)."
+          },
+          "refresh_minutes": {
+            "default": 5,
+            "description": "Online-status polling interval (PubSub covers most changes in real time).",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "watch_streak": {
+            "default": true,
+            "description": "Prioritise channels whose watch streak is not secured yet for the current stream.",
+            "type": "boolean"
+          }
+        },
+        "title": "PointsSettings",
+        "type": "object"
+      }
+    },
+    {
+      "default_settings": {
+        "channels": [],
+        "enabled": false,
+        "max_points": 50000,
+        "min_balance": 2000,
+        "min_voters": 20,
+        "percent": 5.0,
+        "seconds_before_close": 6,
+        "strategy": "smart"
+      },
+      "description": "Bets a share of your channel points on predictions using a configurable strategy.",
+      "id": "predictions",
+      "name": "Predictions",
+      "settings_schema": {
+        "$defs": {
+          "Strategy": {
+            "oneOf": [
+              {
+                "const": "most_voted",
+                "description": "Outcome chosen by most users.",
+                "type": "string"
+              },
+              {
+                "const": "most_points",
+                "description": "Outcome with the most points on it.",
+                "type": "string"
+              },
+              {
+                "const": "high_odds",
+                "description": "Outcome with the best payout (fewest points on it).",
+                "type": "string"
+              },
+              {
+                "const": "smart",
+                "description": "Most voted, unless the vote is close: then the best payout.",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "channels": {
+            "default": [],
+            "description": "Logins to bet on; empty = every tracked channel.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "enabled": {
+            "default": false,
+            "type": "boolean"
+          },
+          "max_points": {
+            "default": 50000,
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "min_balance": {
+            "default": 2000,
+            "description": "Never bet when the balance is below this.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "min_voters": {
+            "default": 20,
+            "description": "Skip predictions with fewer participants than this when betting.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "percent": {
+            "default": 5.0,
+            "description": "Percentage of the channel balance to bet.",
+            "format": "double",
+            "type": "number"
+          },
+          "seconds_before_close": {
+            "default": 6,
+            "description": "Bet this many seconds before the prediction window closes.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "strategy": {
+            "$ref": "#/$defs/Strategy",
+            "default": "smart"
+          }
+        },
+        "title": "PredictionSettings",
+        "type": "object"
+      }
+    },
+    {
+      "default_settings": {
+        "enabled": true,
+        "events": [
+          "drop_claimed",
+          "drop_alert",
+          "auth_required",
+          "prediction_result",
+          "notice_raised"
+        ],
+        "language": "fr",
+        "min_points": 0,
+        "targets": []
+      },
+      "description": "Sends drops, login problems and other events to Discord, ntfy, Telegram or a webhook.",
+      "id": "notify",
+      "name": "Notifications",
+      "settings_schema": {
+        "$defs": {
+          "Language": {
+            "enum": [
+              "fr",
+              "en"
+            ],
+            "type": "string"
+          },
+          "Target": {
+            "oneOf": [
+              {
+                "properties": {
+                  "kind": {
+                    "const": "discord",
+                    "type": "string"
+                  },
+                  "webhook_url": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "webhook_url"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "ntfy",
+                    "type": "string"
+                  },
+                  "token": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "url"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "bot_token": {
+                    "type": "string"
+                  },
+                  "chat_id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "telegram",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "bot_token",
+                  "chat_id"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "POSTs `{ \"text\": …, \"event\": <envelope> }`. Also the way to wake an AI agent.",
+                "properties": {
+                  "headers": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "default": {},
+                    "type": "object"
+                  },
+                  "kind": {
+                    "const": "webhook",
+                    "type": "string"
+                  },
+                  "token": {
+                    "default": null,
+                    "description": "Sent as `Authorization: Bearer <token>`.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "url"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "enabled": {
+            "default": true,
+            "type": "boolean"
+          },
+          "events": {
+            "default": [
+              "drop_claimed",
+              "drop_alert",
+              "auth_required",
+              "prediction_result",
+              "notice_raised"
+            ],
+            "description": "Event kinds to send. See `Event::kind()`; `auth_required` is a shortcut for\naccount status changes that need a new login.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "language": {
+            "$ref": "#/$defs/Language",
+            "default": "fr"
+          },
+          "min_points": {
+            "default": 0,
+            "description": "Only notify points gains of at least this amount (for `points_earned`).",
+            "format": "int64",
+            "type": "integer"
+          },
+          "targets": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Target"
+            },
+            "type": "array"
+          }
+        },
+        "title": "NotifySettings",
+        "type": "object"
+      }
+    }
+  ]
+}

@@ -26,4 +26,26 @@ Points trouvés côté moteur (`tm-core`, `tm-app`, modules) pendant le dévelop
 - son `LogBuffer` ne reçoit rien : les journaux affichés dans l'interface sont vides ;
 - l'écrivain de fichier du premier abonné a été arrêté avec le premier `App` (son `WorkerGuard` est détruit) : plus rien n'est écrit dans `logs/` jusqu'au redémarrage du processus.
 
+Ce cas arrive aussi quand on active ou change l'option « Accès à distance (API) » des Réglages avancés : l'interface redémarre le moteur local pour l'appliquer.
+
 **Proposition** : initialiser le journal une seule fois par processus (`OnceLock`) et partager le même `LogBuffer` entre les `App` successifs.
+
+## 4. `App::start` laisse le moteur tourner si le port de l'API est pris
+
+Dans `crates/app/src/lib.rs`, `App::start` démarre le moteur (`Engine::start`, qui prend le verrou du dossier de données et lance les comptes) **avant** d'ouvrir le port de l'API (`TcpListener::bind(...).await?`). Si le port est déjà utilisé (daemon lancé, autre programme), `App::start` renvoie une erreur, mais le moteur déjà démarré n'est jamais arrêté (`engine.shutdown()` n'est pas appelé) : ses tâches continuent et le verrou du dossier peut rester pris jusqu'à la fin du processus.
+
+Côté interface : l'option « Accès réseau (API) » des Réglages avancés peut déclencher ce cas. L'erreur s'affiche, mais un nouvel essai en local peut ensuite échouer avec « dossier déjà utilisé ».
+
+**Proposition** : ouvrir le port avant `Engine::start`, ou appeler `engine.shutdown().await` avant de renvoyer l'erreur.
+
+## 5. Pas de journaux pour un moteur distant
+
+`tm_client::Backend` n'expose que l'état, les événements, le lien et `execute`. Le serveur a pourtant `GET /api/v1/logs` et le flux WebSocket `?logs=1`, mais `tm_client::Remote` ne s'en sert pas. Les Réglages avancés n'affichent donc le journal que pour un moteur local ; en distant, ils renvoient vers la machine du moteur.
+
+**Proposition** : ajouter à `Backend` une méthode `logs(n) -> Vec<LogLine>` (et éventuellement un flux), implémentée par `Local` (le `LogBuffer` de l'`App`) et par `Remote` (`GET /api/v1/logs`, ou le WebSocket avec `?logs=1`).
+
+## 6. Descriptions des réglages en anglais uniquement
+
+Les JSON Schema (`settings_schema`, `settings_get(...).schema`) tirent leurs `description` des commentaires Rust, en anglais. L'interface a ses propres libellés et aides en français pour les réglages qu'elle connaît. Pour un module ajouté plus tard, elle affiche le nom de la clé et la description anglaise.
+
+**Proposition** : permettre aux modules de fournir des libellés traduits, par exemple un champ `title` par réglage (`#[schemars(title = "…")]`) et un dictionnaire de traductions publié avec `modules_list` (`{"fr": {"refresh_minutes": {"title", "description"}}}`).

@@ -1,6 +1,9 @@
+import { AboutSlint } from "std-widgets.slint";
 import { Theme, ThemeMode } from "../theme.slint";
-import { Bridge, AccountItem, LinkState, Screen } from "../bridge.slint";
-import { Avatar, Button, ButtonKind, Card, Icon, IconButton, Icons, Muted, Page, Pill, Segmented, SegmentItem, Toggle, Tone } from "../widgets.slint";
+import { Bridge, AccountItem, FieldItem, LinkState, Screen, HourWindow } from "../bridge.slint";
+import { Avatar, Button, ButtonKind, Card, Icon, IconButton, Icons, Muted, Page, Pill, Segmented, SegmentItem, TextField, Toggle, Tone } from "../widgets.slint";
+import { FieldList } from "fields.slint";
+import { SettingText } from "setting_text.slint";
 
 export global Labels {
     pure public function account-status(s: string) -> string {
@@ -18,6 +21,23 @@ export global Labels {
         if s == "standby" { return Tone.accent; }
         return Tone.neutral;
     }
+    pure public function health(s: string) -> string {
+        if s == "running" { return @tr("on"); }
+        if s == "restarting" { return @tr("restarting"); }
+        if s == "stopped" { return @tr("stopped"); }
+        return @tr("off");
+    }
+    pure public function health-tone(s: string) -> Tone {
+        if s == "running" { return Tone.success; }
+        if s == "restarting" { return Tone.danger; }
+        return Tone.neutral;
+    }
+}
+
+component SectionTitle inherits Text {
+    font-size: Theme.font-l;
+    font-weight: 700;
+    color: Theme.text;
 }
 
 component SettingRow inherits HorizontalLayout {
@@ -43,6 +63,49 @@ component SettingRow inherits HorizontalLayout {
     }
 }
 
+// A secret shown masked, with "show" and "copy".
+component SecretRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> secret;
+    property <bool> shown;
+    spacing: 8px;
+    Text {
+        text: root.label;
+        color: Theme.text;
+        font-weight: 600;
+        vertical-alignment: center;
+    }
+    Rectangle {
+        horizontal-stretch: 1;
+        height: 32px;
+        border-radius: Theme.radius-m;
+        background: Theme.inset;
+        clip: true;
+        Text {
+            x: 10px;
+            width: parent.width - 20px;
+            text: root.shown ? root.secret : "••••••••••••••••••••";
+            font-family: "Consolas";
+            font-size: Theme.font-s;
+            color: Theme.text-muted;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+    Button {
+        compact: true;
+        kind: ButtonKind.ghost;
+        text: root.shown ? @tr("Hide") : @tr("Show");
+        clicked => { root.shown = !root.shown; }
+    }
+    Button {
+        compact: true;
+        icon: Icons.copy;
+        text: @tr("Copy");
+        clicked => { Bridge.copy-text(root.secret); }
+    }
+}
+
 component AccountRow inherits Rectangle {
     in property <AccountItem> account;
     property <bool> confirm;
@@ -60,7 +123,7 @@ component AccountRow inherits Rectangle {
         }
         VerticalLayout {
             alignment: center;
-            spacing: 3px;
+            spacing: 4px;
             horizontal-stretch: 1;
             HorizontalLayout {
                 spacing: 8px;
@@ -79,6 +142,17 @@ component AccountRow inherits Rectangle {
             Muted {
                 text: root.account.status == "standby" ? @tr("Mined by {}", root.account.detail)
                     : root.account.detail != "" ? root.account.detail : "@" + root.account.login;
+            }
+            // Health of each module for this account.
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                for h in Bridge.module-health: HorizontalLayout {
+                    if h.account == root.account.id: Pill {
+                        text: SettingText.module-name(h.module, h.module) + " · " + Labels.health(h.state);
+                        tone: Labels.health-tone(h.state);
+                    }
+                }
             }
         }
         if !root.confirm: HorizontalLayout {
@@ -130,16 +204,280 @@ component AccountRow inherits Rectangle {
     }
 }
 
+// One module: on/off in the header, its options folded.
+component ModuleCard inherits Card {
+    in property <string> id;
+    in property <string> name;
+    in property <string> description;
+    in property <bool> enabled;
+    in property <[FieldItem]> fields;
+    property <bool> open: Bridge.dev-expand;
+    HorizontalLayout {
+        spacing: 12px;
+        VerticalLayout {
+            spacing: 2px;
+            horizontal-stretch: 1;
+            SectionTitle {
+                text: SettingText.module-name(root.id, root.name);
+            }
+            Muted {
+                text: SettingText.module-description(root.id, root.description);
+            }
+        }
+        if root.fields.length > 0: VerticalLayout {
+            alignment: center;
+            Button {
+                compact: true;
+                kind: ButtonKind.ghost;
+                icon: root.open ? Icons.chevron-down : Icons.chevron-right;
+                text: @tr("Options");
+                clicked => { root.open = !root.open; }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Toggle {
+                checked: root.enabled;
+                toggled(v) => { Bridge.setting-toggle(root.id, "enabled", v); }
+            }
+        }
+    }
+    if root.open: Rectangle {
+        height: 1px;
+        background: Theme.border;
+    }
+    if root.open: FieldList {
+        fields: root.fields;
+    }
+}
+
+
+component HoursRow inherits Rectangle {
+    in property <int> index;
+    in property <HourWindow> window;
+    property <string> start: window.start;
+    property <string> end: window.end;
+    height: 44px;
+    border-radius: Theme.radius-m;
+    background: Theme.inset;
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 4px;
+        spacing: 4px;
+        for on[d] in root.window.days: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 30px;
+                height: 28px;
+                border-radius: Theme.radius-s;
+                background: on ? Theme.accent-strong : t.has-hover ? Theme.card-hover : transparent;
+                border-width: 1px;
+                border-color: on ? Theme.accent-strong : Theme.border;
+                accessible-role: checkbox;
+                accessible-checkable: true;
+                accessible-checked: on;
+                accessible-label: d == 0 ? @tr("Monday") : d == 1 ? @tr("Tuesday") : d == 2 ? @tr("Wednesday") : d == 3 ? @tr("Thursday") : d == 4 ? @tr("Friday") : d == 5 ? @tr("Saturday") : @tr("Sunday");
+                accessible-action-default => { Bridge.hours-toggle-day(root.index, d); }
+                Text {
+                    text: d == 0 ? @tr("Mo") : d == 1 ? @tr("Tu") : d == 2 ? @tr("We") : d == 3 ? @tr("Th") : d == 4 ? @tr("Fr") : d == 5 ? @tr("Sa") : @tr("Su");
+                    font-size: Theme.font-xs;
+                    font-weight: 600;
+                    color: on ? Theme.on-accent : Theme.text-muted;
+                }
+                t := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Bridge.hours-toggle-day(root.index, d); }
+                }
+            }
+        }
+        Rectangle {
+            width: 10px;
+        }
+        VerticalLayout {
+            alignment: center;
+            TextField {
+                width: 70px;
+                height: 30px;
+                text <=> root.start;
+                accepted => { Bridge.hours-set(root.index, root.start, root.end); }
+            }
+        }
+        Text {
+            text: "→";
+            color: Theme.text-faint;
+            vertical-alignment: center;
+        }
+        VerticalLayout {
+            alignment: center;
+            TextField {
+                width: 70px;
+                height: 30px;
+                text <=> root.end;
+                accepted => { Bridge.hours-set(root.index, root.start, root.end); }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Button {
+                compact: true;
+                kind: ButtonKind.ghost;
+                text: @tr("Apply");
+                enabled: root.start != root.window.start || root.end != root.window.end;
+                clicked => { Bridge.hours-set(root.index, root.start, root.end); }
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+        VerticalLayout {
+            alignment: center;
+            IconButton {
+                icon: Icons.trash;
+                tooltip: @tr("Remove this time slot");
+                clicked => { Bridge.hours-remove(root.index); }
+            }
+        }
+    }
+}
+
+// `active_hours`: watching only happens inside these windows (empty = always).
+component HoursEditor inherits VerticalLayout {
+    spacing: 8px;
+    for w[i] in Bridge.active-hours: HoursRow {
+        index: i;
+        window: w;
+    }
+    HorizontalLayout {
+        alignment: start;
+        Button {
+            compact: true;
+            icon: Icons.plus;
+            text: @tr("Add a time slot");
+            clicked => { Bridge.hours-add(); }
+        }
+    }
+}
+
+// Serving the local engine's API: control from a phone or another PC, AI agents.
+component ApiAccess inherits VerticalLayout {
+    property <string> bind: Bridge.api-bind == "" ? "127.0.0.1:7878" : Bridge.api-bind;
+    spacing: 10px;
+    Rectangle {
+        height: 1px;
+        background: Theme.border;
+    }
+    HorizontalLayout {
+        spacing: 16px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            horizontal-stretch: 1;
+            Text {
+                text: @tr("Remote access (API)");
+                color: Theme.text;
+                font-weight: 600;
+            }
+            Muted {
+                text: @tr("Lets a phone, another PC or an AI agent connect to this engine. 127.0.0.1 = this computer only; use your local or Tailscale address to open it to other devices. Restarts the engine.");
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Toggle {
+                checked: Bridge.api-bind != "";
+                toggled(v) => { Bridge.set-api(v, root.bind); }
+            }
+        }
+    }
+    HorizontalLayout {
+        spacing: 8px;
+        Text {
+            text: @tr("Address");
+            color: Theme.text;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+        TextField {
+            height: 32px;
+            text <=> root.bind;
+            accepted => { Bridge.set-api(true, root.bind); }
+        }
+        Button {
+            compact: true;
+            text: @tr("Apply");
+            enabled: root.bind != Bridge.api-bind;
+            clicked => { Bridge.set-api(true, root.bind); }
+        }
+    }
+    if Bridge.api-bind != "": SecretRow {
+        label: @tr("API token");
+        secret: Bridge.api-token;
+    }
+}
+
+component LogView inherits VerticalLayout {
+    spacing: 8px;
+    HorizontalLayout {
+        spacing: 8px;
+        Muted {
+            text: Bridge.logs-available ? @tr("Most recent first.") : @tr("The log of a remote engine is on the machine running it.");
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        if Bridge.logs-available: Button {
+            compact: true;
+            kind: ButtonKind.ghost;
+            icon: Icons.refresh;
+            text: @tr("Refresh");
+            clicked => { Bridge.logs-refresh(); }
+        }
+    }
+    if Bridge.logs-available: Rectangle {
+        height: 260px;
+        border-radius: Theme.radius-m;
+        background: Theme.inset;
+        clip: true;
+        Flickable {
+            content-height: lines.preferred-height;
+            lines := VerticalLayout {
+                padding: 10px;
+                spacing: 3px;
+                for l in Bridge.logs: HorizontalLayout {
+                    spacing: 8px;
+                    Text {
+                        text: l.time;
+                        font-family: "Consolas";
+                        font-size: Theme.font-xs;
+                        color: Theme.text-faint;
+                    }
+                    Text {
+                        text: l.level;
+                        width: 40px;
+                        font-family: "Consolas";
+                        font-size: Theme.font-xs;
+                        color: l.level == "error" ? Theme.danger : l.level == "warn" ? Theme.warning : Theme.text-faint;
+                    }
+                    Text {
+                        text: l.message;
+                        font-family: "Consolas";
+                        font-size: Theme.font-xs;
+                        color: Theme.text-muted;
+                        wrap: word-wrap;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
+        }
+    }
+}
+
 export component SettingsScreen inherits Page {
     title: @tr("Settings");
-    property <bool> advanced;
+    property <bool> advanced: Bridge.dev-expand;
 
     Card {
-        Text {
+        SectionTitle {
             text: @tr("Appearance");
-            font-size: Theme.font-l;
-            font-weight: 700;
-            color: Theme.text;
         }
         SettingRow {
             label: @tr("Theme");
@@ -172,11 +510,8 @@ export component SettingsScreen inherits Page {
 
     Card {
         HorizontalLayout {
-            Text {
+            SectionTitle {
                 text: @tr("Accounts");
-                font-size: Theme.font-l;
-                font-weight: 700;
-                color: Theme.text;
                 vertical-alignment: center;
                 horizontal-stretch: 1;
             }
@@ -197,6 +532,33 @@ export component SettingsScreen inherits Page {
         for acc in Bridge.accounts: AccountRow {
             account: acc;
         }
+    }
+
+    for m in Bridge.module-forms: ModuleCard {
+        id: m.id;
+        name: m.name;
+        description: m.description;
+        enabled: m.enabled;
+        fields: m.fields;
+    }
+
+    Card {
+        SectionTitle {
+            text: @tr("Watching");
+        }
+        FieldList {
+            fields: Bridge.engine-main;
+        }
+        Text {
+            text: @tr("Time slots");
+            color: Theme.text;
+            font-weight: 600;
+        }
+        Muted {
+            text: Bridge.active-hours.length == 0 ? @tr("No time slot: watching at any time. Add one to watch only at certain times (local time; an end before the start goes past midnight).")
+                : @tr("Watching only inside these slots (local time; an end before the start goes past midnight). Enter the times as HH:MM.");
+        }
+        HoursEditor { }
     }
 
     // Advanced, folded by default.
@@ -228,11 +590,8 @@ export component SettingsScreen inherits Page {
     }
 
     if root.advanced: Card {
-        Text {
+        SectionTitle {
             text: @tr("Engine");
-            font-size: Theme.font-l;
-            font-weight: 700;
-            color: Theme.text;
         }
         SettingRow {
             label: Bridge.link == LinkState.local ? @tr("On this computer") : @tr("Remote server");
@@ -248,8 +607,113 @@ export component SettingsScreen inherits Page {
         }
     }
 
-    Muted {
-        text: "TwitchMiner " + Bridge.version + " · " + @tr("manifest revision {}", Bridge.manifest-revision);
-        color: Theme.text-faint;
+    if root.advanced: Card {
+        SectionTitle {
+            text: @tr("Network");
+        }
+        FieldList {
+            fields: Bridge.engine-network;
+        }
+        if Bridge.local-engine: ApiAccess { }
+    }
+
+    if root.advanced: Card {
+        SectionTitle {
+            text: @tr("Several devices");
+        }
+        Muted {
+            text: @tr("A home server can mine while this device stays on standby, and take over if it stops.");
+        }
+        FieldList {
+            fields: Bridge.engine-peers;
+        }
+    }
+
+    if root.advanced: Card {
+        HorizontalLayout {
+            spacing: 12px;
+            VerticalLayout {
+                spacing: 2px;
+                horizontal-stretch: 1;
+                SectionTitle {
+                    text: @tr("AI agent");
+                }
+                Muted {
+                    text: @tr("Lets an AI agent (MCP) follow and drive TwitchMiner with a restricted token: no deletions, no files, secrets hidden.");
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Toggle {
+                    checked: Bridge.agent-enabled;
+                    toggled(v) => { Bridge.setting-toggle("engine", "agent_enabled", v); }
+                }
+            }
+        }
+        if Bridge.agent-enabled && Bridge.agent-token != "": SecretRow {
+            label: @tr("Agent token");
+            secret: Bridge.agent-token;
+        }
+        if Bridge.agent-enabled && Bridge.agent-token == "": Muted {
+            text: @tr("The agent token of a remote engine is shown on its machine: twitchminer api-token --agent");
+        }
+    }
+
+    if root.advanced: Card {
+        SectionTitle {
+            text: @tr("Maintenance");
+        }
+        FieldList {
+            fields: Bridge.engine-maintenance;
+        }
+    }
+
+    if root.advanced: Card {
+        SectionTitle {
+            text: @tr("Log");
+        }
+        LogView { }
+    }
+
+    if root.advanced: Card {
+        SectionTitle {
+            text: @tr("About");
+        }
+        Muted {
+            text: "TwitchMiner " + Bridge.version + " · " + @tr("Twitch identifiers revision {}", Bridge.manifest-revision);
+        }
+        if Bridge.update-info.checked: Muted {
+            text: Bridge.update-info.available ? @tr("Version {} is available.", Bridge.update-info.latest) : @tr("TwitchMiner is up to date.");
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            Button {
+                compact: true;
+                icon: Icons.refresh;
+                text: @tr("Check for updates");
+                clicked => { Bridge.update-check(); }
+            }
+            if Bridge.update-info.available && Bridge.update-info.url != "": Button {
+                compact: true;
+                kind: ButtonKind.primary;
+                icon: Icons.external;
+                text: @tr("Download");
+                clicked => { Bridge.open-url(Bridge.update-info.url); }
+            }
+            Button {
+                compact: true;
+                text: @tr("Update Twitch identifiers");
+                clicked => { Bridge.manifest-refresh(); }
+            }
+            Button {
+                compact: true;
+                text: @tr("Back up the database");
+                clicked => { Bridge.backup(); }
+            }
+        }
+        AboutSlint {
+            max-height: 120px;
+        }
     }
 }

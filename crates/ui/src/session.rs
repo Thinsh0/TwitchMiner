@@ -28,6 +28,14 @@ pub struct Session {
     app: Option<tm_app::App>,
 }
 
+/// Logs and API tokens of a local engine.
+#[derive(Clone)]
+pub struct LocalInfo {
+    pub logs: tm_core::logging::LogBuffer,
+    pub agent_token: String,
+    pub api_token: String,
+}
+
 #[derive(Debug)]
 pub enum OpenError {
     /// Another engine (usually the daemon) holds the data directory.
@@ -41,12 +49,19 @@ pub enum OpenError {
 pub const LOCAL_DAEMON_URL: &str = "http://127.0.0.1:7878";
 
 impl Session {
-    pub async fn open(target: Target, data_dir: Option<PathBuf>) -> Result<Self, OpenError> {
+    /// `api`: for a local engine, also serve the HTTP/WebSocket API on this address
+    /// (remote control from a phone, AI agents).
+    pub async fn open(
+        target: Target,
+        data_dir: Option<PathBuf>,
+        api: Option<std::net::SocketAddr>,
+    ) -> Result<Self, OpenError> {
         match &target {
             Target::Local => {
                 let app = tm_app::App::start(tm_app::AppOptions {
                     data_dir,
                     log_stdout: false,
+                    api: api.map(|bind| tm_app::ApiOptions { bind, token: None }),
                     ..Default::default()
                 })
                 .await
@@ -93,6 +108,15 @@ impl Session {
                 }
             }
         }
+    }
+
+    /// What only a local engine has (`None` for a remote one).
+    pub fn local(&self) -> Option<LocalInfo> {
+        self.app.as_ref().map(|a| LocalInfo {
+            logs: a.logs.clone(),
+            agent_token: a.agent_token.clone(),
+            api_token: a.api_token.clone(),
+        })
     }
 
     /// Stops the local engine (flushes the database); drops the remote connection.

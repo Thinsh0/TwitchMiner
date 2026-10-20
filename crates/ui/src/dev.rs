@@ -52,8 +52,8 @@ fn write_bmp(path: &std::path::Path, w: u32, h: u32, rgba: &[u8]) -> std::io::Re
 }
 
 /// `TM_UI_SCREEN` (home, drops, channels, activity, settings), `TM_UI_THEME`
-/// (dark, light, oled) and `TM_UI_SIZE` (`1180x1000`): start on a given view, for
-/// screenshots.
+/// (dark, light, oled), `TM_UI_SIZE` (`1180x1000`) and `TM_UI_EXPAND` (unfold
+/// sections): start on a given view, for screenshots.
 pub fn apply_env(ui: &MainWindow) {
     if let Ok(size) = std::env::var("TM_UI_SIZE")
         && let Some((w, h)) = size.split_once('x')
@@ -71,6 +71,9 @@ pub fn apply_env(ui: &MainWindow) {
             _ => Screen::Home,
         };
         ui.global::<Bridge>().set_screen(screen);
+    }
+    if std::env::var_os("TM_UI_EXPAND").is_some() {
+        ui.global::<Bridge>().set_dev_expand(true);
     }
     if let Ok(t) = std::env::var("TM_UI_THEME") {
         ui.global::<Theme>()

@@ -713,3 +713,411 @@ msgstr "{} points dépensés sur {}"
 
 msgid "{} watched"
 msgstr "{} regardées"
+
+msgid "A campaign gets tight"
+msgstr "Une campagne devient juste"
+
+msgid "A campaign is “tight” when the time it needs, times this factor, plus the minutes below, no longer fits before its end."
+msgstr "Une campagne est « juste » quand le temps qu'il lui faut, multiplié par ce facteur, plus les minutes ci-dessous, ne tient plus avant sa fin."
+
+msgid "A campaign will be missed"
+msgstr "Une campagne sera manquée"
+
+msgid "A channel whose streak is not secured for the current stream goes first."
+msgstr "Une chaîne dont la série n'est pas encore assurée pour le live en cours passe en premier."
+
+msgid "A game account must be linked"
+msgstr "Un compte de jeu doit être lié"
+
+msgid "A home server can mine while this device stays on standby, and take over if it stops."
+msgstr "Un serveur maison peut miner pendant que cet appareil reste en veille, et prendre le relais s'il s'arrête."
+
+msgid "A new campaign starts"
+msgstr "Une nouvelle campagne commence"
+
+msgid "A secondary engine leaves an account to a reachable peer already mining it, and takes over when that peer goes away."
+msgstr "Un moteur secondaire laisse un compte à un pair joignable qui le mine déjà, et reprend quand ce pair disparaît."
+
+msgid "AI agent"
+msgstr "Agent IA"
+
+msgid "About"
+msgstr "À propos"
+
+msgid "Add a time slot"
+msgstr "Ajouter une plage"
+
+msgid "Address of the Twitch identifiers"
+msgstr "Adresse des identifiants Twitch"
+
+msgid "Address of the versions"
+msgstr "Adresse des versions"
+
+msgid "Add…"
+msgstr "Ajouter…"
+
+msgid "Agent token"
+msgstr "Jeton agent"
+
+msgid "Alerts"
+msgstr "Alertes"
+
+msgid "Also mine campaigns that only give badges or emotes (no game account needed)."
+msgstr "Miner aussi les campagnes qui ne donnent que des badges ou des emotes (pas besoin de compte de jeu)."
+
+msgid "Apply"
+msgstr "Appliquer"
+
+msgid "Back up the database"
+msgstr "Sauvegarder la base"
+
+msgid "Badge and emote campaigns"
+msgstr "Campagnes de badges et d'emotes"
+
+msgid "Best payout"
+msgstr "Meilleure cote"
+
+msgid "Bet (% of the balance)"
+msgstr "Mise (% du solde)"
+
+msgid "Bet this many seconds before the end"
+msgstr "Parier ce nombre de secondes avant la fin"
+
+msgid "Bets part of your channel points on predictions, with the strategy you choose."
+msgstr "Mise une partie de tes points de chaîne sur les prédictions, avec la stratégie de ton choix."
+
+msgid "Campaigns limited to fewer channels than this (esports…) go first whenever one of them is live."
+msgstr "Les campagnes limitées à moins de chaînes que ce nombre (esport…) passent en premier dès que l'une d'elles est en direct."
+
+msgid "Campaigns of games whose account is known not to be linked are not mined."
+msgstr "Les campagnes des jeux dont le compte n'est pas lié ne sont pas minées."
+
+msgid "Channels tried per game"
+msgstr "Chaînes essayées par jeu"
+
+msgid "Channels watched at once"
+msgstr "Chaînes regardées en même temps"
+
+msgid "Check channels every (minutes)"
+msgstr "Vérifier les chaînes toutes les (minutes)"
+
+msgid "Check for new versions"
+msgstr "Vérifier les nouvelles versions"
+
+msgid "Check for updates"
+msgstr "Rechercher une mise à jour"
+
+msgid "Claim bonus chests"
+msgstr "Récupérer les coffres bonus"
+
+msgid "Claim moments"
+msgstr "Récupérer les moments"
+
+msgid "Claim rewards automatically"
+msgstr "Récupérer les récompenses automatiquement"
+
+msgid "Copy"
+msgstr "Copier"
+
+msgid "Destinations"
+msgstr "Destinations"
+
+msgid "Download"
+msgstr "Télécharger"
+
+msgid "Earns channel points, claims bonus chests, joins raids and keeps watch streaks."
+msgstr "Gagne des points de chaîne, récupère les coffres bonus, suit les raids et garde les séries de visionnage."
+
+msgid "Event kinds, e.g. drop_claimed, drop_alert, auth_required, prediction_result, notice_raised."
+msgstr "Types d'événements, par ex. drop_claimed, drop_alert, auth_required, prediction_result, notice_raised."
+
+msgid "Events sent"
+msgstr "Événements envoyés"
+
+msgid "Fewest participants"
+msgstr "Participants minimum"
+
+msgid "Finds drop campaigns, watches the right streams and claims the rewards."
+msgstr "Trouve les campagnes de drops, regarde les bons streams et récupère les récompenses."
+
+msgid "Follow raids"
+msgstr "Suivre les raids"
+
+msgid "For every connection, e.g. http://user:pass@host:port. Empty = none."
+msgstr "Pour toutes les connexions, par ex. http://user:pass@hote:port. Vide = aucun."
+
+msgid "For the games of your list, once per campaign."
+msgstr "Pour les jeux de ta liste, une fois par campagne."
+
+msgid "Fr"
+msgstr "Ve"
+
+msgid "Friday"
+msgstr "Vendredi"
+
+msgid "HTTP proxy"
+msgstr "Proxy HTTP"
+
+msgid "Hide"
+msgstr "Masquer"
+
+msgid "Highest bet"
+msgstr "Mise maximale"
+
+msgid "JSON list. Example: {}."
+msgstr "Liste JSON. Exemple : {}."
+
+msgid "JSON list. Example: {}. Kinds: discord, ntfy (url, token), telegram (bot_token, chat_id), webhook (url, token, headers)."
+msgstr "Liste JSON. Exemple : {}. Types : discord, ntfy (url, token), telegram (bot_token, chat_id), webhook (url, token, headers)."
+
+msgid "Keep the history (days)"
+msgstr "Garder l'historique (jours)"
+
+msgid "Keep watch streaks"
+msgstr "Garder les séries de visionnage"
+
+msgid "Language of the messages"
+msgstr "Langue des messages"
+
+msgid "Lets an AI agent (MCP) follow and drive TwitchMiner with a restricted token: no deletions, no files, secrets hidden."
+msgstr "Permet à un agent IA (MCP) de suivre et piloter TwitchMiner avec un jeton restreint : pas de suppression, pas de fichiers, secrets masqués."
+
+msgid "Log"
+msgstr "Journal"
+
+msgid "Logins to bet on; empty = every channel."
+msgstr "Chaînes sur lesquelles parier ; vide = toutes."
+
+msgid "Look for campaigns every (minutes)"
+msgstr "Chercher les campagnes toutes les (minutes)"
+
+msgid "Lowest balance to bet"
+msgstr "Solde minimum pour parier"
+
+msgid "Lowest points to send"
+msgstr "Points minimum à envoyer"
+
+msgid "Maintenance"
+msgstr "Maintenance"
+
+msgid "Mo"
+msgstr "Lu"
+
+msgid "Monday"
+msgstr "Lundi"
+
+msgid "Most changes arrive in real time; this is a safety net."
+msgstr "La plupart des changements arrivent en temps réel ; c'est un filet de sécurité."
+
+msgid "Most recent first."
+msgstr "Les plus récents d'abord."
+
+msgid "Most voted"
+msgstr "Le plus voté"
+
+msgid "Network"
+msgstr "Réseau"
+
+msgid "No time slot: watching at any time. Add one to watch only at certain times (local time; an end before the start goes past midnight)."
+msgstr "Aucune plage : visionnage à toute heure. Ajoutes-en une pour ne regarder qu'à certains moments (heure locale ; une fin avant le début passe minuit)."
+
+msgid "Notifications"
+msgstr "Notifications"
+
+msgid "Older events are deleted; daily statistics are kept forever."
+msgstr "Les événements plus anciens sont supprimés ; les statistiques par jour sont gardées pour toujours."
+
+msgid "Only marks campaigns as tight: it never removes one from the plan."
+msgstr "Sert seulement à signaler les campagnes justes : n'en retire jamais une du plan."
+
+msgid "Options"
+msgstr "Options"
+
+msgid "Other devices (peers)"
+msgstr "Autres appareils (pairs)"
+
+msgid "Per account. Twitch credits at most 2."
+msgstr "Par compte. Twitch en compte au plus 2."
+
+msgid "Predictions"
+msgstr "Prédictions"
+
+msgid "Predictions with fewer participants are skipped."
+msgstr "Les prédictions avec moins de participants sont ignorées."
+
+msgid "Primary"
+msgstr "Principal"
+
+msgid "Remove this time slot"
+msgstr "Supprimer cette plage"
+
+msgid "Reset"
+msgstr "Rétablir"
+
+msgid "Rewards are claimed as soon as they are earned."
+msgstr "Les récompenses sont récupérées dès qu'elles sont gagnées."
+
+msgid "Role of this engine"
+msgstr "Rôle de ce moteur"
+
+msgid "Sa"
+msgstr "Sa"
+
+msgid "Safety margin (factor)"
+msgstr "Marge de sécurité (facteur)"
+
+msgid "Safety margin (minutes)"
+msgstr "Marge de sécurité (minutes)"
+
+msgid "Saturday"
+msgstr "Samedi"
+
+msgid "Save"
+msgstr "Enregistrer"
+
+msgid "Secondary"
+msgstr "Secondaire"
+
+msgid "Sends drops, sign-in problems and other events to Discord, ntfy, Telegram or a webhook."
+msgstr "Envoie les drops, les problèmes de connexion et d'autres événements vers Discord, ntfy, Telegram ou un webhook."
+
+msgid "Several devices"
+msgstr "Plusieurs appareils"
+
+msgid "Show"
+msgstr "Afficher"
+
+msgid "Skip games whose account is not linked"
+msgstr "Ignorer les jeux dont le compte n'est pas lié"
+
+msgid "Smart"
+msgstr "Intelligente"
+
+msgid "Strategy"
+msgstr "Stratégie"
+
+msgid "Su"
+msgstr "Di"
+
+msgid "Sunday"
+msgstr "Dimanche"
+
+msgid "Th"
+msgstr "Je"
+
+msgid "The agent token of a remote engine is shown on its machine: twitchminer api-token --agent"
+msgstr "Le jeton agent d'un moteur distant s'affiche sur sa machine : twitchminer api-token --agent"
+
+msgid "The log of a remote engine is on the machine running it."
+msgstr "Le journal d'un moteur distant est sur la machine qui le fait tourner."
+
+msgid "Threshold of channel-limited campaigns"
+msgstr "Seuil des campagnes à chaînes limitées"
+
+msgid "Thursday"
+msgstr "Jeudi"
+
+msgid "Time slots"
+msgstr "Plages horaires"
+
+msgid "Tu"
+msgstr "Ma"
+
+msgid "Tuesday"
+msgstr "Mardi"
+
+msgid "Twitch identifiers revision {}"
+msgstr "identifiants Twitch révision {}"
+
+msgid "TwitchMiner is up to date."
+msgstr "TwitchMiner est à jour."
+
+msgid "Update Twitch identifiers"
+msgstr "Mettre à jour les identifiants Twitch"
+
+msgid "Update Twitch identifiers automatically"
+msgstr "Mettre à jour les identifiants Twitch automatiquement"
+
+msgid "Use spare time"
+msgstr "Utiliser le temps libre"
+
+msgid "Version {} is available."
+msgstr "La version {} est disponible."
+
+msgid "Watching only inside these slots (local time; an end before the start goes past midnight). Enter the times as HH:MM."
+msgstr "Visionnage seulement dans ces plages (heure locale ; une fin avant le début passe minuit). Saisis les heures en HH:MM."
+
+msgid "We"
+msgstr "Me"
+
+msgid "Wednesday"
+msgstr "Mercredi"
+
+msgid "When Twitch changes its internal identifiers, TwitchMiner fixes itself without a new version."
+msgstr "Quand Twitch change ses identifiants internes, TwitchMiner se corrige seul, sans nouvelle version."
+
+msgid "When everything that can be finished is planned, start campaigns that cannot be finished, for their first rewards."
+msgstr "Quand tout ce qui peut être fini est prévu, commencer les campagnes impossibles à finir, pour leurs premières récompenses."
+
+msgid "When the campaign list is not available, this many channels of each game are checked."
+msgstr "Quand la liste des campagnes n'est pas disponible, ce nombre de chaînes de chaque jeu est vérifié."
+
+msgid "Which answer to bet on."
+msgstr "Sur quelle réponse parier."
+
+msgid "off"
+msgstr "arrêté"
+
+msgid "on"
+msgstr "actif"
+
+msgid "restarting"
+msgstr "redémarre"
+
+msgid "stopped"
+msgstr "stoppé"
+
+msgid "Share of the channel balance bet each time."
+msgstr "Part du solde de la chaîne misée à chaque fois."
+
+msgid "No bet when the balance is below this."
+msgstr "Aucun pari quand le solde est en dessous."
+
+msgid "Betting late gives a better view of the votes."
+msgstr "Parier tard donne une meilleure idée des votes."
+
+msgid "Points gains below this are not sent."
+msgstr "Les gains de points en dessous ne sont pas envoyés."
+
+msgid "A notice appears on the home screen when a new version is out."
+msgstr "Un message apparaît sur l'accueil quand une nouvelle version sort."
+
+msgid "Where the Twitch identifiers are looked for. Empty = the official address."
+msgstr "Où chercher les identifiants Twitch. Vide = l'adresse officielle."
+
+msgid "Where new versions are looked for."
+msgstr "Où chercher les nouvelles versions."
+
+msgid "Remote access (API)"
+msgstr "Accès à distance (API)"
+
+msgid "Lets a phone, another PC or an AI agent connect to this engine. 127.0.0.1 = this computer only; use your local or Tailscale address to open it to other devices. Restarts the engine."
+msgstr "Permet à un téléphone, un autre PC ou un agent IA de se connecter à ce moteur. 127.0.0.1 = cet ordinateur seulement ; mets ton adresse locale ou Tailscale pour l'ouvrir aux autres appareils. Redémarre le moteur."
+
+msgid "Address"
+msgstr "Adresse"
+
+msgid "This value is not valid: it was not saved."
+msgstr "Cette valeur n'est pas valide : elle n'a pas été enregistrée."
+
+msgid "Copied."
+msgstr "Copié."
+
+msgid "Backup written: {}"
+msgstr "Sauvegarde écrite : {}"
+
+msgid "Twitch identifiers are already up to date."
+msgstr "Les identifiants Twitch sont déjà à jour."
+
+msgid "Twitch identifiers updated (revision {})."
+msgstr "Identifiants Twitch mis à jour (révision {})."

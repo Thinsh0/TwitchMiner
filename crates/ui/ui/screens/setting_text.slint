@@ -1,0 +1,118 @@
+// French/English labels and help for the settings the interface knows. Settings of
+// modules added later fall back to their key and their schema description.
+
+export global SettingText {
+    pure public function module-name(id: string, fallback: string) -> string {
+        if id == "drops" { return @tr("Drops"); }
+        if id == "points" { return @tr("Channel points"); }
+        if id == "predictions" { return @tr("Predictions"); }
+        if id == "notify" { return @tr("Notifications"); }
+        return fallback;
+    }
+    pure public function module-description(id: string, fallback: string) -> string {
+        if id == "drops" { return @tr("Finds drop campaigns, watches the right streams and claims the rewards."); }
+        if id == "points" { return @tr("Earns channel points, claims bonus chests, joins raids and keeps watch streaks."); }
+        if id == "predictions" { return @tr("Bets part of your channel points on predictions, with the strategy you choose."); }
+        if id == "notify" { return @tr("Sends drops, sign-in problems and other events to Discord, ntfy, Telegram or a webhook."); }
+        return fallback;
+    }
+
+    pure public function label(key: string, fallback: string) -> string {
+        // drops
+        if key == "drops.auto_claim" { return @tr("Claim rewards automatically"); }
+        if key == "drops.badges_emotes" { return @tr("Badge and emote campaigns"); }
+        if key == "drops.require_linked" { return @tr("Skip games whose account is not linked"); }
+        if key == "drops.fill_partial" { return @tr("Use spare time"); }
+        if key == "drops.refresh_minutes" { return @tr("Look for campaigns every (minutes)"); }
+        if key == "drops.discovery_channels" { return @tr("Channels tried per game"); }
+        if key == "drops.restricted_max_channels" { return @tr("Threshold of channel-limited campaigns"); }
+        if key == "drops.safety_factor" { return @tr("Safety margin (factor)"); }
+        if key == "drops.safety_minutes" { return @tr("Safety margin (minutes)"); }
+        if key == "drops.alerts" { return @tr("Alerts"); }
+        if key == "drops.alerts.at_risk" { return @tr("A campaign gets tight"); }
+        if key == "drops.alerts.will_miss" { return @tr("A campaign will be missed"); }
+        if key == "drops.alerts.not_linked" { return @tr("A game account must be linked"); }
+        if key == "drops.alerts.new_campaign" { return @tr("A new campaign starts"); }
+        // points
+        if key == "points.claim_bonus" { return @tr("Claim bonus chests"); }
+        if key == "points.join_raids" { return @tr("Follow raids"); }
+        if key == "points.claim_moments" { return @tr("Claim moments"); }
+        if key == "points.watch_streak" { return @tr("Keep watch streaks"); }
+        if key == "points.refresh_minutes" { return @tr("Check channels every (minutes)"); }
+        // predictions
+        if key == "predictions.strategy" { return @tr("Strategy"); }
+        if key == "predictions.percent" { return @tr("Bet (% of the balance)"); }
+        if key == "predictions.max_points" { return @tr("Highest bet"); }
+        if key == "predictions.min_balance" { return @tr("Lowest balance to bet"); }
+        if key == "predictions.min_voters" { return @tr("Fewest participants"); }
+        if key == "predictions.seconds_before_close" { return @tr("Bet this many seconds before the end"); }
+        if key == "predictions.channels" { return @tr("Channels"); }
+        // notify
+        if key == "notify.events" { return @tr("Events sent"); }
+        if key == "notify.min_points" { return @tr("Lowest points to send"); }
+        if key == "notify.language" { return @tr("Language of the messages"); }
+        if key == "notify.targets" { return @tr("Destinations"); }
+        // engine
+        if key == "engine.max_watch_slots" { return @tr("Channels watched at once"); }
+        if key == "engine.proxy" { return @tr("HTTP proxy"); }
+        if key == "engine.role" { return @tr("Role of this engine"); }
+        if key == "engine.peers" { return @tr("Other devices (peers)"); }
+        if key == "engine.history_retention_days" { return @tr("Keep the history (days)"); }
+        if key == "engine.update_check" { return @tr("Check for new versions"); }
+        if key == "engine.manifest_auto_update" { return @tr("Update Twitch identifiers automatically"); }
+        if key == "engine.manifest_url" { return @tr("Address of the Twitch identifiers"); }
+        if key == "engine.releases_url" { return @tr("Address of the versions"); }
+        return fallback;
+    }
+
+    pure public function help(key: string, fallback: string) -> string {
+        if key == "drops.auto_claim" { return @tr("Rewards are claimed as soon as they are earned."); }
+        if key == "drops.badges_emotes" { return @tr("Also mine campaigns that only give badges or emotes (no game account needed)."); }
+        if key == "drops.require_linked" { return @tr("Campaigns of games whose account is known not to be linked are not mined."); }
+        if key == "drops.fill_partial" { return @tr("When everything that can be finished is planned, start campaigns that cannot be finished, for their first rewards."); }
+        if key == "drops.refresh_minutes" { return ""; }
+        if key == "drops.discovery_channels" { return @tr("When the campaign list is not available, this many channels of each game are checked."); }
+        if key == "drops.restricted_max_channels" { return @tr("Campaigns limited to fewer channels than this (esports…) go first whenever one of them is live."); }
+        if key == "drops.safety_factor" { return @tr("A campaign is “tight” when the time it needs, times this factor, plus the minutes below, no longer fits before its end."); }
+        if key == "drops.safety_minutes" { return @tr("Only marks campaigns as tight: it never removes one from the plan."); }
+        if key == "drops.alerts" { return @tr("For the games of your list, once per campaign."); }
+        if key == "points.claim_bonus" { return ""; }
+        if key == "points.watch_streak" { return @tr("A channel whose streak is not secured for the current stream goes first."); }
+        if key == "points.refresh_minutes" { return @tr("Most changes arrive in real time; this is a safety net."); }
+        if key == "predictions.strategy" { return @tr("Which answer to bet on."); }
+        if key == "predictions.percent" { return @tr("Share of the channel balance bet each time."); }
+        if key == "predictions.min_balance" { return @tr("No bet when the balance is below this."); }
+        if key == "predictions.seconds_before_close" { return @tr("Betting late gives a better view of the votes."); }
+        if key == "notify.min_points" { return @tr("Points gains below this are not sent."); }
+        if key == "engine.update_check" { return @tr("A notice appears on the home screen when a new version is out."); }
+        if key == "engine.manifest_url" { return @tr("Where the Twitch identifiers are looked for. Empty = the official address."); }
+        if key == "engine.releases_url" { return @tr("Where new versions are looked for."); }
+        if key == "predictions.min_voters" { return @tr("Predictions with fewer participants are skipped."); }
+        if key == "predictions.channels" { return @tr("Logins to bet on; empty = every channel."); }
+        if key == "notify.events" { return @tr("Event kinds, e.g. drop_claimed, drop_alert, auth_required, prediction_result, notice_raised."); }
+        if key == "notify.targets" { return @tr("JSON list. Example: {}. Kinds: discord, ntfy (url, token), telegram (bot_token, chat_id), webhook (url, token, headers).", "[{\"kind\": \"discord\", \"webhook_url\": \"https://…\"}]"); }
+        if key == "engine.max_watch_slots" { return @tr("Per account. Twitch credits at most 2."); }
+        if key == "engine.proxy" { return @tr("For every connection, e.g. http://user:pass@host:port. Empty = none."); }
+        if key == "engine.role" { return @tr("A secondary engine leaves an account to a reachable peer already mining it, and takes over when that peer goes away."); }
+        if key == "engine.peers" { return @tr("JSON list. Example: {}.", "[{\"name\": \"mini-pc\", \"url\": \"http://100.64.0.2:7878\", \"token\": \"…\"}]"); }
+        if key == "engine.history_retention_days" { return @tr("Older events are deleted; daily statistics are kept forever."); }
+        if key == "engine.manifest_auto_update" { return @tr("When Twitch changes its internal identifiers, TwitchMiner fixes itself without a new version."); }
+        return fallback;
+    }
+
+    pure public function option(key: string, value: string) -> string {
+        if key == "predictions.strategy" {
+            if value == "most_voted" { return @tr("Most voted"); }
+            if value == "most_points" { return @tr("Most points"); }
+            if value == "high_odds" { return @tr("Best payout"); }
+            if value == "smart" { return @tr("Smart"); }
+        }
+        if key == "engine.role" {
+            if value == "primary" { return @tr("Primary"); }
+            if value == "secondary" { return @tr("Secondary"); }
+        }
+        if value == "fr" { return "Français"; }
+        if value == "en" { return "English"; }
+        return value;
+    }
+}

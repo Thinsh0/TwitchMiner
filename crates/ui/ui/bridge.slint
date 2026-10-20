@@ -2,7 +2,7 @@
 // these properties (derived from the engine state); everything done goes through these
 // callbacks (turned into engine commands).
 
-import { Tone } from "widgets.slint";
+import { Tone, SegmentItem } from "widgets.slint";
 
 export enum Screen { home, drops, channels, activity, settings }
 
@@ -14,7 +14,7 @@ export enum LinkState { local, connected, connecting, down }
 // Why the "choose an engine" screen is shown.
 export enum SetupReason { none, busy, failed }
 
-export enum ToastKind { plain, error, login-ok, claimed }
+export enum ToastKind { plain, error, login-ok, claimed, invalid, copied, backup, manifest }
 
 export struct AccountItem {
     id: string,
@@ -192,6 +192,66 @@ export struct HistoryItem {
     c: string,
 }
 
+// One setting of a form generated from a JSON Schema.
+export struct FieldItem {
+    // Module id, or `engine`.
+    section: string,
+    // Dotted path in the settings document (`alerts.at_risk`).
+    path: string,
+    // `<section>.<path>`, to look up a translated label.
+    key: string,
+    fallback-label: string,
+    // Description from the schema (English).
+    help: string,
+    // bool | int | number | enum | text | list | json | group
+    kind: string,
+    depth: int,
+    on: bool,
+    text: string,
+    selected: int,
+    options: [SegmentItem],
+    values: [string],
+    // Differs from the default (shows "Rétablir").
+    modified: bool,
+}
+
+export struct ModuleForm {
+    id: string,
+    name: string,
+    description: string,
+    enabled: bool,
+    fields: [FieldItem],
+}
+
+// One `active_hours` window; `days` = Monday..Sunday.
+export struct HourWindow {
+    days: [bool],
+    start: string,
+    end: string,
+}
+
+export struct HealthItem {
+    account: string,
+    module: string,
+    // disabled | running | stopped | restarting
+    state: string,
+    error: string,
+}
+
+export struct LogItem {
+    time: string,
+    level: string,
+    target: string,
+    message: string,
+}
+
+export struct UpdateInfo {
+    checked: bool,
+    available: bool,
+    latest: string,
+    url: string,
+}
+
 export struct GameItem {
     name: string,
     // Number of campaigns of this game in the plan.
@@ -270,6 +330,27 @@ export global Bridge {
     in property <bool> history-more;
     in property <bool> history-loading;
 
+    // Settings (forms generated from the schemas)
+    in property <[ModuleForm]> module-forms;
+    in property <[FieldItem]> engine-main;
+    in property <[FieldItem]> engine-network;
+    in property <[FieldItem]> engine-peers;
+    in property <[FieldItem]> engine-maintenance;
+    in property <[HourWindow]> active-hours;
+    in property <[HealthItem]> module-health;
+    in property <bool> agent-enabled;
+    // Agent token of the local engine (empty with a remote engine).
+    in property <string> agent-token;
+    in property <bool> local-engine;
+    // API of the local engine: address it listens on (empty = off) and full token.
+    in property <string> api-bind;
+    in property <string> api-token;
+    in property <[LogItem]> logs;
+    in property <bool> logs-available;
+    in property <UpdateInfo> update-info;
+    // Development (screenshots): unfold every folded section at start.
+    in property <bool> dev-expand;
+
     in property <string> version;
     in property <int> manifest-revision;
 
@@ -314,6 +395,24 @@ export global Bridge {
     // The activity choices changed (chart or filter): query again.
     callback activity-changed();
     callback history-load-more();
+    // Settings edits: section (module id or `engine`), dotted path, value.
+    callback setting-toggle(string, string, bool);
+    callback setting-text(string, string, string);
+    callback setting-pick(string, string, int);
+    callback setting-list-add(string, string, string);
+    callback setting-list-remove(string, string, string);
+    callback setting-reset(string, string);
+    callback hours-add();
+    callback hours-remove(int);
+    callback hours-toggle-day(int, int);
+    callback hours-set(int, string, string);
+    callback logs-refresh();
+    // Serve the local engine's API (on, address); restarts the local engine.
+    callback set-api(bool, string);
+    callback update-check();
+    callback manifest-refresh();
+    callback backup();
+    callback copy-text(string);
     // A screen was opened (lets the controller load what it shows).
     callback screen-shown();
     callback remove-channel(string);

@@ -1,0 +1,224 @@
+// A setting row generated from a schema field (see crates/ui/src/forms.rs).
+
+import { TextEdit } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { Bridge, FieldItem } from "../bridge.slint";
+import { Button, ButtonKind, IconButton, Icons, Muted, TextField, Toggle } from "../widgets.slint";
+import { SettingText } from "setting_text.slint";
+
+// Choice between a few values, labels translated by key.
+component EnumChoice inherits Rectangle {
+    in property <FieldItem> item;
+    height: 34px;
+    border-radius: Theme.radius-m;
+    background: Theme.inset;
+    border-width: 1px;
+    border-color: Theme.border;
+    HorizontalLayout {
+        padding: 3px;
+        spacing: 3px;
+        for opt[i] in root.item.options: Rectangle {
+            border-radius: Theme.radius-s + 1px;
+            background: i == root.item.selected ? Theme.card-hover : t.has-hover ? Theme.inset : transparent;
+            accessible-role: tab;
+            accessible-label: SettingText.option(root.item.key, opt.label);
+            accessible-item-selected: i == root.item.selected;
+            accessible-action-default => { Bridge.setting-pick(root.item.section, root.item.path, i); }
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                Text {
+                    text: SettingText.option(root.item.key, opt.label);
+                    font-size: Theme.font-s;
+                    font-weight: i == root.item.selected ? 600 : 400;
+                    color: i == root.item.selected ? Theme.text : Theme.text-muted;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+            }
+            t := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { Bridge.setting-pick(root.item.section, root.item.path, i); }
+            }
+        }
+    }
+}
+
+// A text or number committed with Enter or when leaving the field.
+component CommitField inherits TextField {
+    in property <FieldItem> item;
+    property <bool> dirty;
+    text: item.text;
+    edited => { self.dirty = true; }
+    accepted => {
+        if self.dirty {
+            self.dirty = false;
+            Bridge.setting-text(root.item.section, root.item.path, self.text);
+        }
+    }
+    changed has-focus => {
+        if !self.has-focus && self.dirty {
+            self.dirty = false;
+            Bridge.setting-text(root.item.section, root.item.path, self.text);
+        }
+    }
+}
+
+export component FieldRow inherits VerticalLayout {
+    in property <FieldItem> item;
+    property <string> label: SettingText.label(item.key, item.fallback-label);
+    property <string> help: SettingText.help(item.key, item.help);
+    property <string> draft;
+    property <string> json: item.text;
+    padding-left: item.depth * 16px;
+    spacing: 6px;
+
+    if root.item.kind == "group": Text {
+        text: root.label;
+        font-size: Theme.font-s;
+        font-weight: 700;
+        color: Theme.text-muted;
+    }
+    if root.item.kind == "group" && root.help != "": Muted {
+        text: root.help;
+    }
+
+    if root.item.kind != "group": HorizontalLayout {
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.label;
+                color: Theme.text;
+                font-weight: 600;
+                wrap: word-wrap;
+            }
+            if root.help != "" && root.item.kind != "json": Muted {
+                text: root.help;
+            }
+        }
+        if root.item.modified: VerticalLayout {
+            alignment: center;
+            Button {
+                compact: true;
+                kind: ButtonKind.ghost;
+                text: @tr("Reset");
+                clicked => { Bridge.setting-reset(root.item.section, root.item.path); }
+            }
+        }
+        if root.item.kind == "bool": VerticalLayout {
+            alignment: center;
+            Toggle {
+                checked: root.item.on;
+                toggled(v) => { Bridge.setting-toggle(root.item.section, root.item.path, v); }
+            }
+        }
+        if root.item.kind == "int" || root.item.kind == "number": VerticalLayout {
+            alignment: center;
+            CommitField {
+                item: root.item;
+                width: 120px;
+                height: 34px;
+                input-type: root.item.kind == "int" ? InputType.number : InputType.decimal;
+            }
+        }
+        if root.item.kind == "text": VerticalLayout {
+            alignment: center;
+            CommitField {
+                item: root.item;
+                width: 300px;
+                height: 34px;
+            }
+        }
+        if root.item.kind == "enum": VerticalLayout {
+            alignment: center;
+            EnumChoice {
+                item: root.item;
+            }
+        }
+    }
+
+    if root.item.kind == "list": VerticalLayout {
+        spacing: 6px;
+        for v in root.item.values: Rectangle {
+            height: 30px;
+            border-radius: Theme.radius-m;
+            background: Theme.inset;
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 4px;
+                Text {
+                    text: v;
+                    font-size: Theme.font-s;
+                    color: Theme.text;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        icon: Icons.x;
+                        size: 24px;
+                        tooltip: @tr("Remove");
+                        clicked => { Bridge.setting-list-remove(root.item.section, root.item.path, v); }
+                    }
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            TextField {
+                height: 34px;
+                placeholder: @tr("Add…");
+                text <=> root.draft;
+                accepted => {
+                    Bridge.setting-list-add(root.item.section, root.item.path, root.draft);
+                    root.draft = "";
+                }
+            }
+            Button {
+                compact: true;
+                icon: Icons.plus;
+                enabled: root.draft != "";
+                clicked => {
+                    Bridge.setting-list-add(root.item.section, root.item.path, root.draft);
+                    root.draft = "";
+                }
+            }
+        }
+    }
+
+    if root.item.kind == "json": VerticalLayout {
+        spacing: 6px;
+        if root.help != "": Muted {
+            text: root.help;
+        }
+        TextEdit {
+            height: 120px;
+            text <=> root.json;
+            font-size: Theme.font-s;
+            wrap: no-wrap;
+        }
+        HorizontalLayout {
+            alignment: end;
+            Button {
+                compact: true;
+                text: @tr("Save");
+                enabled: root.json != root.item.text;
+                clicked => { Bridge.setting-text(root.item.section, root.item.path, root.json); }
+            }
+        }
+    }
+}
+
+// Every field of a list, separated by thin lines.
+export component FieldList inherits VerticalLayout {
+    in property <[FieldItem]> fields;
+    spacing: 12px;
+    for f in root.fields: FieldRow {
+        item: f;
+    }
+}

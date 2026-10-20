@@ -96,6 +96,7 @@ Les commandes s'exécutent en parallèle : utilisez `id` pour associer chaque r�
 | `manifest_refresh` | — | `{updated, revision}` |
 | `update_check` | — | `{current, latest, update_available, url}`. Une notice `update` est aussi levée si besoin |
 | `notice_dismiss` | `id` | `{}` |
+| `backup` | `path?` | `{path}`. Copie cohérente de la base, faisable à chaud. Par défaut dans `<data>/backups/`. Pour restaurer : arrêter, puis remplacer `twitchminer.db` |
 
 Codes d'erreur : `not_found`, `invalid`, `auth`, `module`, `unavailable`, `timeout`, `manifest`, `internal`, `bad_command`, `unauthorized`.
 

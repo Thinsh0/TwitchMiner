@@ -77,6 +77,13 @@ pub enum Command {
         args: Value,
     },
 
+    /// Writes a consistent copy of the database. `path` defaults to
+    /// `<data>/backups/twitchminer-<timestamp>.db`. Returns the path written.
+    Backup {
+        #[serde(default)]
+        path: Option<String>,
+    },
+
     /// Checks for a newer Twitch manifest now.
     ManifestRefresh,
     /// Checks GitHub releases for a newer application version now.

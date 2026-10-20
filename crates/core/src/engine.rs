@@ -570,6 +570,23 @@ impl Engine {
 
             Command::ManifestRefresh => self.refresh_manifest().await,
             Command::UpdateCheck => self.check_update().await,
+            Command::Backup { path } => {
+                let path = match path {
+                    Some(p) => std::path::PathBuf::from(p),
+                    None => {
+                        let dir = self.shared.paths.root.join("backups");
+                        std::fs::create_dir_all(&dir).map_err(ApiError::internal)?;
+                        dir.join(format!(
+                            "twitchminer-{}.db",
+                            Utc::now().format("%Y%m%d-%H%M%S")
+                        ))
+                    }
+                };
+                db.backup_to(path.clone())
+                    .await
+                    .map_err(|e| ApiError::new("backup", e.to_string()))?;
+                Ok(json!({ "path": path.display().to_string() }))
+            }
             Command::NoticeDismiss { id } => {
                 self.clear_notice(&id);
                 Ok(json!({}))

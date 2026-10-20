@@ -116,6 +116,8 @@ enum Ctl {
     },
     /// Stream live events.
     Events,
+    /// Write a consistent copy of the database (default: <data>/backups/).
+    Backup { path: Option<String> },
     /// Send a raw command JSON, e.g. '{"cmd":"modules_list"}'.
     Raw { json: String },
 }
@@ -332,6 +334,7 @@ async fn ctl(
                 .await?,
         ),
         Ctl::Events => events(&url, &token).await?,
+        Ctl::Backup { path } => print(c.call(json!({"cmd": "backup", "path": path})).await?),
     }
     Ok(())
 }

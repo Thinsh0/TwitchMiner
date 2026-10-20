@@ -473,6 +473,16 @@ impl Db {
         .await
     }
 
+    /// Writes a consistent, compacted copy of the whole database to `path`
+    /// (safe while the engine runs). Fails if `path` already exists.
+    pub async fn backup_to(&self, path: std::path::PathBuf) -> Result<(), DbError> {
+        self.call(move |c| {
+            c.execute("VACUUM INTO ?1", [path.to_string_lossy().as_ref()])?;
+            Ok(())
+        })
+        .await
+    }
+
     /// Deletes history older than `days` (statistics are kept).
     pub async fn prune_history(&self, days: u32) -> Result<usize, DbError> {
         self.call(move |c| {
@@ -547,6 +557,27 @@ mod tests {
             .unwrap();
         assert_eq!(s[0].points, 20);
         assert_eq!(s[0].watch_minutes, 1);
+    }
+
+    #[tokio::test]
+    async fn backup_is_a_usable_copy() {
+        let dir = std::env::temp_dir().join(format!("tm-backup-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Db::open(&dir.join("a.db")).unwrap();
+        db.kv_put("n".into(), "k".into(), serde_json::json!(42))
+            .await
+            .unwrap();
+        db.backup_to(dir.join("b.db")).await.unwrap();
+        let copy = Db::open(&dir.join("b.db")).unwrap();
+        assert_eq!(
+            copy.kv_get("n".into(), "k".into()).await.unwrap(),
+            Some(serde_json::json!(42))
+        );
+        assert!(
+            db.backup_to(dir.join("b.db")).await.is_err(),
+            "never overwrites"
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[tokio::test]

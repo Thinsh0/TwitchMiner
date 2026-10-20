@@ -57,6 +57,7 @@ Les commandes s'exécutent en parallèle : utilisez `id` pour associer chaque r�
 | `cmd` | Champs | Réponse |
 |---|---|---|
 | `snapshot` | — | `State` |
+| `summary` | — | vue dérivée compacte (comptes, chaînes regardées, drop en cours avec progression et ETA, totaux) pour icône de barre système, notifications et widgets. En Rust : `tm_core::view::summary(&state, now)` |
 | `modules_list` | — | `[{id, name, description, default_settings, settings_schema}]` |
 | `login_start` | `profile?` | `{flow_id, user_code, verification_uri, expires_at}`. La fin arrive en événement `login_finished` |
 | `login_cancel` | `flow_id` | `{cancelled}` |

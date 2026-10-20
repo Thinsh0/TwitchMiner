@@ -19,6 +19,7 @@ pub mod scheduler;
 pub mod settings;
 pub mod state;
 pub mod store;
+pub mod view;
 
 pub use command::{ApiError, ApiResult, Command};
 pub use engine::{Engine, EngineConfig};

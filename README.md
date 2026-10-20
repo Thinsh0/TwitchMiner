@@ -37,6 +37,7 @@ twitchminer ctl history
 - [Architecture](docs/ARCHITECTURE.md) : crates, état unique, données, robustesse, plateformes
 - [API](docs/API.md) : le contrat pour les interfaces (commandes, événements, état)
 - [Écrire un module](docs/MODULES.md)
+- [Android et OneUI](docs/ANDROID.md) : service de premier plan, Now Bar, Termux
 
 ## Structure
 

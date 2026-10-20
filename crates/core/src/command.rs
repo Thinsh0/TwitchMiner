@@ -15,6 +15,8 @@ pub enum Command {
     Snapshot,
     /// Registered modules with their default settings.
     ModulesList,
+    /// Compact derived view for trays, notifications and widgets (`view::Summary`).
+    Summary,
 
     /// Starts a device-code login. Returns the code to show; completion arrives as
     /// a `login_finished` event.

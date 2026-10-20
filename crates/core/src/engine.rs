@@ -413,6 +413,10 @@ impl Engine {
         let db = store.db();
         match cmd {
             Command::Snapshot => serde_json::to_value(store.snapshot()).map_err(ApiError::internal),
+            Command::Summary => {
+                serde_json::to_value(store.read(|s| crate::view::summary(s, Utc::now())))
+                    .map_err(ApiError::internal)
+            }
             Command::ModulesList => Ok(Value::Array(
                 self.shared
                     .modules

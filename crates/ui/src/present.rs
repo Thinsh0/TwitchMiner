@@ -49,6 +49,13 @@ pub fn apply(ui: &MainWindow, input: &Input) {
         bridge.set_account(selected.clone());
     }
     let account = state.accounts.get(selected.as_str());
+    bridge.set_account_name(
+        account
+            .and_then(|a| a.info.as_ref())
+            .map(|i| i.display_name.as_str())
+            .unwrap_or_default()
+            .into(),
+    );
     let logins = logins(state);
     let notices = notices(state);
     let plan_todos = account

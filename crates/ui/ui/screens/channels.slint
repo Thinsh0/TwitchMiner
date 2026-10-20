@@ -305,7 +305,8 @@ component OrderChoice inherits Rectangle {
 
 export component ChannelsScreen inherits Page {
     title: @tr("Channels");
-    subtitle: @tr("Where am I with channel points?");
+    subtitle: Bridge.account-name == "" ? @tr("Where am I with channel points?")
+        : @tr("Where am I with channel points? Balances of the account {}.", Bridge.account-name);
     property <string> draft;
     property <bool> options;
 

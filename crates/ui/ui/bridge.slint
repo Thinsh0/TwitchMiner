@@ -312,6 +312,8 @@ export global Bridge {
     // Every channel mined for points (priority and followed), for the main list.
     in property <[ChannelItem]> all-channels;
     in property <int> channels-live;
+    // Display name of the selected account (whose balances are shown).
+    in property <string> account-name;
     in property <int> channels-count;
     in property <int> channels-session-points;
     // engine.max_watch_slots: channels watched at once.

@@ -1160,3 +1160,6 @@ msgstr "— = solde pas encore connu : il s'affiche une fois que la chaîne a �
 
 msgid "Prioritized"
 msgstr "Prioritaire"
+
+msgid "Where am I with channel points? Balances of the account {}."
+msgstr "Où j'en suis côté points ? Soldes du compte {}."

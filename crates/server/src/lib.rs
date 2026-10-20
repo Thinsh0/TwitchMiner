@@ -2,6 +2,7 @@
 //!
 //! | Route                  | Description                                            |
 //! |------------------------|--------------------------------------------------------|
+//! | `GET  /`               | built-in status page (asks for the token)              |
 //! | `GET  /api/v1/health`  | liveness, no auth                                      |
 //! | `GET  /api/v1/state`   | full state snapshot                                    |
 //! | `POST /api/v1/command` | body = `Command` JSON, returns `{ok, data|error}`       |
@@ -62,6 +63,7 @@ pub fn router(engine: Engine, cfg: &ServerConfig) -> Router {
         .route("/ws", get(ws_upgrade))
         .route_layer(middleware::from_fn_with_state(state.clone(), auth));
     Router::new()
+        .route("/", get(dashboard))
         .route("/api/v1/health", get(health))
         .nest("/api/v1", api)
         .layer(middleware::from_fn(cors))
@@ -153,6 +155,14 @@ fn add_cors(r: &mut Response) {
         header::ACCESS_CONTROL_ALLOW_METHODS,
         HeaderValue::from_static("GET, POST, OPTIONS"),
     );
+}
+
+/// Minimal built-in status page (uses only the public WebSocket API).
+async fn dashboard() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8"), (header::CACHE_CONTROL, "no-cache")],
+        include_str!("dashboard.html"),
+    )
 }
 
 async fn health(State(st): State<AppState>) -> Json<Value> {

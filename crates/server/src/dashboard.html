@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TwitchMiner</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg:#0e0e10; --card:#18181b; --line:#2a2a2e; --fg:#efeff1; --mute:#a0a0ab; --acc:#a970ff; --ok:#3ecf8e; --warn:#f5a524; --err:#f04f5e; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display:flex; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:1; }
+  header h1 { font-size:16px; margin:0; font-weight:650; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--mute); }
+  .dot.on { background:var(--ok); } .dot.off { background:var(--err); }
+  main { max-width:1100px; margin:0 auto; padding:16px; display:grid; gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .card h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--mute); margin:0 0 10px; font-weight:600; }
+  .row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .grow { flex:1; min-width:0; }
+  .muted { color:var(--mute); }
+  .pill { font-size:12px; padding:2px 8px; border-radius:999px; background:#26262b; color:var(--mute); }
+  .pill.running { color:var(--ok); } .pill.auth_required, .pill.error, .pill.restarting { color:var(--err); } .pill.disabled, .pill.stopped { color:var(--mute); }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; }
+  .stat b { display:block; font-size:22px; font-variant-numeric:tabular-nums; }
+  .bar { height:8px; background:#26262b; border-radius:99px; overflow:hidden; margin-top:6px; }
+  .bar > i { display:block; height:100%; background:var(--acc); }
+  img.av { width:28px; height:28px; border-radius:50%; background:#26262b; }
+  ul { list-style:none; margin:0; padding:0; }
+  li { padding:7px 0; border-top:1px solid var(--line); }
+  li:first-child { border-top:0; }
+  .log { max-height:320px; overflow:auto; font:12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  input, button { font:inherit; color:var(--fg); background:#0e0e10; border:1px solid var(--line); border-radius:8px; padding:7px 10px; }
+  button { background:var(--acc); border-color:var(--acc); color:#fff; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--fg); border-color:var(--line); }
+  .code { font-size:28px; letter-spacing:.2em; font-weight:700; color:var(--acc); }
+  #auth { max-width:420px; margin:12vh auto; }
+</style>
+</head>
+<body>
+<header><span id="dot" class="dot"></span><h1>TwitchMiner</h1><span id="ver" class="muted"></span><span class="grow"></span><button class="ghost" id="loginBtn">+ Compte</button></header>
+<div id="auth" class="card" hidden>
+  <h2>Jeton d'API</h2>
+  <p class="muted">Obtenez-le avec <code>twitchminer api-token</code>.</p>
+  <div class="row"><input id="tok" class="grow" placeholder="token"><button id="tokBtn">Connexion</button></div>
+</div>
+<main id="app" hidden>
+  <section class="card stats" id="totals"></section>
+  <section id="logins"></section>
+  <section id="accounts" style="display:grid;gap:16px"></section>
+  <section class="card"><h2>Événements</h2><ul class="log" id="log"></ul></section>
+</main>
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const params = new URLSearchParams(location.search);
+let token = params.get("token") || (() => { try { return localStorage.getItem("tm_token"); } catch { return null; } })();
+let ws, state = null, nextId = 1; const waiting = new Map();
+
+function connect() {
+  if (!token) { $("#auth").hidden = false; return; }
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${proto}://${location.host}/api/v1/ws?token=${encodeURIComponent(token)}`);
+  ws.onopen = () => { try { localStorage.setItem("tm_token", token); } catch {} $("#dot").className = "dot on"; $("#auth").hidden = true; $("#app").hidden = false; };
+  ws.onclose = () => { $("#dot").className = "dot off"; if (!state) { $("#auth").hidden = false; } setTimeout(connect, 3000); };
+  ws.onmessage = (m) => {
+    const msg = JSON.parse(m.data);
+    if (msg.type === "snapshot") { state = msg.state; render(); }
+    else if (msg.type === "event") { log(msg.event); refresh(); }
+    else if (msg.type === "reply") { const cb = waiting.get(msg.id); waiting.delete(msg.id); cb && cb(msg); }
+  };
+}
+// Events are applied server-side; for simplicity this page re-reads the state (throttled).
+let pending = false;
+function refresh() { if (pending) return; pending = true; setTimeout(async () => { pending = false; const r = await cmd({ cmd: "snapshot" }); if (r.ok) { state = r.data; render(); } }, 400); }
+function cmd(c) { return new Promise((res) => { const id = nextId++; waiting.set(id, res); ws.send(JSON.stringify({ id, cmd: c })); }); }
+
+function log(e) {
+  const skip = ["viewers_changed", "watch_minute", "module_data_set", "points_balance", "stream_changed", "channel_tracked", "channel_released"];
+  if (skip.includes(e.type)) return;
+  const t = new Date(e.ts).toLocaleTimeString();
+  const ch = e.channel_id && state ? (state.accounts[e.account]?.channels[e.channel_id]?.display_name || e.channel_id) : "";
+  let text = e.type.replace(/_/g, " ");
+  if (e.type === "points_earned") text = `+${e.amount} ${e.reason} — ${ch}`;
+  if (e.type === "drop_claimed") text = `🎁 ${e.drop_name} (${e.game})`;
+  if (e.type === "watch_started") text = `▶ ${ch} (${e.reason})`;
+  if (e.type === "watch_stopped") text = `■ ${ch} (${e.cause})`;
+  if (e.type === "raid_joined") text = `⚔ raid ${ch} → ${e.target_login}`;
+  const li = document.createElement("li"); li.innerHTML = `<span class="muted">${t}</span> ${esc(text)}`;
+  $("#log").prepend(li); while ($("#log").children.length > 200) $("#log").lastChild.remove();
+}
+
+function render() {
+  $("#ver").textContent = "v" + state.version;
+  const accs = Object.values(state.accounts);
+  const sum = (k) => accs.reduce((n, a) => n + (a.session?.[k] || 0), 0);
+  $("#totals").innerHTML = [["Points (session)", sum("points_earned")], ["Minutes regardées", sum("watch_minutes")], ["Drops", sum("drops_claimed")], ["Bonus", sum("bonuses_claimed")], ["Raids", sum("raids_joined")]]
+    .map(([k, v]) => `<div class="stat"><span class="muted">${k}</span><b>${v}</b></div>`).join("");
+  $("#logins").innerHTML = Object.values(state.logins).map((l) => `<div class="card"><h2>Connexion en attente</h2>
+    <div class="row"><span class="code">${esc(l.user_code)}</span><a href="${esc(l.verification_uri)}" target="_blank" rel="noopener"><button>Ouvrir twitch.tv/activate</button></a></div></div>`).join("")
+    + Object.values(state.notices).map((n) => `<div class="card"><span class="pill ${n.level === "error" ? "error" : ""}">${esc(n.level)}</span> ${esc(n.message)}</div>`).join("");
+  $("#accounts").innerHTML = accs.map(renderAccount).join("") || `<div class="card muted">Aucun compte. Cliquez sur « + Compte ».</div>`;
+  document.querySelectorAll("[data-add]").forEach((f) => f.onsubmit = async (ev) => {
+    ev.preventDefault(); const login = f.querySelector("input").value.trim(); if (!login) return;
+    const r = await cmd({ cmd: "module_call", account: f.dataset.add, module: "points", name: "add_channel", args: { login } });
+    if (!r.ok) alert(r.error.message); f.reset();
+  });
+}
+
+function renderAccount(a) {
+  const info = a.info || {}; const st = a.status?.state || "stopped";
+  const ch = (id) => a.channels[id] || { display_name: id };
+  const watching = Object.values(a.watching).map((w) => `<li class="row"><img class="av" src="${esc(ch(w.channel_id).avatar_url || "")}" alt="">
+      <span class="grow">${esc(ch(w.channel_id).display_name)} <span class="muted">· ${esc(ch(w.channel_id).stream?.game?.name || "")}</span></span>
+      <span class="pill">${esc(w.reason)}</span><span class="muted">${w.minutes} min</span></li>`).join("") || `<li class="muted">Rien en cours</li>`;
+  let drop = "";
+  const t = a.drop_target;
+  if (t && a.campaigns[t.campaign_id]) {
+    const c = a.campaigns[t.campaign_id]; const d = c.drops.find((x) => x.id === t.drop_id) || c.drops.find((x) => !x.claimed);
+    if (d) { const p = d.required_minutes ? Math.min(100, (100 * d.current_minutes) / d.required_minutes) : 0;
+      drop = `<div class="card"><h2>Drop en cours</h2><div class="row"><b>${esc(c.game.name)}</b><span class="muted">${esc(c.name)} — ${esc(d.name)}</span></div>
+        <div class="bar"><i style="width:${p}%"></i></div><span class="muted">${d.current_minutes} / ${d.required_minutes} min</span></div>`; }
+  }
+  const channels = Object.values(a.channels).sort((x, y) => (!!y.stream - !!x.stream) || (y.points || 0) - (x.points || 0))
+    .map((c) => `<li class="row"><img class="av" src="${esc(c.avatar_url || "")}" alt=""><span class="grow">${esc(c.display_name)}
+      <span class="muted">${c.stream ? "· " + esc(c.stream.game?.name || "live") + " · " + c.stream.viewers + " spect." : "· hors ligne"}</span></span>
+      <span>${c.points ?? "—"} pts</span><span class="muted">${c.session_points ? "+" + c.session_points : ""}</span></li>`).join("");
+  const modules = Object.entries(a.modules).map(([k, v]) => `<span class="pill ${v.state}" title="${esc(v.error || "")}">${k}: ${v.state}</span>`).join(" ");
+  return `<div style="display:grid;gap:12px">
+    <div class="card"><div class="row"><img class="av" src="${esc(info.avatar_url || "")}" alt=""><b class="grow">${esc(info.display_name || info.login)}</b><span class="pill ${st}">${st}</span></div>
+      <div class="row" style="margin-top:8px">${modules}</div></div>
+    ${drop}
+    <div class="card"><h2>Visionnage</h2><ul>${watching}</ul></div>
+    <div class="card"><h2>Chaînes (${Object.keys(a.channels).length})</h2><ul>${channels}</ul>
+      <form class="row" style="margin-top:10px" data-add="${esc(info.id)}"><input class="grow" placeholder="ajouter une chaîne (login)"><button>Ajouter</button></form></div>
+  </div>`;
+}
+
+$("#tokBtn").onclick = () => { token = $("#tok").value.trim(); connect(); };
+$("#loginBtn").onclick = async () => { const r = await cmd({ cmd: "login_start" }); if (!r.ok) alert(r.error.message); };
+connect();
+</script>
+</body>
+</html>

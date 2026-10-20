@@ -32,6 +32,8 @@ twitchminer ctl history
 
 `twitchminer --help` et `twitchminer ctl --help` listent tout.
 
+Une page de statut est aussi servie sur **http://127.0.0.1:7878/**. Elle demande le jeton d'API (`twitchminer api-token`). Elle n'est pas l'interface finale, mais elle suffit pour surveiller un daemon depuis un navigateur ou un téléphone.
+
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) : crates, état unique, données, robustesse, plateformes

@@ -1,0 +1,117 @@
+{
+  "schema": 1,
+  "revision": 1,
+  "updated": "2026-10-20",
+  "default_profile": "android_tv",
+  "profiles": {
+    "android_tv": {
+      "client_id": "ue6666qo983tsx6so1t0vnawi233wa",
+      "client_url": "https://android.tv.twitch.tv",
+      "user_agents": [
+        "Mozilla/5.0 (Linux; Android 7.1; Smart Box C1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+      ],
+      "raw_queries": true
+    },
+    "android_app": {
+      "client_id": "kd1unb4b3q4t58fwlpcbzcbnm76a8fp",
+      "client_url": "https://www.twitch.tv",
+      "user_agents": [
+        "Dalvik/2.1.0 (Linux; U; Android 16; SM-S938B Build/BP2A.250605.031) tv.twitch.android.app/25.3.0/2503006",
+        "Dalvik/2.1.0 (Linux; U; Android 15; SM-G990B Build/AP3A.240905.015.A2) tv.twitch.android.app/25.3.0/2503006"
+      ],
+      "raw_queries": false
+    }
+  },
+  "web_user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+  "spade_url": "https://spade.twitch.tv/track",
+  "operations": {
+    "StreamInfo": {
+      "name": "VideoPlayerStreamInfoOverlayChannel",
+      "hash": "198492e0857f6aedead9665c81c5a06d67b25b58034649687124083ff288597d"
+    },
+    "ClaimCommunityPoints": {
+      "name": "ClaimCommunityPoints",
+      "hash": "46aaeebe02c99afdf4fc97c7c0cba964124bf6b0af229395f1f6d1feed05b3d0"
+    },
+    "ClaimDrop": {
+      "name": "DropsPage_ClaimDropRewards",
+      "hash": "a455deea71bdc9015b78eb49f4acfbce8baa7ccbedd28e549bb025bd0f751930"
+    },
+    "ChannelPointsContext": {
+      "name": "ChannelPointsContext",
+      "hash": "374314de591e69925fce3ddc2bcf085796f56ebb8cad67a0daa3165c03adc345"
+    },
+    "Inventory": {
+      "name": "Inventory",
+      "hash": "8337eb8541b314040b0edde0c09c5c7a2783ba1960aa9edfbf3bac16d0fec404",
+      "variables": { "fetchRewardCampaigns": false }
+    },
+    "CurrentDrop": {
+      "name": "DropCurrentSessionContext",
+      "hash": "4d06b702d25d652afb9ef835d2a550031f1cf762b193523a92166f40ea3d142b",
+      "variables": { "channelLogin": "" }
+    },
+    "Campaigns": {
+      "name": "ViewerDropsDashboard",
+      "hash": "c16bb890cc8ce7647a96ee69cd313d423a378a3dedadf630a1017cde18975feb",
+      "variables": { "fetchRewardCampaigns": false }
+    },
+    "CampaignDetails": {
+      "name": "DropCampaignDetails",
+      "hash": "039277bf98f3130929262cc7c6efd9c141ca3749cb6dca442fc8ead9a53f77c1"
+    },
+    "AvailableDrops": {
+      "name": "DropsHighlightService_AvailableDrops",
+      "hash": "782dad0f032942260171d2d80a654f88bdd0c5a9dddc392e9bc92218a0f42d20"
+    },
+    "PlaybackAccessToken": {
+      "name": "PlaybackAccessToken",
+      "hash": "ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9",
+      "variables": { "isLive": true, "isVod": false, "platform": "web", "playerType": "site", "vodID": "" }
+    },
+    "GameDirectory": {
+      "name": "DirectoryPage_Game",
+      "hash": "86bcceb4e8b1a51256ff8eed8bd8aae4acacf80d737efe904f84f3aeadf8cafd",
+      "variables": {
+        "imageWidth": 50,
+        "includeCostreaming": false,
+        "sortTypeIsRecency": false,
+        "options": {
+          "broadcasterLanguages": [],
+          "freeformTags": null,
+          "includeRestricted": ["SUB_ONLY_LIVE"],
+          "recommendationsContext": { "platform": "web" },
+          "sort": "VIEWER_COUNT",
+          "systemFilters": [],
+          "tags": [],
+          "requestID": "JIRA-VXP-2397"
+        }
+      }
+    },
+    "SlugRedirect": {
+      "name": "DirectoryGameRedirect",
+      "hash": "1f0300090caceec51f33c5e20647aceff9017f740f223c3c532ba6fa59f6b6cc"
+    },
+    "JoinRaid": {
+      "name": "JoinRaid",
+      "hash": "c6a332a86d1087fbbb1a8623aa01bd1313d2386e7c63be60fdb2d1901f01a4ae"
+    },
+    "ClaimMoment": {
+      "name": "CommunityMomentCallout_Claim",
+      "hash": "e2d67415aead910f7f9ceb45a77b750a1e1d9622c936d832328a0689e054db62"
+    },
+    "MakePrediction": {
+      "name": "MakePrediction",
+      "hash": "b44682ecc88358817009f20e69d75081b1e58825bb40aa53d5dbadcc17c881d8"
+    },
+    "ChannelFollows": {
+      "name": "ChannelFollows",
+      "hash": "eecf815273d3d949e5cf0085cc5084cd8a1b5b7b6f7990cf43cb0beadf546907",
+      "variables": { "limit": 100, "order": "ASC" }
+    },
+    "NotificationsDelete": {
+      "name": "OnsiteNotifications_DeleteNotification",
+      "hash": "13d463c831f28ffe17dccf55b3148ed8b3edbbd0ebadd56352f1ff0160616816"
+    }
+  }
+}

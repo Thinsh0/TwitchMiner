@@ -1,7 +1,0 @@
-{
-  "name": "twitch-miner-desktop-backend",
-  "private": true,
-  "scripts": {
-    "tauri": "tauri"
-  }
-}

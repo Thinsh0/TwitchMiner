@@ -1,11 +1,62 @@
 [workspace]
-members = ["core", "desktop/src-tauri", "mobile/src-tauri"]
-resolver = "2"
-exclude = ["archive_v1"]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/Thinsh0/TwitchMiner"
+
+[workspace.dependencies]
+tm-twitch = { path = "crates/twitch" }
+tm-core = { path = "crates/core" }
+tm-modules = { path = "crates/modules" }
+tm-server = { path = "crates/server" }
+
+tokio = { version = "1.47", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "signal", "fs"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+async-trait = "0.1"
+
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "gzip", "json", "form", "query", "system-proxy"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-native-certs = "0.8"
+webpki-roots = "1"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake", "stream", "__rustls-tls"] }
+url = "2.5"
+
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["serde", "clock", "std"] }
+rand = "0.9"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "registry"] }
+tracing-appender = "0.2"
+parking_lot = "0.12"
+arc-swap = "1.7"
+
+rusqlite = { version = "0.40", features = ["bundled", "serde_json"] }
+directories = "6"
+
+axum = { version = "0.8", features = ["ws"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 
 [profile.release]
-panic = "abort" # Strip expensive panic clean-up logic
-codegen-units = 1 # Compile crates one after another so the compiler can optimize better
-lto = true # Enables link to optimizations
-opt-level = "s" # Optimize for binary size
-strip = true # Remove debug symbols
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Small binaries for mobile / embedded builds: `cargo build --profile release-small`
+[profile.release-small]
+inherits = "release"
+opt-level = "s"

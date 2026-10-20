@@ -1,0 +1,31 @@
+[package]
+name = "tm-twitch"
+description = "Twitch client layer: auth, GQL, PubSub, stream watching"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio.workspace = true
+tokio-util.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
+rustls.workspace = true
+rustls-native-certs.workspace = true
+webpki-roots.workspace = true
+tokio-rustls.workspace = true
+tokio-tungstenite.workspace = true
+url.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+base64.workspace = true
+chrono.workspace = true
+rand.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+arc-swap.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

@@ -34,6 +34,8 @@ pub struct PointsSettings {
     pub watch_streak: bool,
     /// Online-status polling interval (PubSub covers most changes in real time).
     pub refresh_minutes: u64,
+    /// How to rank channels competing for the watch slots (after streaks).
+    pub order_by: OrderBy,
 }
 
 impl Default for PointsSettings {
@@ -48,8 +50,25 @@ impl Default for PointsSettings {
             claim_moments: true,
             watch_streak: true,
             refresh_minutes: 5,
+            order_by: OrderBy::Config,
         }
     }
+}
+
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum OrderBy {
+    /// `channels` order, then followed channels.
+    #[default]
+    Config,
+    /// Highest points multiplier first (subscriptions earn more), then config order.
+    Multiplier,
+    /// Channels where you have the fewest points first.
+    FewestPoints,
+    /// Channels where you have the most points first.
+    MostPoints,
 }
 
 /// Minutes to watch for a streak to count (Twitch requires a few minutes).
@@ -156,7 +175,18 @@ impl Module for Points {
                 rt.refresh_contexts(&ctx, &settings).await;
                 ctx.set_data("channels", json!(rt.channels.len()));
             }
-            ctx.set_watch_requests(rt.requests(&settings));
+            let balances = ctx.store().read(|st| {
+                st.accounts
+                    .get(ctx.account_id())
+                    .map(|a| {
+                        a.channels
+                            .values()
+                            .map(|c| (c.id.clone(), (c.points.unwrap_or(0), c.multiplier)))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            });
+            ctx.set_watch_requests(rt.requests(&settings, &balances));
 
             let next_recheck = rt.recheck.values().min().copied();
             tokio::select! {
@@ -478,22 +508,43 @@ impl Runtime {
         }
     }
 
-    fn requests(&self, s: &PointsSettings) -> Vec<WatchRequest> {
-        let n = self.channels.len();
-        self.channels
+    /// `balances`: channel id → (points, multiplier), from the state.
+    fn requests(
+        &self,
+        s: &PointsSettings,
+        balances: &HashMap<String, (u64, f64)>,
+    ) -> Vec<WatchRequest> {
+        let mut online: Vec<&ChannelRt> = self
+            .channels
             .values()
             .filter(|c| c.stream.is_some())
-            .map(|c| {
+            .collect();
+        let bal = |c: &ChannelRt| balances.get(&c.meta.id).copied().unwrap_or((0, 1.0));
+        match s.order_by {
+            OrderBy::Config => online.sort_by_key(|c| c.rank),
+            OrderBy::Multiplier => online.sort_by(|a, b| {
+                bal(b)
+                    .1
+                    .partial_cmp(&bal(a).1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then(a.rank.cmp(&b.rank))
+            }),
+            OrderBy::FewestPoints => online.sort_by_key(|c| (bal(c).0, c.rank)),
+            OrderBy::MostPoints => online.sort_by_key(|c| (std::cmp::Reverse(bal(c).0), c.rank)),
+        }
+        let n = online.len();
+        online
+            .into_iter()
+            .enumerate()
+            .map(|(pos, c)| {
                 let streak_pending = s.watch_streak
                     && c.broadcast_minutes < STREAK_MINUTES
                     && c.streak_done.as_deref() != c.stream.as_ref().map(|st| st.id.as_str());
+                let boost = (n - pos).min(99) as i32;
                 let (prio, reason) = if streak_pending {
-                    (
-                        priority::STREAK + (n - c.rank) as i32,
-                        "points: watch streak",
-                    )
+                    (priority::STREAK + boost, "points: watch streak")
                 } else {
-                    (priority::POINTS + (n - c.rank).min(99) as i32, "points")
+                    (priority::POINTS + boost, "points")
                 };
                 WatchRequest {
                     channel_id: c.meta.id.clone(),
@@ -742,10 +793,42 @@ mod tests {
         rt.channels.insert("c".into(), ch("c", 2, false));
         rt.channels.get_mut("a").unwrap().broadcast_minutes = 30;
         let s = PointsSettings::default();
-        let r = rt.requests(&s);
+        let r = rt.requests(&s, &HashMap::new());
         assert_eq!(r.len(), 2);
         let a = r.iter().find(|x| x.channel_id == "a").unwrap();
         let b = r.iter().find(|x| x.channel_id == "b").unwrap();
         assert!(b.priority > a.priority, "b still needs its streak");
+    }
+
+    #[test]
+    fn order_by_multiplier_and_points() {
+        let mut rt = Runtime {
+            channels: BTreeMap::new(),
+            recheck: HashMap::new(),
+            raids: HashSet::new(),
+        };
+        rt.channels.insert("a".into(), ch("a", 0, true));
+        rt.channels.insert("b".into(), ch("b", 1, true));
+        let balances: HashMap<String, (u64, f64)> =
+            [("a".into(), (500, 1.0)), ("b".into(), (100, 2.0))]
+                .into_iter()
+                .collect();
+        let top = |order_by| {
+            let s = PointsSettings {
+                watch_streak: false,
+                order_by,
+                ..Default::default()
+            };
+            let r = rt.requests(&s, &balances);
+            r.iter()
+                .max_by_key(|x| x.priority)
+                .unwrap()
+                .channel_id
+                .clone()
+        };
+        assert_eq!(top(OrderBy::Config), "a");
+        assert_eq!(top(OrderBy::Multiplier), "b");
+        assert_eq!(top(OrderBy::FewestPoints), "b");
+        assert_eq!(top(OrderBy::MostPoints), "a");
     }
 }

@@ -130,7 +130,8 @@ Chaque portée a un **JSON Schema** (`settings_get(...).schema`, ou `modules_lis
  "badges_emotes": true, "require_linked": true, "auto_claim": true, "refresh_minutes": 60, "discovery_channels": 8}
 // points
 {"enabled": true, "channels": [], "follows": true, "exclude": [], "claim_bonus": true, "join_raids": true,
- "claim_moments": true, "watch_streak": true, "refresh_minutes": 5}
+ "claim_moments": true, "watch_streak": true, "refresh_minutes": 5,
+ "order_by": "config"}                                                    // config | multiplier | fewest_points | most_points
 // predictions (désactivé par défaut)
 {"enabled": false, "strategy": "smart", "percent": 5.0, "max_points": 50000, "min_balance": 2000,
  "min_voters": 20, "seconds_before_close": 6, "channels": []}           // most_voted | most_points | high_odds | smart

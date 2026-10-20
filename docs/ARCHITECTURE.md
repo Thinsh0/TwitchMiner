@@ -107,6 +107,7 @@ Le schéma est validé (hashes de 64 caractères hexadécimaux, profil par défa
   - Inventaire : toutes les heures.
 
   Seuls les raids, moments et prédictions (purement temps réel) seraient perdus, jusqu'à un passage à Hermes, le successeur de PubSub, déjà joignable (`hermes.twitch.tv`).
+- **Une seule instance par compte** : verrou exclusif sur le dossier de données. Entre machines, coordination par l'API avec les `peers` (principal / secondaire, bascule automatique, voir [SERVER.md](SERVER.md)).
 - **Jetons** : validation horaire, revalidation immédiate sur une réponse 401 (au plus une par minute), contrôle planifié avant l'expiration, rafraîchissement automatique. Sinon le statut passe à `auth_required`.
 
 ## Plateformes

@@ -18,8 +18,9 @@ use crate::command::{ApiError, ApiResult, Command};
 use crate::db::{Db, StoredAccount};
 use crate::event::Event;
 use crate::module::{Module, ModuleCall};
-use crate::paths::Paths;
-use crate::settings::{self, ENGINE_SCOPE, EngineSettings, Scope};
+use crate::paths::{DataLock, LockError, Paths};
+use crate::peers::{self, Action, Local};
+use crate::settings::{self, ENGINE_SCOPE, EngineSettings, Role, Scope};
 use crate::state::{AccountInfo, AccountStatus, Level, LoginFlow, Notice};
 use crate::store::Store;
 
@@ -42,9 +43,11 @@ pub(crate) struct Shared {
     pub manifest: SharedManifest,
     pub modules: Vec<Arc<dyn Module>>,
     pub cancel: CancellationToken,
+    pub instance_id: String,
     net: ArcSwap<Net>,
     accounts: tokio::sync::Mutex<HashMap<String, AccountRuntime>>,
     logins: Mutex<HashMap<String, CancellationToken>>,
+    _lock: DataLock,
 }
 
 impl Shared {
@@ -61,9 +64,12 @@ pub enum EngineError {
     Net(#[from] tm_twitch::Error),
     #[error("duplicate module id `{0}`")]
     DuplicateModule(String),
+    #[error(transparent)]
+    Lock(#[from] LockError),
 }
 
 const MANIFEST_KV: (&str, &str) = ("engine", "manifest");
+const INSTANCE_KV: (&str, &str) = ("engine", "instance_id");
 
 impl Engine {
     pub async fn start(cfg: EngineConfig) -> Result<Self, EngineError> {
@@ -75,10 +81,25 @@ impl Engine {
             }
         }
 
+        // One engine per data directory (daemon + desktop app on the same machine…).
+        let lock = cfg.paths.lock()?;
         let db = Db::open(&cfg.paths.db_file())?;
+        let instance_id = match db
+            .kv_get(INSTANCE_KV.0.into(), INSTANCE_KV.1.into())
+            .await?
+        {
+            Some(Value::String(id)) => id,
+            _ => {
+                let id = uuid::Uuid::new_v4().to_string();
+                db.kv_put(INSTANCE_KV.0.into(), INSTANCE_KV.1.into(), json!(id))
+                    .await?;
+                id
+            }
+        };
         let store = Store::new(db.clone());
         store.emit(Event::EngineStarted {
             version: cfg.version.clone(),
+            instance_id: instance_id.clone(),
         });
         for (scope, value) in db.settings().await? {
             store.emit(Event::SettingsChanged { scope, value });
@@ -109,20 +130,39 @@ impl Engine {
             manifest: manifest::shared(m),
             modules: cfg.modules,
             cancel: CancellationToken::new(),
+            instance_id,
             net: ArcSwap::from_pointee(net),
             accounts: tokio::sync::Mutex::new(HashMap::new()),
             logins: Mutex::new(HashMap::new()),
+            _lock: lock,
         });
         let engine = Engine { shared };
 
+        // A secondary instance first asks its peers, so it never mines an account
+        // a peer already handles, not even for a few seconds.
+        let taken = if engine_settings.role == Role::Secondary {
+            engine.remote_accounts(&engine_settings).await
+        } else {
+            HashMap::new()
+        };
         for acc in db.accounts().await? {
             engine.publish_account(&acc);
             store.emit(Event::AccountStatusChanged {
                 account: acc.id.clone(),
                 status: AccountStatus::Stopped,
             });
-            if acc.enabled {
-                engine.start_account(acc).await;
+            if !acc.enabled {
+                continue;
+            }
+            match taken.get(&acc.id) {
+                Some(peer) => {
+                    tracing::info!(login = %acc.login, %peer, "account mined by a peer, standing by");
+                    store.emit(Event::AccountStatusChanged {
+                        account: acc.id.clone(),
+                        status: AccountStatus::Standby { peer: peer.clone() },
+                    });
+                }
+                None => engine.start_account(acc).await,
             }
         }
 
@@ -196,7 +236,18 @@ impl Engine {
         let Ok(accounts) = self.shared.store.db().accounts().await else {
             return;
         };
-        for acc in accounts.into_iter().filter(|a| a.enabled) {
+        let standby = |id: &str| {
+            self.shared.store.read(|s| {
+                matches!(
+                    s.accounts.get(id).and_then(|a| a.status.as_ref()),
+                    Some(AccountStatus::Standby { .. })
+                )
+            })
+        };
+        for acc in accounts
+            .into_iter()
+            .filter(|a| a.enabled && !standby(&a.id))
+        {
             self.start_account(acc).await;
         }
     }
@@ -226,7 +277,112 @@ impl Engine {
 
     // ----------------------------------------------------------- background
 
+    /// Accounts mined by reachable peers: account id → peer label.
+    async fn remote_accounts(&self, settings: &EngineSettings) -> HashMap<String, String> {
+        let net = self.shared.net();
+        let mut out = HashMap::new();
+        for peer in &settings.peers {
+            match peers::running_on(&net, peer, &self.shared.instance_id).await {
+                Ok(accounts) => {
+                    self.clear_notice(&format!("peer:{}", peer.url));
+                    for a in accounts {
+                        out.entry(a).or_insert_with(|| peer.label().to_string());
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!(peer = %peer.label(), error = %e, "peer unreachable");
+                }
+            }
+        }
+        out
+    }
+
+    /// One coordination round with the peers (see `peers.rs`).
+    async fn coordinate(&self, missing: &mut HashMap<String, u32>) {
+        let settings = self.shared.store.read(EngineSettings::from_state);
+        let Ok(accounts) = self.shared.store.db().accounts().await else {
+            return;
+        };
+        let local: Vec<(String, Local)> = accounts
+            .iter()
+            .filter(|a| a.enabled)
+            .map(|a| {
+                let status = self
+                    .shared
+                    .store
+                    .read(|s| s.accounts.get(&a.id).and_then(|x| x.status.clone()));
+                (a.id.clone(), Local::of(status.as_ref()))
+            })
+            .collect();
+        // Without peers, nothing to defer to: resume anything left in standby.
+        let remote = if settings.peers.is_empty() {
+            HashMap::new()
+        } else {
+            self.remote_accounts(&settings).await
+        };
+        let role = if settings.peers.is_empty() {
+            Role::Primary
+        } else {
+            settings.role
+        };
+        for action in peers::decide(role, &local, &remote, missing) {
+            match action {
+                Action::Standby { account, peer } => {
+                    tracing::info!(%account, %peer, "account mined by a peer, standing by");
+                    self.stop_account(&account).await;
+                    self.shared.store.emit(Event::AccountStatusChanged {
+                        account,
+                        status: AccountStatus::Standby { peer },
+                    });
+                }
+                Action::Resume { account } => {
+                    if let Some(acc) = accounts.iter().find(|a| a.id == account) {
+                        tracing::info!(login = %acc.login, "no peer mines this account any more, taking over");
+                        self.start_account(acc.clone()).await;
+                    }
+                }
+                Action::Warn { account, peer } => {
+                    let login = accounts
+                        .iter()
+                        .find(|a| a.id == account)
+                        .map(|a| a.login.clone())
+                        .unwrap_or(account.clone());
+                    self.notice(
+                        &format!("duplicate:{account}"),
+                        Level::Warning,
+                        format!(
+                            "{login} is also being mined by {peer}: set one instance to `secondary`"
+                        ),
+                    );
+                }
+                Action::ClearWarn { account } => self.clear_notice(&format!("duplicate:{account}")),
+            }
+        }
+    }
+
     fn spawn_background_tasks(&self) {
+        // Peer coordination (one account mined once across instances).
+        let me = self.clone();
+        tokio::spawn(async move {
+            let mut rx = me.shared.store.subscribe();
+            let mut missing = HashMap::new();
+            // An interval (not a sleep re-created per event) so frequent events can't starve it.
+            let mut tick = tokio::time::interval(peers::CHECK_EVERY);
+            tick.tick().await;
+            loop {
+                tokio::select! {
+                    _ = me.shared.cancel.cancelled() => return,
+                    _ = tick.tick() => {}
+                    ev = rx.recv() => match ev {
+                        Ok(env) if matches!(&env.event, Event::SettingsChanged { scope, .. } if scope == ENGINE_SCOPE) => {}
+                        Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(_) => return,
+                    },
+                }
+                me.coordinate(&mut missing).await;
+            }
+        });
+
         // Manifest and application updates.
         let me = self.clone();
         tokio::spawn(async move {

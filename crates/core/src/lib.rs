@@ -15,6 +15,7 @@ pub mod event;
 pub mod logging;
 pub mod module;
 pub mod paths;
+mod peers;
 pub mod scheduler;
 pub mod settings;
 pub mod state;

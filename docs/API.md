@@ -55,7 +55,7 @@ Adresse par défaut : `127.0.0.1:7878` (`--bind`). Authentification par jeton :
 
 | Route | Description |
 |---|---|
-| `GET /api/v1/health` | `{ok, version, api_version, seq}`, sans authentification |
+| `GET /api/v1/health` | `{ok, version, api_version, seq, instance_id}`, sans authentification |
 | `GET /api/v1/state` | le `State` complet |
 | `POST /api/v1/command` | corps = une `Command`. Réponse `{"ok":true,"data":…}` ou `{"ok":false,"error":{"code","message"}}` |
 | `GET /api/v1/logs?n=200` | dernières lignes de journal `[{ts, level, target, message}]` |
@@ -117,6 +117,7 @@ Codes d'erreur : `not_found`, `invalid`, `auth`, `module`, `unavailable`, `timeo
 Portées :
 - `engine` : `max_watch_slots` (1-2), `proxy`, `manifest_url`, `manifest_auto_update`, `history_retention_days`, `update_check`, `releases_url`, `paused`, `active_hours` ;
   - **Pause globale** : `settings_set engine {"paused": true}`. Rien n'est regardé (`watch_stopped{cause:"paused"}`), mais les modules continuent de suivre et de récupérer les bonus.
+  - **Plusieurs instances** : `role` (`primary` | `secondary`) et `peers: [{name?, url, token?}]`. Un secondaire passe en `standby` les comptes qu'un pair mine déjà, et les reprend si le pair disparaît. Voir [SERVER.md](SERVER.md).
   - **Plages horaires** : `{"active_hours": [{"days": [1,2,3,4,5], "start": "18:00", "end": "02:00"}]}`. Heure locale, `days` en ISO (1 = lundi), une fin avant le début passe minuit, `days` vide = tous les jours. Hors plage : `cause:"outside active hours"`.
 - `module:<id>` : réglages partagés par tous les comptes ;
 - `account:<account_id>/module:<id>` : surcharge pour un compte.
@@ -151,6 +152,7 @@ Chaque portée a un **JSON Schema** (`settings_get(...).schema`, ou `modules_lis
 {
   "seq": 53,                        // version : seq du dernier événement appliqué
   "version": "0.1.0",
+  "instance_id": "uuid",            // identifiant stable de cette instance
   "started_at": "…",
   "manifest_revision": 1,
   "settings": { "<scope>": { … } },
@@ -159,7 +161,7 @@ Chaque portée a un **JSON Schema** (`settings_get(...).schema`, ou `modules_lis
   "accounts": {
     "<user_id>": {
       "info":   {"id", "login", "display_name", "avatar_url", "enabled"},
-      "status": {"state": "stopped|starting|running|auth_required|error", "message?"},
+      "status": {"state": "stopped|starting|running|auth_required|error|standby", "message?", "peer?"},
       "modules": { "<module>": {"state": "disabled|running|stopped|restarting", "error?", "attempt?"} },
       "channels": {
         "<channel_id>": {
@@ -195,7 +197,7 @@ Chaque événement arrive enveloppé : `{seq, ts, type, …champs}`. Ceux marqu�
 
 | `type` | Champs |
 |---|---|
-| `engine_started` | `version` |
+| `engine_started` | `version`, `instance_id` |
 | `settings_changed` | `scope`, `value` (`null` = supprimé) |
 | `manifest_updated` | `revision` |
 | `notice_raised` 📜 / `notice_cleared` | `notice` / `id` |

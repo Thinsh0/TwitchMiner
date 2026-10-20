@@ -3,6 +3,7 @@
 //! ```text
 //! <data>/
 //!   twitchminer.db   accounts, settings, history, statistics, module data
+//!   twitchminer.lock held by the running engine (one engine per data directory)
 //!   logs/            rolling log files
 //! ```
 //!
@@ -42,6 +43,50 @@ impl Paths {
     pub fn logs_dir(&self) -> PathBuf {
         self.root.join("logs")
     }
+
+    /// Takes the exclusive lock of this data directory. Fails with
+    /// [`LockError::Busy`] if another engine (daemon, desktop app…) holds it.
+    /// The lock is released when the returned guard is dropped or the process dies.
+    pub fn lock(&self) -> Result<DataLock, LockError> {
+        use std::io::{Read, Seek, Write};
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(self.root.join("twitchminer.lock"))
+            .map_err(LockError::Io)?;
+        match file.try_lock() {
+            Ok(()) => {
+                let _ = file.set_len(0);
+                let _ = file.rewind();
+                let _ = write!(file, "{}", std::process::id());
+                Ok(DataLock { _file: file })
+            }
+            Err(std::fs::TryLockError::WouldBlock) => {
+                let mut holder = String::new();
+                let _ = file.read_to_string(&mut holder);
+                Err(LockError::Busy {
+                    pid: holder.trim().to_string(),
+                })
+            }
+            Err(std::fs::TryLockError::Error(e)) => Err(LockError::Io(e)),
+        }
+    }
+}
+
+/// Exclusive lock on a data directory; released on drop.
+#[derive(Debug)]
+pub struct DataLock {
+    _file: std::fs::File,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum LockError {
+    #[error("another TwitchMiner instance (pid {pid}) is already using this data directory")]
+    Busy { pid: String },
+    #[error("cannot lock the data directory: {0}")]
+    Io(std::io::Error),
 }
 
 fn portable_dir() -> Option<PathBuf> {
@@ -50,4 +95,20 @@ fn portable_dir() -> Option<PathBuf> {
         .join("portable")
         .exists()
         .then(|| exe_dir.join("data"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn one_engine_per_data_dir() {
+        let paths = Paths::at(std::env::temp_dir().join(format!("tm-lock-{}", std::process::id())))
+            .unwrap();
+        let first = paths.lock().unwrap();
+        assert!(matches!(paths.lock(), Err(LockError::Busy { .. })));
+        drop(first);
+        assert!(paths.lock().is_ok(), "released on drop");
+        let _ = std::fs::remove_dir_all(&paths.root);
+    }
 }

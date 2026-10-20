@@ -73,6 +73,7 @@ pub fn summary(state: &State, now: DateTime<Utc>) -> Summary {
             Some(AccountStatus::Running) => "running",
             Some(AccountStatus::Starting) => "starting",
             Some(AccountStatus::Stopped) | None => "stopped",
+            Some(AccountStatus::Standby { .. }) => "standby",
             Some(AccountStatus::AuthRequired) => {
                 out.attention += 1;
                 "auth_required"

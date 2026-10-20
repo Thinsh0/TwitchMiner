@@ -7,7 +7,8 @@ Le backend est terminé et testé. Ce document dit **quoi construire** et **avec
 - **Slint** (Rust natif, rendu GPU/Skia, desktop + Android, langage déclaratif `.slint`). Alternatives : `egui` (plus simple, moins joli) ou `iced`.
 - Démarrage : `tm_app::App::start(...)` puis `tm_client::Local::new(app.engine.clone())`.
 - Toute l'UI lit `backend.state()` (`watch::Receiver<Arc<State>>`) et agit par `backend.execute(Command)`. **Aucune autre source de données.**
-- Optionnel, dès le début : un écran « Se connecter à un daemon distant » qui crée un `tm_client::Remote` au lieu de `Local`. Le reste de l'UI ne change pas.
+- **Dès le début** : un écran « Se connecter à un serveur » qui crée un `tm_client::Remote` au lieu de `Local`. Le reste de l'UI ne change pas. En mode distant, l'app ne démarre **aucun moteur local**. Pour un secours automatique, voir [SERVER.md](SERVER.md) (rôle `secondary`).
+- Si `App::start` échoue avec `EngineError::Lock`, un autre moteur (le daemon) utilise déjà ce dossier : proposer de s'y connecter en distant.
 
 ## Écrans
 
@@ -15,7 +16,7 @@ Le backend est terminé et testé. Ce document dit **quoi construire** et **avec
 |---|---|---|
 | **Accueil / tableau de bord** | `view::summary()` (ou `Command::Summary`) : totaux de session, comptes, chaînes regardées, drop en cours (`progress`, `eta`), `watching_allowed`/`paused` | bouton Pause/Reprise : `settings_set engine {"paused": bool}` |
 | **Connexion** | `logins[]` (code + URL), événement `login_finished` | `login_start`, `login_cancel`. Afficher le code en très grand, ouvrir l'URL, attendre `login_finished` |
-| **Comptes** | `accounts[].info`, `.status` (`auth_required` ⇒ bouton « Se reconnecter »), `.modules` (santé de chaque module) | `account_set_enabled`, `account_remove`, `login_start` |
+| **Comptes** | `accounts[].info`, `.status` (`auth_required` ⇒ bouton « Se reconnecter » ; `standby` ⇒ « Miné par <peer> »), `.modules` (santé de chaque module) | `account_set_enabled`, `account_remove`, `login_start` |
 | **Drops** | `accounts[].campaigns` (jeu, image, fin, `linked`, `drops[]` avec progression), `drop_target`, `module_data.drops.skipped_campaigns` | jeux voulus : `settings_set module:drops {"games": [...]}` ; `module_call drops refresh` / `claim_all` |
 | **Chaînes / points** | `accounts[].channels` (avatar, live, jeu, spectateurs, solde, `session_points`), `watching` | `module_call points add_channel/remove_channel {login}` ; ordre : `settings_set ... {"channels": [...]}` |
 | **Historique** | `history` (paginé par `before_id`), types filtrables | — |

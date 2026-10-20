@@ -67,6 +67,39 @@ pub struct EngineSettings {
     pub paused: bool,
     /// When non-empty, watching only happens inside these local-time windows.
     pub active_hours: Vec<TimeWindow>,
+    /// `secondary` instances leave an account to any reachable peer already mining it
+    /// (and take over when that peer goes away). `primary` instances only warn.
+    pub role: Role,
+    /// Other TwitchMiner instances (e.g. a home server reachable through Tailscale).
+    pub peers: Vec<Peer>,
+}
+
+#[derive(
+    Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Role {
+    #[default]
+    Primary,
+    Secondary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
+pub struct Peer {
+    /// Base URL of the peer's API, e.g. `http://100.64.0.2:7878`.
+    pub url: String,
+    /// The peer's API token (`twitchminer api-token` on that machine).
+    #[serde(default)]
+    pub token: Option<String>,
+    /// Display name (defaults to the URL).
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+impl Peer {
+    pub fn label(&self) -> &str {
+        self.name.as_deref().unwrap_or(&self.url)
+    }
 }
 
 /// A daily time window in local time. `end` before `start` spans midnight.
@@ -125,6 +158,8 @@ impl Default for EngineSettings {
             releases_url: DEFAULT_RELEASES_URL.to_string(),
             paused: false,
             active_hours: Vec::new(),
+            role: Role::Primary,
+            peers: Vec::new(),
         }
     }
 }
@@ -133,6 +168,14 @@ impl EngineSettings {
     pub fn validate(&self) -> Result<(), String> {
         if !(1..=2).contains(&self.max_watch_slots) {
             return Err("max_watch_slots must be 1 or 2".into());
+        }
+        for p in &self.peers {
+            if !(p.url.starts_with("http://") || p.url.starts_with("https://")) {
+                return Err(format!(
+                    "peer url must start with http:// or https:// (`{}`)",
+                    p.url
+                ));
+            }
         }
         self.active_hours.iter().try_for_each(TimeWindow::validate)
     }

@@ -30,6 +30,8 @@ pub enum Event {
     // ------------------------------------------------------------------ engine
     EngineStarted {
         version: String,
+        #[serde(default)]
+        instance_id: String,
     },
     SettingsChanged {
         scope: String,

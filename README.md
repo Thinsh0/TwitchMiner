@@ -36,6 +36,8 @@ Une page de statut est aussi servie sur **http://127.0.0.1:7878/**. Elle demande
 
 ## Serveur, NAS, Raspberry Pi
 
+Guide complet : [docs/SERVER.md](docs/SERVER.md). Un seul moteur par dossier de données ; entre machines, une instance `secondary` laisse le compte au serveur et prend le relais s'il tombe.
+
 - **systemd** : `packaging/systemd/twitchminer.service` (service utilisateur).
 - **Docker** : `docker build -t twitchminer . && docker run -d -v twitchminer:/data -p 7878:7878 twitchminer`. `docker logs` affiche le code de connexion au premier lancement.
 - Le binaire Linux musl (artefact CI) est statique : aucune dépendance.
@@ -47,6 +49,7 @@ Une page de statut est aussi servie sur **http://127.0.0.1:7878/**. Elle demande
 - [Écrire un module](docs/MODULES.md)
 - [Android et OneUI](docs/ANDROID.md) : service de premier plan, Now Bar, Termux
 - [Brief interface](docs/UI_BRIEF.md) : écrans, données et commandes pour l'agent UI
+- [Serveur maison + PC + téléphone](docs/SERVER.md) : Tailscale, instance principale / secondaire, bascule automatique
 
 ## Structure
 

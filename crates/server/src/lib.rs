@@ -172,8 +172,13 @@ async fn dashboard() -> impl IntoResponse {
 }
 
 async fn health(State(st): State<AppState>) -> Json<Value> {
-    let (version, seq) = st.engine.store().read(|s| (s.version.clone(), s.seq));
-    Json(json!({ "ok": true, "version": version, "api_version": API_VERSION, "seq": seq }))
+    let (version, seq, instance_id) = st
+        .engine
+        .store()
+        .read(|s| (s.version.clone(), s.seq, s.instance_id.clone()));
+    Json(json!({
+        "ok": true, "version": version, "api_version": API_VERSION, "seq": seq, "instance_id": instance_id,
+    }))
 }
 
 async fn get_state(State(st): State<AppState>) -> Json<Value> {

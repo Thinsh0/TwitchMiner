@@ -17,6 +17,9 @@ pub struct State {
     /// Sequence number of the last applied event.
     pub seq: u64,
     pub version: String,
+    /// Stable id of this engine instance (lets peers recognise each other).
+    #[serde(default)]
+    pub instance_id: String,
     pub started_at: Option<DateTime<Utc>>,
     pub manifest_revision: u32,
     /// Raw settings documents by scope (`engine`, `module:<id>`, `account:<id>/module:<id>`).
@@ -67,6 +70,10 @@ pub enum AccountStatus {
     Running,
     /// Token revoked or expired: the user must log in again.
     AuthRequired,
+    /// Left to another instance (`peer`) that is mining this account.
+    Standby {
+        peer: String,
+    },
     Error {
         message: String,
     },
@@ -187,8 +194,12 @@ pub fn apply_envelope(state: &mut State, env: &Envelope) -> bool {
 pub fn apply(state: &mut State, event: &Event, now: DateTime<Utc>) -> bool {
     use Event::*;
     match event {
-        EngineStarted { version } => {
+        EngineStarted {
+            version,
+            instance_id,
+        } => {
             state.version = version.clone();
+            state.instance_id = instance_id.clone();
             state.started_at = Some(now);
             true
         }

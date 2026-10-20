@@ -41,6 +41,17 @@ pub struct NotifySettings {
     pub events: Vec<String>,
     /// Only notify points gains of at least this amount (for `points_earned`).
     pub min_points: i64,
+    pub language: Language,
+}
+
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Language {
+    #[default]
+    Fr,
+    En,
 }
 
 impl Default for NotifySettings {
@@ -55,6 +66,7 @@ impl Default for NotifySettings {
                 "notice_raised".into(),
             ],
             min_points: 0,
+            language: Language::Fr,
         }
     }
 }
@@ -86,7 +98,10 @@ impl Module for Notify {
                 call = ctx.next_call() => {
                     let Some(call) = call else { return Ok(()) };
                     let reply = if call.name == "test" {
-                        let text = format!("TwitchMiner test notification for {}", ctx.login());
+                        let text = match settings.language {
+                            Language::Fr => format!("Notification de test TwitchMiner pour {}", ctx.login()),
+                            Language::En => format!("TwitchMiner test notification for {}", ctx.login()),
+                        };
                         let errors = send_all(&http, &settings.targets, &text, &json!({"type": "test"})).await;
                         Ok(json!({"sent": settings.targets.len() - errors.len(), "errors": errors}))
                     } else {
@@ -138,21 +153,34 @@ fn channel_name(ctx: &ModuleContext, id: &str) -> String {
 
 fn format_event(ctx: &ModuleContext, s: &NotifySettings, env: &Envelope) -> Option<String> {
     let wants = |k: &str| s.events.iter().any(|e| e == k);
+    let fr = s.language == Language::Fr;
     let who = ctx.login();
     let text = match &env.event {
         Event::DropClaimed {
             drop_name, game, ..
         } if wants("drop_claimed") => {
-            format!("🎁 [{who}] Drop claimed: {drop_name} ({game})")
+            if fr {
+                format!("🎁 [{who}] Drop récupéré : {drop_name} ({game})")
+            } else {
+                format!("🎁 [{who}] Drop claimed: {drop_name} ({game})")
+            }
         }
         Event::AccountStatusChanged {
             status: AccountStatus::AuthRequired,
             ..
         } if wants("auth_required") || wants("account_status_changed") => {
-            format!("🔑 [{who}] Login expired, please sign in again")
+            if fr {
+                format!("🔑 [{who}] Connexion expirée, reconnectez-vous")
+            } else {
+                format!("🔑 [{who}] Login expired, please sign in again")
+            }
         }
         Event::AccountStatusChanged { status, .. } if wants("account_status_changed") => {
-            format!("ℹ️ [{who}] Account status: {status:?}")
+            if fr {
+                format!("ℹ️ [{who}] Statut du compte : {status:?}")
+            } else {
+                format!("ℹ️ [{who}] Account status: {status:?}")
+            }
         }
         Event::PointsEarned {
             channel_id,
@@ -160,20 +188,24 @@ fn format_event(ctx: &ModuleContext, s: &NotifySettings, env: &Envelope) -> Opti
             reason,
             ..
         } if wants("points_earned") && *amount >= s.min_points => {
-            format!(
-                "💰 [{who}] +{amount} on {} ({reason})",
-                channel_name(ctx, channel_id)
-            )
+            let ch = channel_name(ctx, channel_id);
+            if fr {
+                format!("💰 [{who}] +{amount} sur {ch} ({reason})")
+            } else {
+                format!("💰 [{who}] +{amount} on {ch} ({reason})")
+            }
         }
         Event::RaidJoined {
             channel_id,
             target_login,
             ..
         } if wants("raid_joined") => {
-            format!(
-                "⚔️ [{who}] Raid from {} to {target_login}",
-                channel_name(ctx, channel_id)
-            )
+            let ch = channel_name(ctx, channel_id);
+            if fr {
+                format!("⚔️ [{who}] Raid de {ch} vers {target_login}")
+            } else {
+                format!("⚔️ [{who}] Raid from {ch} to {target_login}")
+            }
         }
         Event::PredictionPlaced {
             title,
@@ -181,7 +213,11 @@ fn format_event(ctx: &ModuleContext, s: &NotifySettings, env: &Envelope) -> Opti
             points,
             ..
         } if wants("prediction_placed") => {
-            format!("🔮 [{who}] Bet {points} on \"{outcome}\" — {title}")
+            if fr {
+                format!("🔮 [{who}] Pari de {points} sur « {outcome} » — {title}")
+            } else {
+                format!("🔮 [{who}] Bet {points} on \"{outcome}\" — {title}")
+            }
         }
         Event::PredictionResult {
             result,
@@ -189,10 +225,18 @@ fn format_event(ctx: &ModuleContext, s: &NotifySettings, env: &Envelope) -> Opti
             channel_id,
             ..
         } if wants("prediction_result") => {
-            format!(
-                "🔮 [{who}] Prediction {result} on {}: {points_won:+}",
-                channel_name(ctx, channel_id)
-            )
+            let ch = channel_name(ctx, channel_id);
+            if fr {
+                let r = match result.as_str() {
+                    "WIN" => "gagnée",
+                    "LOSE" => "perdue",
+                    "REFUND" => "remboursée",
+                    other => other,
+                };
+                format!("🔮 [{who}] Prédiction {r} sur {ch} : {points_won:+}")
+            } else {
+                format!("🔮 [{who}] Prediction {result} on {ch}: {points_won:+}")
+            }
         }
         Event::NoticeRaised { notice } if wants("notice_raised") => {
             format!("⚠️ {}", notice.message)
@@ -200,10 +244,12 @@ fn format_event(ctx: &ModuleContext, s: &NotifySettings, env: &Envelope) -> Opti
         Event::WatchStarted {
             channel_id, reason, ..
         } if wants("watch_started") => {
-            format!(
-                "▶️ [{who}] Watching {} ({reason})",
-                channel_name(ctx, channel_id)
-            )
+            let ch = channel_name(ctx, channel_id);
+            if fr {
+                format!("▶️ [{who}] Visionnage de {ch} ({reason})")
+            } else {
+                format!("▶️ [{who}] Watching {ch} ({reason})")
+            }
         }
         _ => return None,
     };

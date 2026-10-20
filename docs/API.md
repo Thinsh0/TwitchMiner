@@ -138,7 +138,8 @@ Chaque portée a un **JSON Schema** (`settings_get(...).schema`, ou `modules_lis
 {"enabled": false, "strategy": "smart", "percent": 5.0, "max_points": 50000, "min_balance": 2000,
  "min_voters": 20, "seconds_before_close": 6, "channels": []}           // most_voted | most_points | high_odds | smart
 // notify
-{"enabled": true, "targets": [], "events": ["drop_claimed", "auth_required", "prediction_result", "notice_raised"], "min_points": 0}
+{"enabled": true, "targets": [], "events": ["drop_claimed", "auth_required", "prediction_result", "notice_raised"], "min_points": 0,
+ "language": "fr"}                                                       // fr | en
 // targets: {"kind":"discord","webhook_url"} | {"kind":"ntfy","url","token?"} | {"kind":"telegram","bot_token","chat_id"} | {"kind":"webhook","url"}
 ```
 </details>

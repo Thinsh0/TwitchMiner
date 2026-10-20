@@ -99,7 +99,15 @@ Le schéma est validé (hashes de 64 caractères hexadécimaux, profil par défa
 - **GQL** : lots de 30 requêtes, 6 requêtes concurrentes au maximum par compte, retry avec backoff sur les erreurs transitoires (`service timeout`…). Les erreurs partielles sont tolérées (champ à `null`). `PersistedQueryNotFound` est une erreur distincte, qui signale un manifeste périmé.
 - **Réseau** : un seul pool HTTP. TLS par rustls/ring avec les racines Mozilla + les racines du système (fonctionne derrière un proxy d'entreprise). Proxy HTTP configurable, y compris pour les WebSockets (tunnel `CONNECT`).
 - **Drops** : si la progression ne bouge pas pendant 8 min, la chaîne est écartée 30 min. Après 2 blocages sur la même campagne, la campagne est écartée 2 h (cas typique : compte de jeu non lié).
-- **Persistance** : SQLite en WAL, toutes les écritures sur un thread dédié, donc dans l'ordre des événements.
+- **Persistance** : SQLite en WAL, toutes les écritures sur un thread dédié, donc dans l'ordre des événements. Checkpoint à l'arrêt, sauvegarde à chaud (`backup`).
+- **Sans PubSub** (si Twitch le coupait) : le minage continue grâce aux interrogations périodiques.
+  - En ligne / hors ligne : toutes les 5 min.
+  - Solde et coffres bonus des chaînes regardées : toutes les 4 min.
+  - Progression des drops : toutes les 90 s.
+  - Inventaire : toutes les heures.
+
+  Seuls les raids, moments et prédictions (purement temps réel) seraient perdus, jusqu'à un passage à Hermes, le successeur de PubSub, déjà joignable (`hermes.twitch.tv`).
+- **Jetons** : validation horaire, revalidation immédiate sur une réponse 401 (au plus une par minute), contrôle planifié avant l'expiration, rafraîchissement automatique. Sinon le statut passe à `auth_required`.
 
 ## Plateformes
 

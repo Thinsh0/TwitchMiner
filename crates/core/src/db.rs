@@ -140,6 +140,8 @@ impl Db {
         let mut conn = Connection::open(path)?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
+        // Keep the WAL small on disk after checkpoints (mobile storage).
+        conn.pragma_update(None, "journal_size_limit", 4 * 1024 * 1024)?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         migrate(&mut conn)?;
@@ -469,6 +471,15 @@ impl Db {
                 Ok(StatsRow { key: r.get(0)?, points: r.get(1)?, watch_minutes: r.get(2)?, drops: r.get(3)? })
             })?;
             Ok(rows.collect::<Result<Vec<_>, _>>()?)
+        })
+        .await
+    }
+
+    /// Folds the WAL back into the main file (called at shutdown).
+    pub async fn checkpoint(&self) -> Result<(), DbError> {
+        self.call(|c| {
+            c.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
+            Ok(())
         })
         .await
     }

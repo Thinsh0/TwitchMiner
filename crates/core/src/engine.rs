@@ -156,8 +156,10 @@ impl Engine {
             r.stop().await;
         }
         self.shared.cancel.cancel();
-        // Let the database thread flush pending writes.
-        let _ = self.shared.store.db().call(|_| Ok(())).await;
+        // Pending writes are queued before this call; then fold the WAL into the file.
+        if let Err(e) = self.shared.store.db().checkpoint().await {
+            tracing::warn!(error = %e, "database checkpoint failed");
+        }
     }
 
     // ------------------------------------------------------------------ accounts

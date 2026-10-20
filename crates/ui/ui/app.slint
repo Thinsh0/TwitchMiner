@@ -279,6 +279,7 @@ component Toasts inherits VerticalLayout {
                 text: toast.kind == ToastKind.error ? @tr("Action failed: {}", toast.detail)
                     : toast.kind == ToastKind.login-ok ? @tr("{} is connected. Mining starts.", toast.detail)
                     : toast.kind == ToastKind.claimed ? (toast.detail == "0" ? @tr("Nothing to claim right now.") : @tr("Rewards claimed: {}", toast.detail))
+                    : toast.kind == ToastKind.drop-claimed ? @tr("Drop claimed: {}", toast.detail)
                     : toast.kind == ToastKind.invalid ? @tr("This value is not valid: it was not saved.")
                     : toast.kind == ToastKind.copied ? @tr("Copied.")
                     : toast.kind == ToastKind.backup ? @tr("Backup written: {}", toast.detail)

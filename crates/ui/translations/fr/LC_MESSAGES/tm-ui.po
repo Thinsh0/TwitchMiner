@@ -1121,3 +1121,15 @@ msgstr "Les identifiants Twitch sont déjà à jour."
 
 msgid "Twitch identifiers updated (revision {})."
 msgstr "Identifiants Twitch mis à jour (révision {})."
+
+msgid "Startup"
+msgstr "Démarrage"
+
+msgid "Start with the session"
+msgstr "Lancer avec la session"
+
+msgid "TwitchMiner starts in the system tray when you log in, without opening its window."
+msgstr "TwitchMiner démarre dans la barre système quand tu ouvres ta session, sans ouvrir sa fenêtre."
+
+msgid "Closing the window keeps TwitchMiner running in the system tray. To stop it, use “Quit” in the tray icon menu."
+msgstr "Fermer la fenêtre laisse TwitchMiner tourner dans la barre système. Pour l'arrêter, utilise « Quitter » dans le menu de l'icône."

@@ -2,7 +2,7 @@
 
 ```
 ┌────────────────────────────── apps ──────────────────────────────┐
-│ twitchminer (daemon + ctl)   desktop UI (à venir)   Android (à venir) │
+│ twitchminer (daemon + ctl)   desktop (Slint)   Android (à venir)      │
 └───────────────┬──────────────────────┬───────────────────────────┘
                 │ in-process           │ HTTP / WebSocket
                 ▼                      ▼
@@ -29,7 +29,9 @@
 | `tm-app` | Démarrage en un appel (moteur + modules + logs + API) pour tous les frontends | tout |
 | `tm-android` | Pont JNI (`libtwitchminer_jni.so`) pour un service Android | `tm-app` |
 | `tm-client` | Abstraction `Backend` pour les interfaces : moteur local ou daemon distant, même miroir d'état | `tm-core` |
+| `tm-ui` | Interface native (Slint), partagée par le bureau et Android : lit `Backend::state()`, agit par `Backend::execute` | `tm-client`, `tm-app` |
 | `twitchminer` | Exécutable sans interface + client `ctl` | tout |
+| `twitchminer-desktop` | Application de bureau : `tm-ui` + barre système, lancement avec la session, une seule instance ([DESKTOP.md](DESKTOP.md)) | `tm-ui` |
 
 ## Une seule source de vérité
 

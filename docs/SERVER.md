@@ -28,7 +28,7 @@ En service : `packaging/systemd/twitchminer.service`, avec `Environment=TM_API_B
 
 - **Navigateur** : `http://100.x.y.z:7878/` (page de statut, demande le jeton).
 - **Ligne de commande** : `twitchminer ctl --url http://100.x.y.z:7878 --token … status`.
-- **App native** (à venir) : mode « serveur distant », via `tm_client::Remote`. L'app n'exécute alors aucun moteur local.
+- **App de bureau** : Réglages › Avancé › Moteur › « Changer… », mode « serveur distant » (`tm_client::Remote`). L'app n'exécute alors aucun moteur local. Voir [DESKTOP.md](DESKTOP.md).
 - **Agent IA** sur le mini PC ou ailleurs : serveur MCP avec un jeton restreint, voir [AGENT.md](AGENT.md).
 
 ## 3. Optionnel : secours automatique sur un autre appareil

@@ -130,12 +130,19 @@ impl Controller {
             }
         });
         let c = self.clone();
-        b.on_set_paused(move |paused| {
-            c.command(Command::SettingsSet {
-                scope: "engine".into(),
-                value: serde_json::json!({ "paused": paused }),
-                merge: true,
-            })
+        b.on_set_paused(move |paused| c.set_paused(paused));
+        let weak = ui.as_weak();
+        let c = self.clone();
+        b.on_set_autostart(move |on| {
+            match crate::platform::with(|p| p.set_autostart(on).map(|()| p.autostart())) {
+                Some(Ok(Some(now))) => {
+                    if let Some(ui) = weak.upgrade() {
+                        ui.global::<Bridge>().set_autostart(now);
+                    }
+                }
+                Some(Err(e)) => c.toast(ToastKind::Error, Tone::Danger, e),
+                _ => {}
+            }
         });
         let c = self.clone();
         let weak = ui.as_weak();
@@ -604,6 +611,9 @@ impl Controller {
     }
 
     fn on_event(&self, event: &Event) {
+        if let Event::DropClaimed { drop_name, .. } = event {
+            self.toast(ToastKind::DropClaimed, Tone::Success, drop_name.clone());
+        }
         if matches!(
             event,
             Event::PointsEarned { .. } | Event::DropClaimed { .. } | Event::WatchMinute { .. }
@@ -649,6 +659,15 @@ impl Controller {
             {
                 open_url(url);
             }
+        });
+    }
+
+    /// Global pause of the engine.
+    pub fn set_paused(&self, paused: bool) {
+        self.command(Command::SettingsSet {
+            scope: "engine".into(),
+            value: json!({ "paused": paused }),
+            merge: true,
         });
     }
 
@@ -999,6 +1018,38 @@ impl Controller {
     }
 }
 
+/// The summary shown outside the window (tray), all accounts together.
+fn status(
+    ui: &MainWindow,
+    state: &tm_core::State,
+    now: chrono::DateTime<chrono::Utc>,
+) -> crate::Status {
+    let s = tm_core::view::summary(state, now);
+    let drop = s.accounts.iter().find_map(|a| a.drop.as_ref()).map(|d| {
+        (
+            d.drop.clone(),
+            d.game.clone(),
+            (d.progress * 100.0).round() as u8,
+        )
+    });
+    crate::Status {
+        language: if ui.global::<Bridge>().get_language() == 1 {
+            "en"
+        } else {
+            "fr"
+        },
+        paused: s.paused,
+        watching_allowed: s.watching_allowed,
+        attention: s.attention,
+        watching: s
+            .accounts
+            .iter()
+            .flat_map(|a| a.watching.iter().map(|w| w.channel.clone()))
+            .collect(),
+        drop,
+    }
+}
+
 /// Last Activity query results, on the UI thread.
 #[derive(Default)]
 struct ActivityCache {
@@ -1047,6 +1098,7 @@ pub fn render(ui: &MainWindow) {
         };
         present::apply(ui, &input);
         settings::render(ui, &last.state);
+        crate::platform::publish(status(ui, &last.state, input.now));
     });
 }
 

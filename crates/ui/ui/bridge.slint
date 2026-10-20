@@ -14,7 +14,7 @@ export enum LinkState { local, connected, connecting, down }
 // Why the "choose an engine" screen is shown.
 export enum SetupReason { none, busy, failed }
 
-export enum ToastKind { plain, error, login-ok, claimed, invalid, copied, backup, manifest }
+export enum ToastKind { plain, error, login-ok, claimed, invalid, copied, backup, manifest, drop-claimed }
 
 export struct AccountItem {
     id: string,
@@ -348,6 +348,10 @@ export global Bridge {
     in property <[LogItem]> logs;
     in property <bool> logs-available;
     in property <UpdateInfo> update-info;
+    // Desktop: start with the session (when supported), closing hides to the tray.
+    in property <bool> has-autostart;
+    in property <bool> autostart;
+    in property <bool> keeps-running;
     // Development (screenshots): unfold every folded section at start.
     in property <bool> dev-expand;
 
@@ -413,6 +417,7 @@ export global Bridge {
     callback manifest-refresh();
     callback backup();
     callback copy-text(string);
+    callback set-autostart(bool);
     // A screen was opened (lets the controller load what it shows).
     callback screen-shown();
     callback remove-channel(string);

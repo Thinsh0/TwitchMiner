@@ -16,6 +16,7 @@ mod demo;
 mod dev;
 mod forms;
 mod images;
+mod platform;
 mod prefs;
 mod present;
 mod session;
@@ -23,6 +24,7 @@ mod settings;
 
 use std::path::PathBuf;
 
+pub use platform::{AppHandle, NoPlatform, Platform, Status};
 pub use session::Target;
 
 #[derive(Debug, Clone, Default)]
@@ -31,22 +33,29 @@ pub struct Options {
     pub data_dir: Option<PathBuf>,
     /// Start connected to this daemon instead of a local engine.
     pub target: Option<Target>,
-    /// Open the window without taking the focus (session start, launched from a
-    /// script): a game in the foreground stays in the foreground.
+    /// Start in the background (session start): with a platform that keeps running
+    /// (tray icon), no window is shown; otherwise it opens without taking the focus.
     pub background: bool,
 }
 
-/// Opens the main window and runs the event loop until it closes. `runtime` runs the
-/// engine and every command, off the UI thread.
-pub fn run(runtime: tokio::runtime::Handle, opts: Options) -> anyhow::Result<()> {
-    let background = opts.background;
+/// Opens the main window and runs the event loop until the application quits.
+/// `runtime` runs the engine and every command, off the UI thread.
+pub fn run(
+    runtime: tokio::runtime::Handle,
+    opts: Options,
+    platform: Box<dyn Platform>,
+) -> anyhow::Result<()> {
+    let keeps_running = platform.keeps_running();
+    // Hidden in the tray when possible, else a window that does not take the focus.
+    let hidden = opts.background && keeps_running;
+    let inactive = opts.background && !keeps_running;
     // Development only: `TM_UI_SNAPSHOT=<file.bmp>` keeps the window outside the screen
     // (never covering what the developer is doing) and writes a capture of it every
     // second (`Window::take_snapshot`).
     let snapshot = std::env::var_os("TM_UI_SNAPSHOT").map(PathBuf::from);
     let offscreen = snapshot.is_some();
     let backend = slint::BackendSelector::new().with_winit_window_attributes_hook(move |attrs| {
-        let attrs = attrs.with_active(!background && !offscreen);
+        let attrs = attrs.with_active(!inactive && !offscreen);
         if offscreen {
             attrs.with_position(slint::winit_030::winit::dpi::PhysicalPosition::new(
                 -20000, -20000,
@@ -72,6 +81,19 @@ pub fn run(runtime: tokio::runtime::Handle, opts: Options) -> anyhow::Result<()>
     });
     let ctrl = controller::Controller::new(runtime.clone(), &ui, opts.data_dir, prefs);
     ctrl.bind(&ui);
+    platform::install(platform);
+    let has_autostart = platform::with(|p| p.autostart()).flatten();
+    ui.global::<Bridge>()
+        .set_has_autostart(has_autostart.is_some());
+    ui.global::<Bridge>()
+        .set_autostart(has_autostart.unwrap_or_default());
+    ui.global::<Bridge>().set_keeps_running(keeps_running);
+    platform::with(|p| {
+        p.init(AppHandle {
+            ui: ui.as_weak(),
+            ctrl: ctrl.clone(),
+        })
+    });
     ctrl.open(target.unwrap_or(Target::Local), false);
     // Relative times ("in 12 min") move on even when the state does not.
     let tick = slint::Timer::default();
@@ -93,7 +115,17 @@ pub fn run(runtime: tokio::runtime::Handle, opts: Options) -> anyhow::Result<()>
         dev::apply_env(&ui);
         dev::snapshot_every_second(&ui, path)
     });
-    ui.run()?;
+    if keeps_running {
+        // Closing the window only hides it; the tray menu quits.
+        ui.window()
+            .on_close_requested(|| slint::CloseRequestResponse::HideWindow);
+        if !hidden {
+            ui.show()?;
+        }
+        slint::run_event_loop_until_quit()?;
+    } else {
+        ui.run()?;
+    }
     runtime.block_on(ctrl.close());
     Ok(())
 }

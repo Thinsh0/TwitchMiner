@@ -508,6 +508,23 @@ export component SettingsScreen inherits Page {
         }
     }
 
+    if Bridge.has-autostart || Bridge.keeps-running: Card {
+        SectionTitle {
+            text: @tr("Startup");
+        }
+        if Bridge.has-autostart: SettingRow {
+            label: @tr("Start with the session");
+            help: @tr("TwitchMiner starts in the system tray when you log in, without opening its window.");
+            Toggle {
+                checked: Bridge.autostart;
+                toggled(v) => { Bridge.set-autostart(v); }
+            }
+        }
+        if Bridge.keeps-running: Muted {
+            text: @tr("Closing the window keeps TwitchMiner running in the system tray. To stop it, use “Quit” in the tray icon menu.");
+        }
+    }
+
     Card {
         HorizontalLayout {
             SectionTitle {

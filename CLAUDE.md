@@ -11,6 +11,7 @@ Rust natif, workspace Cargo. Lire `docs/ARCHITECTURE.md` et `docs/API.md` avant 
 - Identifiants Twitch volatils (hashes GQL, client ids) : uniquement dans `manifest/twitch.json`. Incrémenter `revision` à chaque modification.
 - Un nouvel `Event` demande : la variante dans `event.rs`, `kind()`, `account()`/`channel_id()` si pertinent, la branche dans `state::apply`, la doc dans `docs/API.md`.
 - Une nouvelle `Command` demande : la variante dans `command.rs`, la branche dans `Engine::execute`, la doc dans `docs/API.md`. Si elle est sensible (suppression, fichiers, trafic sortant, secrets), la refuser au jeton agent dans `crates/server/src/access.rs`.
+- Interface native : `crates/ui` (Slint) + `apps/desktop`. Textes en anglais dans `@tr()`, traduction française obligatoire dans `crates/ui/translations/fr/LC_MESSAGES/tm-ui.po` (testé). Voir `docs/DESKTOP.md`.
 - Outils MCP (agents IA) : `crates/server/src/mcp.rs`, toujours via `run_command` (droits + masquage). Garder `integrations/agent/SKILL.md` et `docs/AGENT.md` à jour.
 
 ## Commandes
@@ -21,6 +22,7 @@ cargo clippy --workspace --all-targets      # doit être sans avertissement (CI:
 cargo test --workspace
 cargo run -p twitchminer -- run             # daemon (données: $TM_DATA_DIR ou dossier plateforme)
 cargo run -p twitchminer -- ctl status      # piloter le daemon
+cargo run -p twitchminer-desktop            # app de bureau (TM_UI_DEMO=1 : état fictif, voir docs/DESKTOP.md)
 TM_TOKEN=... cargo run -p tm-twitch --example smoke   # test réel contre Twitch
 ```
 

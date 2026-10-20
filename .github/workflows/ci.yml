@@ -56,12 +56,19 @@ jobs:
       - if: runner.os == 'Windows'
         run: cargo test --workspace --locked
       - run: cargo build --release --locked --target ${{ matrix.target }} -p twitchminer
+      # Desktop application (not for the static musl build).
+      - if: "!matrix.musl && runner.os == 'Linux'"
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev
+      - if: "!matrix.musl"
+        run: cargo build --release --locked --target ${{ matrix.target }} -p twitchminer-desktop
       - uses: actions/upload-artifact@v4
         with:
           name: twitchminer-${{ matrix.target }}
           path: |
             target/${{ matrix.target }}/release/twitchminer
             target/${{ matrix.target }}/release/twitchminer.exe
+            target/${{ matrix.target }}/release/twitchminer-desktop
+            target/${{ matrix.target }}/release/twitchminer-desktop.exe
           if-no-files-found: error
 
   android:

@@ -43,6 +43,9 @@ struct AppState {
     logs: Option<LogBuffer>,
 }
 
+/// Bumped on breaking changes of the HTTP/WS protocol (additive changes keep it).
+pub const API_VERSION: u32 = 1;
+
 /// Generates a random API token.
 pub fn generate_token() -> String {
     (0..4)
@@ -170,7 +173,7 @@ async fn dashboard() -> impl IntoResponse {
 
 async fn health(State(st): State<AppState>) -> Json<Value> {
     let (version, seq) = st.engine.store().read(|s| (s.version.clone(), s.seq));
-    Json(json!({ "ok": true, "version": version, "seq": seq }))
+    Json(json!({ "ok": true, "version": version, "api_version": API_VERSION, "seq": seq }))
 }
 
 async fn get_state(State(st): State<AppState>) -> Json<Value> {
@@ -246,7 +249,7 @@ async fn ws_session(st: AppState, socket: WebSocket, with_logs: bool) {
     let mut last_seq = snapshot.seq;
     if tx
         .send(Message::text(
-            json!({"type": "snapshot", "state": snapshot}).to_string(),
+            json!({"type": "snapshot", "api_version": API_VERSION, "state": snapshot}).to_string(),
         ))
         .await
         .is_err()
@@ -275,7 +278,7 @@ async fn ws_session(st: AppState, socket: WebSocket, with_logs: bool) {
                     let (s, rx2) = st.engine.store().snapshot_and_subscribe();
                     events = rx2;
                     last_seq = s.seq;
-                    if tx.send(Message::text(json!({"type": "snapshot", "state": s}).to_string())).await.is_err() { return; }
+                    if tx.send(Message::text(json!({"type": "snapshot", "api_version": API_VERSION, "state": s}).to_string())).await.is_err() { return; }
                 }
                 Err(RecvError::Closed) => return,
             },

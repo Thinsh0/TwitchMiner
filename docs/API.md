@@ -42,6 +42,11 @@ while let Ok(env) = rx.recv().await {
 
 Si le client prend trop de retard (`RecvError::Lagged`), il reprend un snapshot. Le WebSocket le fait automatiquement en renvoyant un message `snapshot`.
 
+**Compatibilité de versions** :
+- `api_version` ne change que sur une rupture du protocole.
+- Les champs inconnus sont ignorés à la désérialisation, donc un client plus ancien lit l'état d'un daemon plus récent.
+- `tm_client::Remote` se resynchronise sur un snapshot s'il voit un trou dans les `seq` ou un type d'événement qu'il ne connaît pas.
+
 ## Serveur HTTP / WebSocket
 
 Adresse par défaut : `127.0.0.1:7878` (`--bind`). Authentification par jeton :
@@ -50,7 +55,7 @@ Adresse par défaut : `127.0.0.1:7878` (`--bind`). Authentification par jeton :
 
 | Route | Description |
 |---|---|
-| `GET /api/v1/health` | `{ok, version, seq}`, sans authentification |
+| `GET /api/v1/health` | `{ok, version, api_version, seq}`, sans authentification |
 | `GET /api/v1/state` | le `State` complet |
 | `POST /api/v1/command` | corps = une `Command`. Réponse `{"ok":true,"data":…}` ou `{"ok":false,"error":{"code","message"}}` |
 | `GET /api/v1/logs?n=200` | dernières lignes de journal `[{ts, level, target, message}]` |
@@ -60,7 +65,7 @@ Adresse par défaut : `127.0.0.1:7878` (`--bind`). Authentification par jeton :
 
 Du serveur vers le client :
 ```jsonc
-{"type": "snapshot", "state": { /* State */ }}            // à la connexion et après un retard
+{"type": "snapshot", "api_version": 1, "state": { /* State */ }}  // à la connexion et après un retard
 {"type": "event", "event": {"seq": 54, "ts": "…", "type": "points_earned", "account": "…", …}}
 {"type": "reply", "id": 7, "ok": true, "data": { … }}      // réponse à une commande
 {"type": "log", "line": {"ts", "level", "target", "message"}} // si ?logs=1

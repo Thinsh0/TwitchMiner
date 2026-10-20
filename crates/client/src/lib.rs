@@ -45,6 +45,9 @@ pub trait Backend: Send + Sync {
     async fn execute(&self, cmd: Command) -> ApiResult;
 }
 
+/// Request id reserved for internal snapshot resyncs (user ids start at 1).
+const RESYNC_ID: u64 = 0;
+
 /// Publishes the mirror at most this often (coalesces bursts of events).
 const PUBLISH_EVERY: Duration = Duration::from_millis(50);
 
@@ -274,6 +277,7 @@ async fn run_remote(
         backoff.reset();
         let (mut sink, mut stream) = ws.split();
         let mut mirror: Option<State> = None;
+        let mut resyncing = false;
         let reason = loop {
             tokio::select! {
                 _ = cancel.cancelled() => { let _ = sink.close().await; return; }
@@ -297,12 +301,32 @@ async fn run_remote(
                             }
                         }
                         Some("event") => {
-                            let (Some(m), Ok(env)) = (mirror.as_mut(), serde_json::from_value::<Envelope>(v["event"].clone())) else { continue };
-                            if env.seq > m.seq {
-                                apply_envelope(m, &env);
-                                let _ = events.send(Arc::new(env));
-                                let _ = state_tx.send(Arc::new(m.clone()));
+                            let Some(m) = mirror.as_mut() else { continue };
+                            match serde_json::from_value::<Envelope>(v["event"].clone()) {
+                                // In order: apply.
+                                Ok(env) if env.seq == m.seq + 1 => {
+                                    apply_envelope(m, &env);
+                                    let _ = events.send(Arc::new(env));
+                                    let _ = state_tx.send(Arc::new(m.clone()));
+                                }
+                                Ok(env) if env.seq <= m.seq => {}
+                                // A gap, or an event type this client does not know (newer
+                                // daemon): resynchronise from a fresh snapshot.
+                                _ => {
+                                    if !resyncing {
+                                        resyncing = true;
+                                        let req = json!({"id": RESYNC_ID, "cmd": {"cmd": "snapshot"}}).to_string();
+                                        if sink.send(Message::text(req)).await.is_err() { break "send failed".to_string(); }
+                                    }
+                                }
                             }
+                        }
+                        Some("reply") if v["id"].as_u64() == Some(RESYNC_ID) => {
+                            if let Ok(s) = serde_json::from_value::<State>(v["data"].clone()) {
+                                let _ = state_tx.send(Arc::new(s.clone()));
+                                mirror = Some(s);
+                            }
+                            resyncing = false;
                         }
                         Some("reply") => {
                             let Some(id) = v["id"].as_u64() else { continue };

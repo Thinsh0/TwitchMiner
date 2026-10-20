@@ -1163,3 +1163,6 @@ msgstr "Prioritaire"
 
 msgid "Where am I with channel points? Balances of the account {}."
 msgstr "Où j'en suis côté points ? Soldes du compte {}."
+
+msgid "In “never mined”: not mined. Click ★ to mine it again."
+msgstr "Dans « jamais minées » : pas minée. Clique sur ★ pour la miner à nouveau."

@@ -99,12 +99,13 @@ component ChannelRow inherits Rectangle {
                 }
             }
             Text {
-                text: root.item.pending ? @tr("Looking for this channel…")
+                text: root.item.excluded ? @tr("In “never mined”: not mined. Click ★ to mine it again.")
+                    : root.item.pending ? @tr("Looking for this channel…")
                     : !root.item.live ? @tr("Offline")
                     : root.item.title == "" ? root.item.game
                     : root.item.game == "" ? root.item.title : root.item.game + " · " + root.item.title;
                 font-size: Theme.font-s;
-                color: root.item.live ? Theme.text-muted : Theme.text-faint;
+                color: root.item.excluded ? Theme.warning : root.item.live ? Theme.text-muted : Theme.text-faint;
                 overflow: elide;
             }
         }
@@ -143,7 +144,9 @@ component ChannelRow inherits Rectangle {
                 tint: root.item.priority ? Theme.accent : Theme.text-faint;
                 tooltip: root.item.priority ? @tr("Remove from priorities") : @tr("Make it a priority");
                 clicked => {
-                    if root.item.priority {
+                    if root.item.excluded {
+                        Bridge.add-channel(root.item.login);
+                    } else if root.item.priority {
                         Bridge.remove-channel(root.item.login);
                     } else {
                         Bridge.add-channel(root.item.login);

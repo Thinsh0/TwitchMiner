@@ -467,6 +467,7 @@ fn channels(bridge: &Bridge, state: &State, id: &str, account: Option<&Account>)
             watching: account.watching.contains_key(&c.id),
             pending: false,
             priority: false,
+            excluded: false,
         }
     };
     let by_login = |login: &str| {
@@ -489,6 +490,7 @@ fn channels(bridge: &Bridge, state: &State, id: &str, account: Option<&Account>)
                 initial: initial(login).into(),
                 pending: true,
                 priority: true,
+                excluded: excluded.iter().any(|e| e.eq_ignore_ascii_case(login)),
                 ..Default::default()
             },
         })

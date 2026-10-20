@@ -452,6 +452,19 @@ impl Controller {
         b.on_add_channel(move |login| {
             let login = login.trim().trim_start_matches('@').to_lowercase();
             if !login.is_empty() {
+                // A channel the user wants mined cannot stay in the never-mined list.
+                let excluded = c.on_ui_value(|ui| {
+                    ui.global::<Bridge>()
+                        .get_excluded_channels()
+                        .iter()
+                        .any(|l| l.eq_ignore_ascii_case(&login))
+                });
+                if excluded {
+                    let l = login.clone();
+                    c.edit_list("points.exclude", move |list| {
+                        list.retain(|v| !v.eq_ignore_ascii_case(&l))
+                    });
+                }
                 c.module_call(
                     "points",
                     "add_channel",

@@ -169,6 +169,8 @@ export struct ChannelItem {
     pending: bool,
     // In the `channels` setting: watched before the others when live.
     priority: bool,
+    // Also in the never-mined list (`exclude`): the engine skips it.
+    excluded: bool,
 }
 
 export struct ChartBar {

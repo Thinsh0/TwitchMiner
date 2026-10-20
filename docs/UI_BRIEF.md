@@ -10,23 +10,60 @@ Le backend est terminé et testé. Ce document dit **quoi construire** et **avec
 - **Dès le début** : un écran « Se connecter à un serveur » qui crée un `tm_client::Remote` au lieu de `Local`. Le reste de l'UI ne change pas. En mode distant, l'app ne démarre **aucun moteur local**. Pour un secours automatique, voir [SERVER.md](SERVER.md) (rôle `secondary`).
 - Si `App::start` échoue avec `EngineError::Lock`, un autre moteur (le daemon) utilise déjà ce dossier : proposer de s'y connecter en distant.
 
-## Écrans
+## Organisation
 
-| Écran | Données (`State`, voir API.md) | Actions (`Command`) |
-|---|---|---|
-| **Accueil / tableau de bord** | `view::summary()` (ou `Command::Summary`) : totaux de session, comptes, chaînes regardées, drop en cours (`progress`, `eta`), `watching_allowed`/`paused` | bouton Pause/Reprise : `settings_set engine {"paused": bool}` |
-| **Connexion** | `logins[]` (code + URL), événement `login_finished` | `login_start`, `login_cancel`. Afficher le code en très grand, ouvrir l'URL, attendre `login_finished` |
-| **Comptes** | `accounts[].info`, `.status` (`auth_required` ⇒ bouton « Se reconnecter » ; `standby` ⇒ « Miné par <peer> »), `.modules` (santé de chaque module) | `account_set_enabled`, `account_remove`, `login_start` |
-| **Drops** | **`module_data.drops.plan`** (liste ordonnée : statut, objectif, début / fin estimés, minutes manquantes, lien de compte) + `accounts[].campaigns` pour les images et la progression détaillée, `drop_target`, `module_data.drops.focus` | jeux voulus (ordre = priorité, glisser-déposer) : `settings_set module:drops {"games": [...]}` ; bouton « Faire en premier » : `module_call drops focus {campaign_id}` / `unfocus` ; `refresh` / `claim_all` |
-| **Chaînes / points** | `accounts[].channels` (avatar, live, jeu, spectateurs, solde, `session_points`), `watching` | `module_call points add_channel/remove_channel {login}` ; ordre : `settings_set ... {"channels": [...]}` |
-| **Historique** | `history` (paginé par `before_id`), types filtrables | — |
-| **Statistiques** | `stats` par jour / par chaîne (points, minutes, drops) | graphique simple |
-| **Agent IA** | `settings.engine.agent_enabled` | interrupteur : `settings_set engine {"agent_enabled": bool}` ; afficher le jeton agent (`tm_app::read_token(dir, TokenKind::Agent)`, voir AGENT.md) |
-| **Réglages** | `modules_list` → `settings_schema` + `settings_get` (`effective`, `defaults`, `schema`) | `settings_set` (merge). **Générer les formulaires depuis le JSON Schema** : booléens, nombres, enums, listes de chaînes |
-| **Journaux** | `GET /api/v1/logs` ou `app.logs.recent(n)` / `.subscribe()` | — |
-| **À propos / mises à jour** | `notices.update`, `version`, `manifest_revision` | `update_check`, `manifest_refresh`, `backup` |
+Nouvelle interface, conçue de zéro : **ne pas s'inspirer de l'ancienne app Tauri** (branche `dev`), dont l'organisation est à oublier. Seule la direction artistique peut servir de point de départ (fond très sombre, accent violet, cartes légèrement translucides, thèmes sombre / clair / OLED), sans obligation.
 
-`notices` (map) : bandeau en haut de l'app (`level` info/warning/error), fermeture avec `notice_dismiss`.
+**4 écrans + Réglages.** L'accueil répond à 90 % des questions sans naviguer. Desktop : barre latérale ; mobile : les mêmes 4 écrans en barre du bas (pas d'interface séparée).
+
+Principes :
+- **Chaque donnée a un seul écran principal.** Pas de doublon d'un écran à l'autre.
+- **Ce qui demande une action de l'utilisateur est toujours au même endroit** : la zone « À faire » en haut de l'accueil. Pas d'alertes éparpillées.
+- **Le plus important d'abord, le détail sur demande** (déplier une carte plutôt qu'ouvrir un autre écran).
+
+### 1. Accueil : « Qu'est-ce qui se passe, et dois-je faire quelque chose ? »
+
+De haut en bas :
+
+1. **À faire** (masqué si vide), une carte par action, avec son bouton :
+   - compte `auth_required` → « Se reconnecter » (`login_start`) ;
+   - entrée du plan `not_linked` d'un jeu de la liste → « Lier mon compte » (ouvre `link_url`) ;
+   - entrée `at_risk` / `will_miss` → explication + « Faire en premier » (`module_call drops focus`) ;
+   - `logins[]` en cours → le code en très grand + l'URL ;
+   - `notices` (mise à jour disponible, doublon entre instances…) → fermeture par `notice_dismiss`.
+2. **En ce moment** : les 1 à 2 streams regardés (`accounts[].watching` + `channels`), avec la raison (drops, série, points).
+3. **Drop en cours** : jeu, récompense, barre de progression, fin estimée (`view::summary()` ou `Command::Summary`).
+4. **Aujourd'hui** : points, minutes, drops (`stats` du jour, ou `session`).
+5. **Pause / reprise** en un bouton (`settings_set engine {"paused": bool}`), avec l'état `watching_allowed` (hors plage horaire, en pause, compte en `standby` « miné par <peer> »).
+
+### 2. Drops : « Quoi, dans quel ordre, et pourquoi ? »
+
+- **Le plan** (`module_data.drops.plan`, déjà trié) : une ligne par campagne, avec image (`accounts[].campaigns`), jeu, objectif (récompenses), progression, statut lisible :
+  - `active` « En cours », `focus` « En premier », `restricted` « Dès que la chaîne est en direct » ;
+  - `planned` « Vers <start_at> », `at_risk` « Juste », `will_miss` « Manquera ~<missing_minutes> », `upcoming` « Commence le <starts_at> » ;
+  - `not_linked` « Compte à lier », `skipped` « Mis de côté jusqu'à… », `done` « Terminé ».
+- Sur chaque ligne : « Faire en premier » (`focus {campaign_id}`), ou « Annuler » si c'est le focus (`unfocus`).
+- **Ma liste de jeux** sur le même écran, à réordonner par glisser-déposer (ordre = priorité) : `settings_set module:drops {"games": [...]}`. Plus les jeux exclus et les récompenses voulues (`wanted_rewards`).
+- Actions secondaires : `refresh`, `claim_all`.
+
+### 3. Chaînes : « Où j'en suis côté points ? »
+
+`accounts[].channels` : avatar, en direct ou non, jeu, solde (`points` peut être `null` : afficher « — »), gains de la session. Ajout et retrait : `module_call points add_channel/remove_channel {login}` ; ordre : `settings_set ... {"channels": [...]}`.
+
+### 4. Activité : « Qu'est-ce que ça a rapporté ? »
+
+Historique et statistiques fusionnés : un graphique en haut (`stats` par jour ou par chaîne : points, minutes, drops), la liste des événements en dessous (`history`, paginée par `before_id`, filtrable par type).
+
+### Réglages
+
+- **Comptes** : `accounts[].info`, `.status`, `.modules` (santé) ; `account_set_enabled`, `account_remove`, `login_start`. Avec plusieurs comptes, un sélecteur en haut de l'app filtre les 4 écrans.
+- **Formulaires générés depuis les JSON Schema** (`modules_list` → `settings_schema`, `settings_get` → `effective` / `defaults` / `schema`), puis `settings_set` (merge) : booléens, nombres, enums, listes.
+- **Avancé, replié par défaut** :
+  - serveur distant (`tm_client::Remote`) ;
+  - proxy, pairs et rôle (voir SERVER.md) ;
+  - **agent IA** : interrupteur `settings_set engine {"agent_enabled": bool}` et le jeton agent (`tm_app::read_token(dir, TokenKind::Agent)`, voir AGENT.md) ;
+  - journaux (`app.logs.recent(n)` / `.subscribe()`, ou `GET /api/v1/logs`) ;
+  - à propos : `version`, `manifest_revision`, `update_check`, `manifest_refresh`, `backup`.
 
 ## Événements utiles pour l'animation et les toasts (`backend.events()`)
 

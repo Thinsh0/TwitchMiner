@@ -1,0 +1,17 @@
+[package]
+name = "tm-app"
+description = "One-call bootstrap of TwitchMiner for any front-end (daemon, desktop, Android)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+tm-core.workspace = true
+tm-modules.workspace = true
+tm-server.workspace = true
+tm-twitch.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true

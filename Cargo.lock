@@ -1925,6 +1925,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "tm-app"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde_json",
+ "tm-core",
+ "tm-modules",
+ "tm-server",
+ "tm-twitch",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "tm-core"
 version = "0.1.0"
 dependencies = [
@@ -2258,9 +2272,8 @@ dependencies = [
  "futures-util",
  "reqwest",
  "serde_json",
+ "tm-app",
  "tm-core",
- "tm-modules",
- "tm-server",
  "tm-twitch",
  "tokio",
  "tracing",

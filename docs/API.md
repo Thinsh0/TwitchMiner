@@ -69,6 +69,7 @@ Les commandes s'exécutent en parallèle : utilisez `id` pour associer chaque r�
 | `stats` | `account?`, `channel_id?`, `from?`, `to?` (`YYYY-MM-DD`), `group_by: "day"\|"channel"` | `[{key, points, watch_minutes, drops}]` |
 | `module_call` | `account`, `module`, `name`, `args?` | défini par le module |
 | `manifest_refresh` | — | `{updated, revision}` |
+| `update_check` | — | `{current, latest, update_available, url}`. Une notice `update` est aussi levée si besoin |
 | `notice_dismiss` | `id` | `{}` |
 
 Codes d'erreur : `not_found`, `invalid`, `auth`, `module`, `unavailable`, `timeout`, `manifest`, `internal`, `bad_command`, `unauthorized`.
@@ -88,7 +89,7 @@ Codes d'erreur : `not_found`, `invalid`, `auth`, `module`, `unavailable`, `timeo
 ## Réglages
 
 Portées :
-- `engine` : `max_watch_slots` (1-2), `proxy`, `manifest_url`, `manifest_auto_update`, `history_retention_days` ;
+- `engine` : `max_watch_slots` (1-2), `proxy`, `manifest_url`, `manifest_auto_update`, `history_retention_days`, `update_check`, `releases_url` ;
 - `module:<id>` : réglages partagés par tous les comptes ;
 - `account:<account_id>/module:<id>` : surcharge pour un compte.
 

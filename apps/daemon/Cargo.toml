@@ -11,9 +11,8 @@ name = "twitchminer"
 path = "src/main.rs"
 
 [dependencies]
+tm-app.workspace = true
 tm-core.workspace = true
-tm-modules.workspace = true
-tm-server.workspace = true
 tm-twitch.workspace = true
 tokio.workspace = true
 futures-util.workspace = true

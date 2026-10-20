@@ -74,9 +74,19 @@ pub async fn serve(
     cfg: ServerConfig,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
-    let app = router(engine, &cfg);
     let listener = tokio::net::TcpListener::bind(cfg.bind).await?;
-    tracing::info!(addr = %cfg.bind, auth = cfg.token.is_some(), "API listening");
+    serve_on(listener, engine, cfg, shutdown).await
+}
+
+/// Like [`serve`] with an already bound listener (lets callers report bind errors early).
+pub async fn serve_on(
+    listener: tokio::net::TcpListener,
+    engine: Engine,
+    cfg: ServerConfig,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
+) -> std::io::Result<()> {
+    let app = router(engine, &cfg);
+    tracing::info!(addr = %listener.local_addr()?, auth = cfg.token.is_some(), "API listening");
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown)
         .await

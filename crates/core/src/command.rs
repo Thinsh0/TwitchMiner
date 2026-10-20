@@ -77,6 +77,8 @@ pub enum Command {
 
     /// Checks for a newer Twitch manifest now.
     ManifestRefresh,
+    /// Checks GitHub releases for a newer application version now.
+    UpdateCheck,
     NoticeDismiss {
         id: String,
     },

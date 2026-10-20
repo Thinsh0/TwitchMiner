@@ -45,6 +45,9 @@ pub fn parse_scope(scope: &str) -> Option<Scope<'_>> {
 pub const DEFAULT_MANIFEST_URL: &str =
     "https://raw.githubusercontent.com/Thinsh0/TwitchMiner/HEAD/manifest/twitch.json";
 
+pub const DEFAULT_RELEASES_URL: &str =
+    "https://api.github.com/repos/Thinsh0/TwitchMiner/releases/latest";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct EngineSettings {
@@ -57,6 +60,9 @@ pub struct EngineSettings {
     pub manifest_auto_update: bool,
     /// History rows older than this are deleted (statistics are kept forever).
     pub history_retention_days: u32,
+    /// Check GitHub releases for a newer version of the application.
+    pub update_check: bool,
+    pub releases_url: String,
 }
 
 impl Default for EngineSettings {
@@ -67,6 +73,8 @@ impl Default for EngineSettings {
             manifest_url: Some(DEFAULT_MANIFEST_URL.to_string()),
             manifest_auto_update: true,
             history_retention_days: 180,
+            update_check: true,
+            releases_url: DEFAULT_RELEASES_URL.to_string(),
         }
     }
 }

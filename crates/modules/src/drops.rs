@@ -67,6 +67,7 @@ impl Default for DropsSettings {
 const STALL_AFTER: Duration = Duration::from_secs(8 * 60);
 const CHANNEL_BAN: Duration = Duration::from_secs(30 * 60);
 const CAMPAIGN_BAN: Duration = Duration::from_secs(2 * 60 * 60);
+const BANS_KEY: &str = "banned_campaigns";
 const PROGRESS_POLL: Duration = Duration::from_secs(90);
 
 #[derive(Debug, Clone)]
@@ -83,7 +84,8 @@ struct Runtime {
     claimed: Vec<ClaimedBenefit>,
     target: Option<Target>,
     banned_channels: HashMap<String, Instant>,
-    banned_campaigns: HashMap<String, Instant>,
+    /// Persisted: survives restarts so a broken campaign is not retried immediately.
+    banned_campaigns: HashMap<String, DateTime<Utc>>,
     stalls: HashMap<String, u32>,
     slugs: HashMap<String, String>,
     tracked: HashSet<String>,
@@ -123,6 +125,10 @@ impl Module for Drops {
             tracked: HashSet::new(),
             last_refresh: None,
         };
+        if let Ok(Some(bans)) = ctx.kv_get::<HashMap<String, DateTime<Utc>>>(BANS_KEY).await {
+            rt.banned_campaigns = bans;
+            rt.save_bans(&ctx).await;
+        }
         let mut topics = ctx.pubsub().topic_set();
         let mut ps = ctx.pubsub().subscribe();
         let mut events = ctx.events();
@@ -365,11 +371,7 @@ impl Runtime {
     fn eligible(&self, s: &DropsSettings, now: DateTime<Utc>) -> Vec<&Campaign> {
         let wanted: Vec<String> = s.games.iter().map(|g| norm(g)).collect();
         let excluded: HashSet<String> = s.exclude_games.iter().map(|g| norm(g)).collect();
-        let banned = |id: &str| {
-            self.banned_campaigns
-                .get(id)
-                .is_some_and(|t| *t > Instant::now())
-        };
+        let banned = |id: &str| self.banned_campaigns.get(id).is_some_and(|t| *t > now);
         let mut list: Vec<&Campaign> = self
             .campaigns
             .values()
@@ -407,7 +409,7 @@ impl Runtime {
     async fn pick(&mut self, ctx: &ModuleContext, s: &DropsSettings) {
         let now = Utc::now();
         self.banned_channels.retain(|_, t| *t > Instant::now());
-        self.banned_campaigns.retain(|_, t| *t > Instant::now());
+        self.banned_campaigns.retain(|_, t| *t > now);
         let candidates: Vec<Campaign> = self.eligible(s, now).into_iter().cloned().collect();
 
         // Keep the current target if it is still the best eligible campaign and its channel is fine.
@@ -613,9 +615,11 @@ impl Runtime {
                 .insert(t.channel.id.clone(), Instant::now() + CHANNEL_BAN);
             if *stalls >= 2 {
                 tracing::warn!(campaign = %t.campaign_id, "campaign does not progress (account not linked?), skipping it");
-                self.banned_campaigns
-                    .insert(t.campaign_id.clone(), Instant::now() + CAMPAIGN_BAN);
+                let until =
+                    Utc::now() + chrono::Duration::from_std(CAMPAIGN_BAN).unwrap_or_default();
+                self.banned_campaigns.insert(t.campaign_id.clone(), until);
                 self.stalls.remove(&t.campaign_id.clone());
+                self.save_bans(ctx).await;
             }
             self.target = None;
             return true;
@@ -762,6 +766,16 @@ impl Runtime {
             }
         }
         done
+    }
+
+    /// Persists campaign bans and publishes them for the UI (`module_data.drops.skipped_campaigns`).
+    async fn save_bans(&mut self, ctx: &ModuleContext) {
+        let now = Utc::now();
+        self.banned_campaigns.retain(|_, t| *t > now);
+        if let Err(e) = ctx.kv_put(BANS_KEY, &self.banned_campaigns).await {
+            tracing::warn!(error = %e, "could not save campaign bans");
+        }
+        ctx.set_data("skipped_campaigns", json!(self.banned_campaigns));
     }
 
     fn next_time_trigger(&self) -> Option<DateTime<Utc>> {

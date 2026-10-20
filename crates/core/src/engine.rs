@@ -225,7 +225,7 @@ impl Engine {
     // ----------------------------------------------------------- background
 
     fn spawn_background_tasks(&self) {
-        // Manifest updates.
+        // Manifest and application updates.
         let me = self.clone();
         tokio::spawn(async move {
             let cancel = me.shared.cancel.clone();
@@ -236,14 +236,16 @@ impl Engine {
                     _ = tokio::time::sleep(delay) => {}
                 }
                 delay = Duration::from_secs(6 * 60 * 60);
-                if me
-                    .shared
-                    .store
-                    .read(EngineSettings::from_state)
-                    .manifest_auto_update
+                let settings = me.shared.store.read(EngineSettings::from_state);
+                if settings.manifest_auto_update
                     && let Err(e) = me.refresh_manifest().await
                 {
                     tracing::debug!(error = %e.message, "manifest check failed");
+                }
+                if settings.update_check
+                    && let Err(e) = me.check_update().await
+                {
+                    tracing::debug!(error = %e.message, "update check failed");
                 }
             }
         });
@@ -341,6 +343,50 @@ impl Engine {
             Ok(None) => Ok(json!({ "updated": false, "revision": current.revision })),
             Err(e) => Err(ApiError::new("manifest", e.to_string())),
         }
+    }
+
+    /// Compares the latest GitHub release with the running version and raises an
+    /// `update` notice when a newer one exists.
+    async fn check_update(&self) -> ApiResult {
+        let (url, current) = self.shared.store.read(|s| {
+            (
+                EngineSettings::from_state(s).releases_url,
+                s.version.clone(),
+            )
+        });
+        let net = self.shared.net();
+        let release = net
+            .http
+            .get(&url)
+            .header("User-Agent", "TwitchMiner")
+            .header("Accept", "application/vnd.github+json")
+            .timeout(Duration::from_secs(20))
+            .send()
+            .await
+            .map_err(|e| ApiError::new("update", e.to_string()))?;
+        if release.status().as_u16() == 404 {
+            // No published release yet (or private repository).
+            return Ok(json!({ "current": current, "latest": null, "update_available": false }));
+        }
+        let release: Value = release
+            .error_for_status()
+            .map_err(|e| ApiError::new("update", e.to_string()))?
+            .json()
+            .await
+            .map_err(|e| ApiError::new("update", e.to_string()))?;
+        let tag = release["tag_name"].as_str().unwrap_or_default().to_string();
+        let page = release["html_url"].as_str().unwrap_or_default().to_string();
+        let newer = is_newer(&tag, &current);
+        if newer {
+            self.notice(
+                "update",
+                Level::Info,
+                format!("TwitchMiner {tag} is available: {page}"),
+            );
+        } else {
+            self.clear_notice("update");
+        }
+        Ok(json!({ "current": current, "latest": tag, "update_available": newer, "url": page }))
     }
 
     pub fn notice(&self, id: &str, level: Level, message: impl Into<String>) {
@@ -514,6 +560,7 @@ impl Engine {
             }
 
             Command::ManifestRefresh => self.refresh_manifest().await,
+            Command::UpdateCheck => self.check_update().await,
             Command::NoticeDismiss { id } => {
                 self.clear_notice(&id);
                 Ok(json!({}))
@@ -638,5 +685,28 @@ impl Engine {
             });
         });
         serde_json::to_value(flow).map_err(ApiError::internal)
+    }
+}
+
+/// `true` when `latest` (e.g. `v1.2.0`) is a higher version than `current`.
+fn is_newer(latest: &str, current: &str) -> bool {
+    fn parse(v: &str) -> Option<Vec<u64>> {
+        let core = v.trim().trim_start_matches('v').split(['-', '+']).next()?;
+        core.split('.').map(|p| p.parse().ok()).collect()
+    }
+    match (parse(latest), parse(current)) {
+        (Some(l), Some(c)) => l > c,
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn version_compare() {
+        assert!(super::is_newer("v0.2.0", "0.1.9"));
+        assert!(super::is_newer("1.0.0", "0.9.0-beta"));
+        assert!(!super::is_newer("v0.1.0", "0.1.0"));
+        assert!(!super::is_newer("garbage", "0.1.0"));
     }
 }

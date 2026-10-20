@@ -10,14 +10,12 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use anyhow::{Context, bail};
 use clap::{Parser, Subcommand};
 use serde_json::{Value, json};
+use tm_core::Command;
 use tm_core::event::Event;
-use tm_core::logging::{self, LogOptions};
-use tm_core::{Command, Engine, EngineConfig, Paths};
 
 #[derive(Parser)]
 #[command(
@@ -122,9 +120,17 @@ enum Ctl {
     Raw { json: String },
 }
 
-const TOKEN_KV: (&str, &str) = ("server", "token");
+fn main() -> std::process::ExitCode {
+    match real_main() {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("error: {e:#}");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
 
-fn main() -> anyhow::Result<()> {
+fn real_main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     tm_twitch::tls::install_crypto_provider();
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -139,23 +145,11 @@ fn main() -> anyhow::Result<()> {
             Cmd::Run { bind, no_api, log } => run(cli.data_dir, bind, no_api, log).await,
             Cmd::Ctl { url, token, action } => ctl(cli.data_dir, url, token, action).await,
             Cmd::ApiToken => {
-                let paths = Paths::resolve(cli.data_dir)?;
-                println!("{}", api_token(&paths).await?);
+                println!("{}", tm_app::read_api_token(cli.data_dir).await?);
                 Ok(())
             }
         }
     })
-}
-
-async fn api_token(paths: &Paths) -> anyhow::Result<String> {
-    let db = tm_core::db::Db::open(&paths.db_file())?;
-    if let Some(Value::String(t)) = db.kv_get(TOKEN_KV.0.into(), TOKEN_KV.1.into()).await? {
-        return Ok(t);
-    }
-    let t = tm_server::generate_token();
-    db.kv_put(TOKEN_KV.0.into(), TOKEN_KV.1.into(), json!(t))
-        .await?;
-    Ok(t)
 }
 
 async fn run(
@@ -164,44 +158,19 @@ async fn run(
     no_api: bool,
     log: Option<String>,
 ) -> anyhow::Result<()> {
-    let paths = Paths::resolve(data_dir)?;
-    let logs = logging::init(
-        &paths,
-        LogOptions {
-            filter: log,
-            stdout: true,
-        },
-    );
-    let token = api_token(&paths).await?;
-    let engine = Engine::start(EngineConfig {
-        paths: paths.clone(),
-        modules: tm_modules::builtin(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
+    let app = tm_app::App::start(tm_app::AppOptions {
+        data_dir,
+        log_filter: log,
+        log_stdout: true,
+        api: (!no_api).then_some(tm_app::ApiOptions { bind, token: None }),
+        ..Default::default()
     })
     .await?;
-    tracing::info!(version = env!("CARGO_PKG_VERSION"), data = %paths.root.display(), "TwitchMiner started");
-
-    let shutdown = Arc::new(tokio::sync::Notify::new());
-    if !no_api {
-        let cfg = tm_server::ServerConfig {
-            bind,
-            token: Some(token),
-            logs: Some(logs.buffer.clone()),
-        };
-        let engine = engine.clone();
-        let stop = shutdown.clone();
-        tokio::spawn(async move {
-            if let Err(e) =
-                tm_server::serve(engine, cfg, async move { stop.notified().await }).await
-            {
-                tracing::error!(error = %e, "API server failed");
-            }
-        });
-    }
 
     // Headless first run: ask for a login right here.
-    if engine.store().read(|s| s.accounts.is_empty()) {
-        let flow = engine
+    if app.engine.store().read(|s| s.accounts.is_empty()) {
+        let flow = app
+            .engine
             .execute(Command::LoginStart { profile: None })
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
@@ -216,8 +185,7 @@ async fn run(
 
     wait_for_signal().await;
     tracing::info!("shutting down");
-    shutdown.notify_waiters();
-    engine.shutdown().await;
+    app.shutdown().await;
     Ok(())
 }
 
@@ -284,7 +252,7 @@ async fn ctl(
 ) -> anyhow::Result<()> {
     let token = match token {
         Some(t) => t,
-        None => api_token(&Paths::resolve(data_dir)?).await?,
+        None => tm_app::read_api_token(data_dir).await?,
     };
     let url = url.trim_end_matches('/').to_string();
     let http = reqwest::Client::builder().no_proxy().build()?;

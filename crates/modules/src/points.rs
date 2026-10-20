@@ -463,10 +463,14 @@ impl Runtime {
                         {
                             ch.streak_done = ch.stream.as_ref().map(|st| st.id.clone());
                         }
-                        let name = self
-                            .channels
-                            .get(&channel_id)
-                            .map(|c| c.meta.login.clone())
+                        let name = ctx
+                            .store()
+                            .read(|st| {
+                                st.accounts
+                                    .get(ctx.account_id())
+                                    .and_then(|a| a.channels.get(&channel_id))
+                                    .map(|c| c.login.clone())
+                            })
                             .unwrap_or_else(|| channel_id.clone());
                         tracing::info!(channel = %name, amount, %reason, balance, "points earned");
                         ctx.emit(Event::PointsEarned {
@@ -530,7 +534,12 @@ impl Runtime {
                             self.recheck
                                 .entry(id.clone())
                                 .or_insert_with(|| Instant::now() + Duration::from_secs(5));
-                        } else if let Some(v) = m.data.get("viewers").and_then(Value::as_u64) {
+                        } else if let Some(v) = m.data.get("viewers").and_then(Value::as_u64)
+                            && viewers_moved(ch.stream.as_ref().map_or(0, |s| s.viewers), v)
+                        {
+                            if let Some(st) = ch.stream.as_mut() {
+                                st.viewers = v;
+                            }
                             ctx.emit(Event::ViewersChanged {
                                 account,
                                 channel_id: id.clone(),
@@ -586,6 +595,11 @@ impl Runtime {
             _ => {}
         }
     }
+}
+
+/// Viewer counts change every few seconds; only publish meaningful moves (≥ 2 %).
+fn viewers_moved(old: u64, new: u64) -> bool {
+    old.abs_diff(new) * 50 >= old.max(1)
 }
 
 fn set_stream(ctx: &ModuleContext, ch: &mut ChannelRt, stream: Option<StreamInfo>) {

@@ -491,13 +491,15 @@ impl Engine {
                 let raw = store
                     .read(|s| s.settings.get(&scope).cloned())
                     .unwrap_or(Value::Null);
-                let (defaults, effective) = match settings::parse_scope(&scope) {
-                    Some(Scope::Engine) => {
-                        let d = json!(EngineSettings::default());
-                        (d, json!(store.read(EngineSettings::from_state)))
-                    }
+                let (defaults, effective, schema) = match settings::parse_scope(&scope) {
+                    Some(Scope::Engine) => (
+                        json!(EngineSettings::default()),
+                        json!(store.read(EngineSettings::from_state)),
+                        json!(schemars::schema_for!(EngineSettings)),
+                    ),
                     Some(Scope::Module(m)) => {
-                        let d = self.module_defaults(m)?;
+                        let info = self.module_info(m)?;
+                        let d = info.default_settings;
                         let eff = match &account {
                             Some(a) => store.read(|s| settings::module_effective(s, a, m, &d)),
                             None => {
@@ -506,19 +508,21 @@ impl Engine {
                                 v
                             }
                         };
-                        (d, eff)
+                        (d, eff, info.settings_schema)
                     }
                     Some(Scope::AccountModule { account, module }) => {
-                        let d = self.module_defaults(module)?;
+                        let info = self.module_info(module)?;
+                        let d = info.default_settings;
                         let eff =
                             store.read(|s| settings::module_effective(s, account, module, &d));
-                        (d, eff)
+                        (d, eff, info.settings_schema)
                     }
                     None => return Err(ApiError::invalid("unknown scope")),
                 };
-                Ok(
-                    json!({ "scope": scope, "raw": raw, "effective": effective, "defaults": defaults }),
-                )
+                Ok(json!({
+                    "scope": scope, "raw": raw, "effective": effective,
+                    "defaults": defaults, "schema": schema,
+                }))
             }
             Command::SettingsSet {
                 scope,
@@ -568,13 +572,12 @@ impl Engine {
         }
     }
 
-    fn module_defaults(&self, id: &str) -> Result<Value, ApiError> {
+    fn module_info(&self, id: &str) -> Result<crate::module::ModuleInfo, ApiError> {
         self.shared
             .modules
             .iter()
             .map(|m| m.info())
             .find(|i| i.id == id)
-            .map(|i| i.default_settings)
             .ok_or_else(|| ApiError::not_found(format!("module `{id}`")))
     }
 

@@ -57,13 +57,13 @@ Les commandes s'exécutent en parallèle : utilisez `id` pour associer chaque r�
 | `cmd` | Champs | Réponse |
 |---|---|---|
 | `snapshot` | — | `State` |
-| `modules_list` | — | `[{id, name, description, default_settings}]` |
+| `modules_list` | — | `[{id, name, description, default_settings, settings_schema}]` |
 | `login_start` | `profile?` | `{flow_id, user_code, verification_uri, expires_at}`. La fin arrive en événement `login_finished` |
 | `login_cancel` | `flow_id` | `{cancelled}` |
 | `login_with_token` | `access_token`, `refresh_token?`, `profile?` | `{account}` |
 | `account_remove` | `account` | `{removed}` |
 | `account_set_enabled` | `account`, `enabled` | `{enabled}` |
-| `settings_get` | `scope`, `account?` | `{scope, raw, effective, defaults}` |
+| `settings_get` | `scope`, `account?` | `{scope, raw, effective, defaults, schema}` |
 | `settings_set` | `scope`, `value`, `merge?` | document enregistré (`value: null` supprime la portée) |
 | `history` | `account?`, `channel_id?`, `kinds?[]`, `before_id?`, `since?`, `limit?` | `[{id, seq, ts, account, kind, channel_id, event}]`, du plus récent au plus ancien |
 | `stats` | `account?`, `channel_id?`, `from?`, `to?` (`YYYY-MM-DD`), `group_by: "day"\|"channel"` | `[{key, points, watch_minutes, drops}]` |
@@ -93,7 +93,9 @@ Portées :
 - `module:<id>` : réglages partagés par tous les comptes ;
 - `account:<account_id>/module:<id>` : surcharge pour un compte.
 
-Valeur effective = `défauts du module ⊕ module:<id> ⊕ account:<id>/module:<id>` (fusion profonde). Chaque module a un booléen `enabled` qui le démarre ou l'arrête à chaud. `settings_set` valide le document effectif avant de l'enregistrer.
+Valeur effective = `défauts du module ⊕ module:<id> ⊕ account:<id>/module:<id>` (fusion profonde).
+
+Chaque portée a un **JSON Schema** (`settings_get(...).schema`, ou `modules_list[].settings_schema`) généré depuis les structures Rust : types, valeurs d'énumération et descriptions des champs. Une interface peut construire ses formulaires de réglages automatiquement, y compris pour les modules ajoutés plus tard. Chaque module a un booléen `enabled` qui le démarre ou l'arrête à chaud. `settings_set` valide le document effectif avant de l'enregistrer.
 
 <details><summary>Défauts des modules intégrés</summary>
 

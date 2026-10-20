@@ -48,7 +48,7 @@ pub const DEFAULT_MANIFEST_URL: &str =
 pub const DEFAULT_RELEASES_URL: &str =
     "https://api.github.com/repos/Thinsh0/TwitchMiner/releases/latest";
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 #[serde(default)]
 pub struct EngineSettings {
     /// Channels watched at the same time per account (Twitch credits at most 2).

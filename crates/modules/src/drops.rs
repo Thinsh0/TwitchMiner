@@ -17,7 +17,9 @@ use tokio::time::Instant;
 
 pub struct Drops;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum DropsMode {
     /// Follow the `games` order, then campaigns ending soonest.
@@ -29,7 +31,7 @@ pub enum DropsMode {
     LeastRemaining,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 #[serde(default)]
 pub struct DropsSettings {
     pub enabled: bool,
@@ -101,6 +103,7 @@ impl Module for Drops {
             "Finds drop campaigns, watches eligible streams and claims rewards automatically.",
             json!(DropsSettings::default()),
         )
+        .with_schema::<DropsSettings>()
     }
 
     fn validate_settings(&self, v: &Value) -> Result<(), String> {

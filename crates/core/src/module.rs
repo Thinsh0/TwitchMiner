@@ -44,6 +44,8 @@ pub struct ModuleInfo {
     pub description: &'static str,
     /// Default settings. Must contain `"enabled": bool`.
     pub default_settings: Value,
+    /// JSON Schema of the settings document (lets UIs build forms). `null` if unknown.
+    pub settings_schema: Value,
 }
 
 impl ModuleInfo {
@@ -62,7 +64,14 @@ impl ModuleInfo {
             name,
             description,
             default_settings,
+            settings_schema: Value::Null,
         }
+    }
+
+    /// Attaches the JSON Schema of the settings type `T` (doc comments become descriptions).
+    pub fn with_schema<T: schemars::JsonSchema>(mut self) -> Self {
+        self.settings_schema = serde_json::to_value(schemars::schema_for!(T)).unwrap_or_default();
+        self
     }
 }
 

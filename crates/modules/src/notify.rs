@@ -10,7 +10,7 @@ use tm_core::{Module, ModuleContext, ModuleInfo};
 
 pub struct Notify;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Target {
     Discord {
@@ -31,7 +31,7 @@ pub enum Target {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 #[serde(default)]
 pub struct NotifySettings {
     pub enabled: bool,
@@ -68,6 +68,7 @@ impl Module for Notify {
             "Sends drops, login problems and other events to Discord, ntfy, Telegram or a webhook.",
             json!(NotifySettings::default()),
         )
+        .with_schema::<NotifySettings>()
     }
 
     fn validate_settings(&self, v: &Value) -> Result<(), String> {

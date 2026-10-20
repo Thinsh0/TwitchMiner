@@ -14,7 +14,9 @@ use tokio::time::Instant;
 
 pub struct Predictions;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Strategy {
     /// Outcome chosen by most users.
@@ -28,7 +30,7 @@ pub enum Strategy {
     Smart,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 #[serde(default)]
 pub struct PredictionSettings {
     pub enabled: bool,
@@ -88,6 +90,7 @@ impl Module for Predictions {
             "Bets a share of your channel points on predictions using a configurable strategy.",
             json!(PredictionSettings::default()),
         )
+        .with_schema::<PredictionSettings>()
     }
 
     fn validate_settings(&self, v: &Value) -> Result<(), String> {

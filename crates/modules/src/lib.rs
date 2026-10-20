@@ -19,3 +19,25 @@ pub fn builtin() -> Vec<Arc<dyn Module>> {
         Arc::new(notify::Notify),
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn every_module_has_a_settings_schema_matching_its_defaults() {
+        for m in super::builtin() {
+            let info = m.info();
+            assert!(
+                info.settings_schema.is_object(),
+                "{} has no schema",
+                info.id
+            );
+            assert!(
+                info.settings_schema["properties"]["enabled"].is_object(),
+                "{}",
+                info.id
+            );
+            m.validate_settings(&info.default_settings)
+                .unwrap_or_else(|e| panic!("{}: {e}", info.id));
+        }
+    }
+}

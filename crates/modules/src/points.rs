@@ -17,7 +17,7 @@ use tokio::time::Instant;
 
 pub struct Points;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 #[serde(default)]
 pub struct PointsSettings {
     pub enabled: bool,
@@ -79,6 +79,7 @@ impl Module for Points {
             "Watches your channels to earn channel points, claims bonus chests, joins raids, claims moments and keeps watch streaks.",
             json!(PointsSettings::default()),
         )
+        .with_schema::<PointsSettings>()
     }
 
     fn validate_settings(&self, v: &Value) -> Result<(), String> {

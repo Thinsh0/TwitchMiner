@@ -795,7 +795,16 @@ impl Runtime {
             .collect();
         for (campaign_id, drop_id, name, game, claim_id) in claimable {
             match ctx.gql().claim_drop(&claim_id).await {
-                Ok(ClaimResult::Claimed | ClaimResult::AlreadyClaimed) => {
+                Ok(ClaimResult::AlreadyClaimed) => {
+                    if let Some(d) = self
+                        .campaigns
+                        .get_mut(&campaign_id)
+                        .and_then(|c| c.drops.iter_mut().find(|d| d.id == drop_id))
+                    {
+                        d.claimed = true;
+                    }
+                }
+                Ok(ClaimResult::Claimed) => {
                     tracing::info!(%game, drop = %name, "drop claimed");
                     if let Some(d) = self
                         .campaigns

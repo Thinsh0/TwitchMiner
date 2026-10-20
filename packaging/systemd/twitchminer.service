@@ -1,0 +1,17 @@
+# Per-user service:  cp twitchminer.service ~/.config/systemd/user/ && systemctl --user enable --now twitchminer
+# (and `loginctl enable-linger $USER` to keep it running when logged out)
+[Unit]
+Description=TwitchMiner (drops & channel points)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/twitchminer run
+Restart=on-failure
+RestartSec=10
+# Uncomment to control it from other machines (token from `twitchminer api-token`):
+# Environment=TM_API_BIND=0.0.0.0:7878
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

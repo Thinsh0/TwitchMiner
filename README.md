@@ -34,6 +34,12 @@ twitchminer ctl history
 
 Une page de statut est aussi servie sur **http://127.0.0.1:7878/**. Elle demande le jeton d'API (`twitchminer api-token`). Elle n'est pas l'interface finale, mais elle suffit pour surveiller un daemon depuis un navigateur ou un téléphone.
 
+## Serveur, NAS, Raspberry Pi
+
+- **systemd** : `packaging/systemd/twitchminer.service` (service utilisateur).
+- **Docker** : `docker build -t twitchminer . && docker run -d -v twitchminer:/data -p 7878:7878 twitchminer`. `docker logs` affiche le code de connexion au premier lancement.
+- Le binaire Linux musl (artefact CI) est statique : aucune dépendance.
+
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) : crates, état unique, données, robustesse, plateformes

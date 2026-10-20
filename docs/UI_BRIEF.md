@@ -17,10 +17,11 @@ Le backend est terminé et testé. Ce document dit **quoi construire** et **avec
 | **Accueil / tableau de bord** | `view::summary()` (ou `Command::Summary`) : totaux de session, comptes, chaînes regardées, drop en cours (`progress`, `eta`), `watching_allowed`/`paused` | bouton Pause/Reprise : `settings_set engine {"paused": bool}` |
 | **Connexion** | `logins[]` (code + URL), événement `login_finished` | `login_start`, `login_cancel`. Afficher le code en très grand, ouvrir l'URL, attendre `login_finished` |
 | **Comptes** | `accounts[].info`, `.status` (`auth_required` ⇒ bouton « Se reconnecter » ; `standby` ⇒ « Miné par <peer> »), `.modules` (santé de chaque module) | `account_set_enabled`, `account_remove`, `login_start` |
-| **Drops** | `accounts[].campaigns` (jeu, image, fin, `linked`, `drops[]` avec progression), `drop_target`, `module_data.drops.skipped_campaigns` | jeux voulus : `settings_set module:drops {"games": [...]}` ; `module_call drops refresh` / `claim_all` |
+| **Drops** | **`module_data.drops.plan`** (liste ordonnée : statut, objectif, début / fin estimés, minutes manquantes, lien de compte) + `accounts[].campaigns` pour les images et la progression détaillée, `drop_target`, `module_data.drops.focus` | jeux voulus (ordre = priorité, glisser-déposer) : `settings_set module:drops {"games": [...]}` ; bouton « Faire en premier » : `module_call drops focus {campaign_id}` / `unfocus` ; `refresh` / `claim_all` |
 | **Chaînes / points** | `accounts[].channels` (avatar, live, jeu, spectateurs, solde, `session_points`), `watching` | `module_call points add_channel/remove_channel {login}` ; ordre : `settings_set ... {"channels": [...]}` |
 | **Historique** | `history` (paginé par `before_id`), types filtrables | — |
 | **Statistiques** | `stats` par jour / par chaîne (points, minutes, drops) | graphique simple |
+| **Agent IA** | `settings.engine.agent_enabled` | interrupteur : `settings_set engine {"agent_enabled": bool}` ; afficher le jeton agent (`tm_app::read_token(dir, TokenKind::Agent)`, voir AGENT.md) |
 | **Réglages** | `modules_list` → `settings_schema` + `settings_get` (`effective`, `defaults`, `schema`) | `settings_set` (merge). **Générer les formulaires depuis le JSON Schema** : booléens, nombres, enums, listes de chaînes |
 | **Journaux** | `GET /api/v1/logs` ou `app.logs.recent(n)` / `.subscribe()` | — |
 | **À propos / mises à jour** | `notices.update`, `version`, `manifest_revision` | `update_check`, `manifest_refresh`, `backup` |
@@ -31,6 +32,7 @@ Le backend est terminé et testé. Ce document dit **quoi construire** et **avec
 
 - `points_earned` (raison `CLAIM` = coffre, `WATCH_STREAK`, `RAID`…) → petit toast « +50 ».
 - `drop_claimed` → toast/notification système.
+- `drop_alert` (`at_risk`, `will_miss`, `not_linked` avec `link_url`, `new_campaign`) → notification avec action (ouvrir le lien, « Faire en premier »).
 - `account_status_changed{auth_required}` → alerte.
 - `watch_started` / `watch_stopped` → transition dans la liste « en cours ».
 

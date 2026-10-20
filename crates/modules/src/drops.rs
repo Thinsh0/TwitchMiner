@@ -8,37 +8,30 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tm_core::event::Event;
-use tm_core::state::{ChannelMeta, DropTarget};
+use tm_core::settings::EngineSettings;
+use tm_core::state::{ChannelMeta, DropAlertInfo, DropAlertKind, DropTarget};
 use tm_core::{Module, ModuleContext, ModuleInfo, WatchRequest, priority};
 use tm_twitch::models::{Campaign, ClaimResult, ClaimedBenefit, TimedDrop, UserInfo};
 use tm_twitch::pubsub::topics;
 use tm_twitch::{PubSubEvent, PubSubMessage};
 use tokio::time::Instant;
 
-pub struct Drops;
+mod plan;
 
-#[derive(
-    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, schemars::JsonSchema,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum DropsMode {
-    /// Follow the `games` order, then campaigns ending soonest.
-    #[default]
-    Priority,
-    /// Campaigns ending soonest first, regardless of `games` order.
-    EndingSoonest,
-    /// Campaigns closest to completion first.
-    LeastRemaining,
-}
+use plan::{Availability, Plan, Status, norm};
+
+pub struct Drops;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 #[serde(default)]
 pub struct DropsSettings {
     pub enabled: bool,
-    /// Wanted games (names, case-insensitive). Empty = every eligible game.
+    /// Wanted games in priority order (names, case-insensitive). Empty = every eligible game.
     pub games: Vec<String>,
     pub exclude_games: Vec<String>,
-    pub mode: DropsMode,
+    /// Wanted rewards (part of the reward name, case-insensitive). In a campaign that
+    /// has one, the objective stops at it; other campaigns are farmed to their last reward.
+    pub wanted_rewards: Vec<String>,
     /// Farm badge/emote-only campaigns (they need no game account link).
     pub badges_emotes: bool,
     /// Skip campaigns whose game account is known not to be linked.
@@ -47,6 +40,37 @@ pub struct DropsSettings {
     pub refresh_minutes: u64,
     /// Channels sampled per game when looking for campaigns without the dashboard.
     pub discovery_channels: u32,
+    /// Campaigns limited to fewer channels than this (esports…) are farmed first
+    /// whenever one of their channels is live.
+    pub restricted_max_channels: u32,
+    /// A campaign is "at risk" when `needed × safety_factor + safety_minutes` does not fit
+    /// before it ends. The margin never excludes a campaign.
+    pub safety_factor: f64,
+    pub safety_minutes: u32,
+    /// Spend spare time on campaigns that cannot be completed (their first rewards).
+    pub fill_partial: bool,
+    /// Alerts (event `drop_alert`) for campaigns of the `games` list.
+    pub alerts: AlertSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(default)]
+pub struct AlertSettings {
+    pub at_risk: bool,
+    pub will_miss: bool,
+    pub not_linked: bool,
+    pub new_campaign: bool,
+}
+
+impl Default for AlertSettings {
+    fn default() -> Self {
+        Self {
+            at_risk: true,
+            will_miss: true,
+            not_linked: true,
+            new_campaign: true,
+        }
+    }
 }
 
 impl Default for DropsSettings {
@@ -55,14 +79,25 @@ impl Default for DropsSettings {
             enabled: true,
             games: Vec::new(),
             exclude_games: Vec::new(),
-            mode: DropsMode::Priority,
+            wanted_rewards: Vec::new(),
             badges_emotes: true,
             require_linked: true,
             auto_claim: true,
             refresh_minutes: 60,
             discovery_channels: 8,
+            restricted_max_channels: 50,
+            safety_factor: 1.25,
+            safety_minutes: 120,
+            fill_partial: true,
+            alerts: AlertSettings::default(),
         }
     }
+}
+
+/// A campaign the user asked to farm first, until its objective is reached.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct Focus {
+    campaign_id: String,
 }
 
 /// If progress does not move for this long while watching, the channel is skipped.
@@ -71,7 +106,12 @@ const CHANNEL_BAN: Duration = Duration::from_secs(30 * 60);
 const CAMPAIGN_BAN: Duration = Duration::from_secs(2 * 60 * 60);
 const BANS_KEY: &str = "banned_campaigns";
 const STALLS_KEY: &str = "stalls";
+const FOCUS_KEY: &str = "focus";
+const ALERTED_KEY: &str = "alerted";
+const KNOWN_KEY: &str = "known_campaigns";
 const PROGRESS_POLL: Duration = Duration::from_secs(90);
+/// How often a better campaign (e.g. an esports channel going live) is looked for.
+const RECHECK: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Debug, Clone)]
 struct Target {
@@ -93,6 +133,32 @@ struct Runtime {
     slugs: HashMap<String, String>,
     tracked: HashSet<String>,
     last_refresh: Option<Instant>,
+    plan: Plan,
+    focus: Option<Focus>,
+    /// Alerts already sent (`kind:campaign` → campaign end), persisted.
+    alerted: HashMap<String, DateTime<Utc>>,
+    /// Campaign ids already seen (`None` until loaded: the first refresh only records).
+    known: Option<HashMap<String, DateTime<Utc>>>,
+}
+
+impl Runtime {
+    fn new() -> Self {
+        Self {
+            campaigns: BTreeMap::new(),
+            claimed: Vec::new(),
+            target: None,
+            banned_channels: HashMap::new(),
+            banned_campaigns: HashMap::new(),
+            stalls: HashMap::new(),
+            slugs: HashMap::new(),
+            tracked: HashSet::new(),
+            last_refresh: None,
+            plan: Plan::default(),
+            focus: None,
+            alerted: HashMap::new(),
+            known: None,
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -112,26 +178,30 @@ impl Module for Drops {
         if s.refresh_minutes < 5 {
             return Err("refresh_minutes must be at least 5".into());
         }
+        if !(1.0..=5.0).contains(&s.safety_factor) {
+            return Err("safety_factor must be between 1 and 5".into());
+        }
         Ok(())
     }
 
     async fn run(&self, ctx: ModuleContext) -> anyhow::Result<()> {
         let uid = ctx.account_id().to_string();
         let mut settings: DropsSettings = ctx.settings()?;
-        let mut rt = Runtime {
-            campaigns: BTreeMap::new(),
-            claimed: Vec::new(),
-            target: None,
-            banned_channels: HashMap::new(),
-            banned_campaigns: HashMap::new(),
-            stalls: HashMap::new(),
-            slugs: HashMap::new(),
-            tracked: HashSet::new(),
-            last_refresh: None,
-        };
+        let mut rt = Runtime::new();
         if let Ok(Some(stalls)) = ctx.kv_get::<HashMap<String, u32>>(STALLS_KEY).await {
             rt.stalls = stalls;
         }
+        rt.focus = ctx
+            .kv_get::<Option<Focus>>(FOCUS_KEY)
+            .await
+            .ok()
+            .flatten()
+            .flatten();
+        if let Ok(Some(alerted)) = ctx.kv_get(ALERTED_KEY).await {
+            rt.alerted = alerted;
+        }
+        rt.known = ctx.kv_get(KNOWN_KEY).await.ok().flatten();
+        ctx.set_data("focus", json!(rt.focus));
         if let Ok(Some(bans)) = ctx.kv_get::<HashMap<String, DateTime<Utc>>>(BANS_KEY).await {
             rt.banned_campaigns = bans;
             rt.save_bans(&ctx).await;
@@ -141,6 +211,8 @@ impl Module for Drops {
         let mut events = ctx.events();
         let mut progress_poll = tokio::time::interval(PROGRESS_POLL);
         progress_poll.tick().await;
+        let mut recheck = tokio::time::interval(RECHECK);
+        recheck.tick().await;
         let mut need_refresh = true;
         let mut need_pick = true;
 
@@ -188,6 +260,7 @@ impl Module for Drops {
                         need_pick = true;
                     }
                 }
+                _ = recheck.tick() => need_pick |= rt.better_may_exist(),
                 ev = ps.recv() => match ev {
                     Ok(PubSubEvent::Message(m)) => {
                         let (refresh, pick) = rt.on_pubsub(&ctx, &settings, &m).await;
@@ -213,6 +286,17 @@ impl Module for Drops {
                         "refresh" => { need_refresh = true; Ok(json!({"ok": true})) }
                         "claim_all" => Ok(json!({ "claimed": rt.claim_all(&ctx).await })),
                         "status" => Ok(rt.status()),
+                        "plan" => Ok(json!(rt.plan.entries)),
+                        "focus" => {
+                            let r = rt.set_focus(&ctx, &call.args).await;
+                            need_pick |= r.is_ok();
+                            r
+                        }
+                        "unfocus" => {
+                            rt.save_focus(&ctx, None).await;
+                            need_pick = true;
+                            Ok(json!({"ok": true}))
+                        }
                         other => Err(format!("unknown call `{other}`")),
                     };
                     let _ = call.reply.send(reply);
@@ -230,6 +314,34 @@ impl Module for Drops {
     }
 }
 
+/// Watchable time ahead, from the engine's active hours (a pause is temporary: ignored).
+fn availability(engine: &EngineSettings, now: DateTime<Utc>) -> Availability {
+    if engine.active_hours.is_empty() {
+        return Availability::always(now);
+    }
+    let hours = EngineSettings {
+        paused: false,
+        ..engine.clone()
+    };
+    Availability::new(now, |t| {
+        hours.watching_allowed(t.with_timezone(&chrono::Local))
+    })
+}
+
+fn alert_info(kind: DropAlertKind, e: &plan::Entry) -> DropAlertInfo {
+    DropAlertInfo {
+        kind,
+        campaign_id: e.campaign_id.clone(),
+        campaign: e.campaign.clone(),
+        game: e.game.clone(),
+        ends_at: e.ends_at,
+        starts_at: e.starts_at,
+        missing_minutes: e.missing_minutes,
+        link_url: e.link_url.clone(),
+        rewards: e.objective.clone(),
+    }
+}
+
 async fn sleep_until_utc(t: Option<DateTime<Utc>>) {
     match t {
         Some(t) => {
@@ -238,10 +350,6 @@ async fn sleep_until_utc(t: Option<DateTime<Utc>>) {
         }
         None => std::future::pending().await,
     }
-}
-
-fn norm(s: &str) -> String {
-    s.trim().to_lowercase()
 }
 
 impl Runtime {
@@ -330,6 +438,7 @@ impl Runtime {
             account: ctx.account_id().to_string(),
             campaigns: self.campaigns.values().cloned().collect(),
         });
+        self.detect_new(ctx, s).await;
         if s.auto_claim {
             self.claim_all(ctx).await;
         }
@@ -387,41 +496,98 @@ impl Runtime {
         Ok(out)
     }
 
-    fn eligible(&self, s: &DropsSettings, now: DateTime<Utc>) -> Vec<&Campaign> {
-        let wanted: Vec<String> = s.games.iter().map(|g| norm(g)).collect();
-        let excluded: HashSet<String> = s.exclude_games.iter().map(|g| norm(g)).collect();
-        let banned = |id: &str| self.banned_campaigns.get(id).is_some_and(|t| *t > now);
-        let mut list: Vec<&Campaign> = self
-            .campaigns
-            .values()
-            .filter(|c| c.is_active(now) && !banned(&c.id))
-            .filter(|c| !excluded.contains(&norm(&c.game.name)))
-            .filter(|c| wanted.is_empty() || wanted.contains(&norm(&c.game.name)))
-            .filter(|c| {
-                let badge_only = c.badge_or_emote_only();
-                if badge_only {
-                    return s.badges_emotes;
-                }
-                !(s.require_linked && c.linked == Some(false))
-            })
-            .filter(|c| next_drop(c, now).is_some())
-            .collect();
-        let game_rank = |c: &Campaign| {
-            wanted
-                .iter()
-                .position(|g| *g == norm(&c.game.name))
-                .unwrap_or(usize::MAX)
+    /// Recomputes the plan (pure: see [`plan`]).
+    fn replan(&mut self, s: &DropsSettings, engine: &EngineSettings, now: DateTime<Utc>) {
+        let params = plan::Params {
+            games: &s.games,
+            exclude_games: &s.exclude_games,
+            wanted_rewards: &s.wanted_rewards,
+            badges_emotes: s.badges_emotes,
+            require_linked: s.require_linked,
+            restricted_max_channels: s.restricted_max_channels as usize,
+            safety_factor: s.safety_factor,
+            safety_minutes: s.safety_minutes,
+            fill_partial: s.fill_partial,
+            focus: self.focus.as_ref().map(|f| f.campaign_id.as_str()),
+            skipped: &self.banned_campaigns,
         };
-        match s.mode {
-            DropsMode::Priority => list.sort_by_key(|c| (game_rank(c), c.ends_at)),
-            DropsMode::EndingSoonest => list.sort_by_key(|c| c.ends_at),
-            DropsMode::LeastRemaining => list.sort_by_key(|c| {
-                next_drop(c, now)
-                    .map(|d| d.required_minutes.saturating_sub(d.current_minutes))
-                    .unwrap_or(u32::MAX)
-            }),
+        let campaigns: Vec<&Campaign> = self.campaigns.values().collect();
+        let current = self.target.as_ref().map(|t| t.campaign_id.as_str());
+        self.plan = plan::plan(
+            &campaigns,
+            &params,
+            now,
+            &availability(engine, now),
+            current,
+        );
+    }
+
+    /// Campaigns to try, best first.
+    fn candidates(&self, now: DateTime<Utc>) -> Vec<Campaign> {
+        self.plan
+            .order
+            .iter()
+            .filter_map(|id| self.campaigns.get(id))
+            .filter(|c| next_drop(c, now).is_some())
+            .cloned()
+            .collect()
+    }
+
+    /// Whether something ranks above the current target (worth looking for a live channel).
+    fn better_may_exist(&self) -> bool {
+        self.plan
+            .order
+            .first()
+            .is_some_and(|id| self.target.as_ref().is_none_or(|t| &t.campaign_id != id))
+    }
+
+    async fn save_focus(&mut self, ctx: &ModuleContext, focus: Option<Focus>) {
+        self.focus = focus;
+        if let Err(e) = ctx.kv_put(FOCUS_KEY, &self.focus).await {
+            tracing::warn!(error = %e, "could not save drops focus");
         }
-        list
+        ctx.set_data("focus", json!(self.focus));
+    }
+
+    /// `focus {campaign_id}` or `focus {game}` (best campaign of that game in the plan).
+    async fn set_focus(&mut self, ctx: &ModuleContext, args: &Value) -> Result<Value, String> {
+        let farmable = |e: &plan::Entry| {
+            !matches!(
+                e.status,
+                Status::Done | Status::Upcoming | Status::NotLinked
+            )
+        };
+        let entry = if let Some(id) = args.get("campaign_id").and_then(Value::as_str) {
+            self.plan.entries.iter().find(|e| e.campaign_id == id)
+        } else if let Some(game) = args.get("game").and_then(Value::as_str) {
+            self.plan
+                .entries
+                .iter()
+                .find(|e| norm(&e.game) == norm(game) && farmable(e))
+        } else {
+            return Err("give `campaign_id` or `game`".into());
+        };
+        let Some(entry) = entry.cloned() else {
+            return Err(
+                "no such campaign in the plan (wrong id, finished, or game not wanted)".into(),
+            );
+        };
+        if !farmable(&entry) {
+            return Err(format!(
+                "campaign cannot be farmed now ({:?})",
+                entry.status
+            ));
+        }
+        self.save_focus(
+            ctx,
+            Some(Focus {
+                campaign_id: entry.campaign_id.clone(),
+            }),
+        )
+        .await;
+        Ok(
+            json!({"campaign_id": entry.campaign_id, "campaign": entry.campaign, "game": entry.game}),
+        )
     }
 
     /// Chooses the campaign and channel to watch and publishes the watch request.
@@ -429,19 +595,31 @@ impl Runtime {
         let now = Utc::now();
         self.banned_channels.retain(|_, t| *t > Instant::now());
         self.banned_campaigns.retain(|_, t| *t > now);
-        let candidates: Vec<Campaign> = self.eligible(s, now).into_iter().cloned().collect();
+        let engine = ctx.store().read(EngineSettings::from_state);
+        self.replan(s, &engine, now);
+        // A focus ends with its objective (or when the campaign cannot be farmed any more).
+        if let Some(f) = &self.focus
+            && !self.plan.order.contains(&f.campaign_id)
+        {
+            tracing::info!(campaign = %f.campaign_id, "drops focus finished");
+            self.save_focus(ctx, None).await;
+            self.replan(s, &engine, now);
+        }
+        let candidates = self.candidates(now);
 
-        // Keep the current target if it is still the best eligible campaign and its channel is fine.
-        if let Some(t) = &self.target {
-            let still_best = candidates.first().is_some_and(|c| c.id == t.campaign_id);
-            if still_best && !self.banned_channels.contains_key(&t.channel.id) {
+        // Try campaigns best first; stop at the current target if its channel is fine.
+        let current = self
+            .target
+            .as_ref()
+            .filter(|t| !self.banned_channels.contains_key(&t.channel.id))
+            .map(|t| t.campaign_id.clone());
+        let mut chosen: Option<(Campaign, UserInfo)> = None;
+        for c in candidates.iter().take(10) {
+            if current.as_ref() == Some(&c.id) {
+                self.publish_plan(ctx, s).await;
                 self.publish(ctx);
                 return;
             }
-        }
-
-        let mut chosen: Option<(Campaign, UserInfo)> = None;
-        for c in candidates.iter().take(10) {
             match self.find_channel(ctx, c).await {
                 Ok(Some(ch)) => {
                     chosen = Some((c.clone(), ch));
@@ -461,7 +639,112 @@ impl Runtime {
                 "no live channel for eligible campaigns"
             );
         }
+        self.publish_plan(ctx, s).await;
         self.publish(ctx);
+    }
+
+    /// Publishes the plan (`module_data.drops.plan`) and raises the alerts it calls for.
+    async fn publish_plan(&mut self, ctx: &ModuleContext, s: &DropsSettings) {
+        let current = self.target.as_ref().map(|t| t.campaign_id.as_str());
+        for e in &mut self.plan.entries {
+            if e.status == Status::Active && Some(e.campaign_id.as_str()) != current {
+                e.status = Status::Planned;
+            }
+            if Some(e.campaign_id.as_str()) == current {
+                e.status = Status::Active;
+            }
+        }
+        ctx.set_data("plan", json!(self.plan.entries));
+        let alerts: Vec<DropAlertInfo> = self
+            .plan
+            .entries
+            .iter()
+            .filter(|e| e.game_rank.is_some())
+            .filter_map(|e| {
+                let kind = match e.status {
+                    Status::AtRisk if s.alerts.at_risk => DropAlertKind::AtRisk,
+                    Status::WillMiss if s.alerts.will_miss => DropAlertKind::WillMiss,
+                    Status::NotLinked if s.alerts.not_linked => DropAlertKind::NotLinked,
+                    _ => return None,
+                };
+                Some(alert_info(kind, e))
+            })
+            .collect();
+        for a in alerts {
+            self.alert(ctx, a).await;
+        }
+    }
+
+    /// Emits an alert once per campaign and kind.
+    async fn alert(&mut self, ctx: &ModuleContext, a: DropAlertInfo) {
+        let key = format!("{:?}:{}", a.kind, a.campaign_id);
+        if self.alerted.contains_key(&key) {
+            return;
+        }
+        tracing::info!(kind = ?a.kind, campaign = %a.campaign, "drop alert");
+        self.alerted.insert(key, a.ends_at);
+        ctx.emit(Event::DropAlert {
+            account: ctx.account_id().to_string(),
+            alert: a,
+        });
+        let now = Utc::now();
+        self.alerted.retain(|_, end| *end > now);
+        if let Err(e) = ctx.kv_put(ALERTED_KEY, &self.alerted).await {
+            tracing::warn!(error = %e, "could not save drop alerts");
+        }
+    }
+
+    /// Alerts on campaigns of wanted games that were never seen before.
+    async fn detect_new(&mut self, ctx: &ModuleContext, s: &DropsSettings) {
+        let now = Utc::now();
+        let listed: HashMap<String, DateTime<Utc>> = self
+            .campaigns
+            .values()
+            .map(|c| (c.id.clone(), c.ends_at))
+            .collect();
+        let Some(known) = &self.known else {
+            // First run: remember what exists without alerting.
+            let _ = ctx.kv_put(KNOWN_KEY, &listed).await;
+            self.known = Some(listed);
+            return;
+        };
+        let wanted: Vec<String> = s.games.iter().map(|g| norm(g)).collect();
+        let fresh: Vec<Campaign> = self
+            .campaigns
+            .values()
+            .filter(|c| !known.contains_key(&c.id) && now < c.ends_at)
+            .filter(|c| wanted.contains(&norm(&c.game.name)))
+            .cloned()
+            .collect();
+        // Discovery can miss a campaign for a while: forget ids only once they ended.
+        let mut next = known.clone();
+        next.extend(listed);
+        next.retain(|_, end| *end > now);
+        if &next != known {
+            let _ = ctx.kv_put(KNOWN_KEY, &next).await;
+        }
+        self.known = Some(next);
+        if !s.alerts.new_campaign {
+            return;
+        }
+        for c in fresh {
+            let (rewards, _, _) = plan::objective(&c, &s.wanted_rewards, now);
+            self.alert(
+                ctx,
+                DropAlertInfo {
+                    kind: DropAlertKind::NewCampaign,
+                    campaign_id: c.id.clone(),
+                    campaign: c.name.clone(),
+                    game: c.game.name.clone(),
+                    ends_at: c.ends_at,
+                    starts_at: c.starts_at,
+                    missing_minutes: None,
+                    link_url: c.link_url.clone().filter(|_| c.linked == Some(false)),
+                    rewards,
+                },
+            )
+            .await;
+        }
     }
 
     async fn find_channel(
@@ -984,17 +1267,7 @@ mod tests {
 
     #[test]
     fn eligibility_respects_link_and_games() {
-        let mut rt = Runtime {
-            campaigns: BTreeMap::new(),
-            claimed: vec![],
-            target: None,
-            banned_channels: HashMap::new(),
-            banned_campaigns: HashMap::new(),
-            stalls: HashMap::new(),
-            slugs: HashMap::new(),
-            tracked: HashSet::new(),
-            last_refresh: None,
-        };
+        let mut rt = Runtime::new();
         let mut unlinked = campaign("u", "Rust", vec![drop("x", 60, 0, &[])]);
         unlinked.linked = Some(false);
         rt.campaigns.insert("u".into(), unlinked);
@@ -1010,12 +1283,12 @@ mod tests {
             games: vec!["rust".into(), "wow".into()],
             ..Default::default()
         };
-        let ids: Vec<&str> = rt
-            .eligible(&s, Utc::now())
-            .iter()
-            .map(|c| c.id.as_str())
-            .collect();
+        let now = Utc::now();
+        rt.replan(&s, &EngineSettings::default(), now);
+        let ids: Vec<String> = rt.candidates(now).into_iter().map(|c| c.id).collect();
         assert_eq!(ids, ["r", "w"]);
+        let unlinked = rt.plan.entries.iter().find(|e| e.campaign_id == "u");
+        assert_eq!(unlinked.map(|e| e.status), Some(Status::NotLinked));
     }
 
     #[test]

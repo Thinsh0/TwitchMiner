@@ -1,11 +1,12 @@
 //! Notifications: forwards selected events to Discord, ntfy, Telegram or any webhook.
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tm_core::event::{Envelope, Event};
-use tm_core::state::AccountStatus;
+use tm_core::state::{AccountStatus, DropAlertKind};
 use tm_core::{Module, ModuleContext, ModuleInfo};
 
 pub struct Notify;
@@ -25,9 +26,14 @@ pub enum Target {
         bot_token: String,
         chat_id: String,
     },
-    /// POSTs `{ "text": …, "event": <envelope> }`.
+    /// POSTs `{ "text": …, "event": <envelope> }`. Also the way to wake an AI agent.
     Webhook {
         url: String,
+        /// Sent as `Authorization: Bearer <token>`.
+        #[serde(default)]
+        token: Option<String>,
+        #[serde(default)]
+        headers: BTreeMap<String, String>,
     },
 }
 
@@ -61,6 +67,7 @@ impl Default for NotifySettings {
             targets: Vec::new(),
             events: vec![
                 "drop_claimed".into(),
+                "drop_alert".into(),
                 "auth_required".into(),
                 "prediction_result".into(),
                 "notice_raised".into(),
@@ -163,6 +170,61 @@ fn format_event(ctx: &ModuleContext, s: &NotifySettings, env: &Envelope) -> Opti
                 format!("🎁 [{who}] Drop récupéré : {drop_name} ({game})")
             } else {
                 format!("🎁 [{who}] Drop claimed: {drop_name} ({game})")
+            }
+        }
+        Event::DropAlert { alert: a, .. } if wants("drop_alert") => {
+            let game = &a.game;
+            let ends = a
+                .ends_at
+                .with_timezone(&chrono::Local)
+                .format("%d/%m %H:%M");
+            let hours = |m: u32| format!("{:.1}", f64::from(m) / 60.0);
+            let rewards = if a.rewards.is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", a.rewards.join(", "))
+            };
+            match (a.kind, fr) {
+                (DropAlertKind::AtRisk, true) => format!(
+                    "⏳ [{who}] Drops {game} à risque : « {} » finit le {ends}, peu de marge{rewards}",
+                    a.campaign
+                ),
+                (DropAlertKind::AtRisk, false) => format!(
+                    "⏳ [{who}] {game} drops at risk: \"{}\" ends {ends}, little margin{rewards}",
+                    a.campaign
+                ),
+                (DropAlertKind::WillMiss, true) => format!(
+                    "❌ [{who}] Drops {game} : « {} » ne pourra pas être fini avant le {ends} (il manque ~{} h){rewards}",
+                    a.campaign,
+                    hours(a.missing_minutes.unwrap_or(0))
+                ),
+                (DropAlertKind::WillMiss, false) => format!(
+                    "❌ [{who}] {game} drops: \"{}\" cannot be finished before {ends} (~{} h short){rewards}",
+                    a.campaign,
+                    hours(a.missing_minutes.unwrap_or(0))
+                ),
+                (DropAlertKind::NotLinked, true) => format!(
+                    "🔗 [{who}] Lie ton compte {game} pour « {} » (fin le {ends}) : {}",
+                    a.campaign,
+                    a.link_url
+                        .as_deref()
+                        .unwrap_or("https://www.twitch.tv/drops/campaigns")
+                ),
+                (DropAlertKind::NotLinked, false) => format!(
+                    "🔗 [{who}] Link your {game} account for \"{}\" (ends {ends}): {}",
+                    a.campaign,
+                    a.link_url
+                        .as_deref()
+                        .unwrap_or("https://www.twitch.tv/drops/campaigns")
+                ),
+                (DropAlertKind::NewCampaign, true) => format!(
+                    "🆕 [{who}] Nouvelle campagne {game} : « {} », jusqu'au {ends}{rewards}",
+                    a.campaign
+                ),
+                (DropAlertKind::NewCampaign, false) => format!(
+                    "🆕 [{who}] New {game} campaign: \"{}\", until {ends}{rewards}",
+                    a.campaign
+                ),
             }
         }
         Event::AccountStatusChanged {
@@ -292,9 +354,22 @@ async fn send(http: &reqwest::Client, t: &Target, text: &str, event: &Value) -> 
                 "https://api.telegram.org/bot{bot_token}/sendMessage"
             ))
             .json(&json!({ "chat_id": chat_id, "text": text })),
-        Target::Webhook { url } => http
-            .post(url)
-            .json(&json!({ "text": text, "event": event })),
+        Target::Webhook {
+            url,
+            token,
+            headers,
+        } => {
+            let mut r = http
+                .post(url)
+                .json(&json!({ "text": text, "event": event }));
+            if let Some(tok) = token {
+                r = r.bearer_auth(tok);
+            }
+            for (k, v) in headers {
+                r = r.header(k, v);
+            }
+            r
+        }
     };
     req.timeout(Duration::from_secs(15))
         .send()

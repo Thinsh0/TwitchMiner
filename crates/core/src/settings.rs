@@ -72,6 +72,8 @@ pub struct EngineSettings {
     pub role: Role,
     /// Other TwitchMiner instances (e.g. a home server reachable through Tailscale).
     pub peers: Vec<Peer>,
+    /// AI agent access: the MCP endpoint and the agent token. Off = both refused.
+    pub agent_enabled: bool,
 }
 
 #[derive(
@@ -160,6 +162,7 @@ impl Default for EngineSettings {
             active_hours: Vec::new(),
             role: Role::Primary,
             peers: Vec::new(),
+            agent_enabled: false,
         }
     }
 }

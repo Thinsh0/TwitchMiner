@@ -140,6 +140,11 @@ async fn auth(
         None
     };
     match access {
+        Some(Access::Agent) if !agent_enabled(&st.engine) => (
+            StatusCode::FORBIDDEN,
+            Json(json!({"ok": false, "error": {"code": "forbidden", "message": AGENT_DISABLED}})),
+        )
+            .into_response(),
         Some(a) => {
             req.extensions_mut().insert(a);
             next.run(req).await
@@ -150,6 +155,20 @@ async fn auth(
         )
             .into_response(),
     }
+}
+
+const AGENT_DISABLED: &str =
+    "AI agent access is disabled (set engine.agent_enabled to true with the full token)";
+
+/// `engine.agent_enabled`, read live so toggling it needs no restart.
+fn agent_enabled(engine: &Engine) -> bool {
+    engine.store().read(|s| {
+        s.settings
+            .get(tm_core::settings::ENGINE_SCOPE)
+            .and_then(|e| e.get("agent_enabled"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    })
 }
 
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
@@ -303,6 +322,13 @@ async fn mcp_post(
     Extension(access): Extension<Access>,
     body: axum::body::Bytes,
 ) -> Response {
+    if !agent_enabled(&st.engine) {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"ok": false, "error": {"code": "not_found", "message": AGENT_DISABLED}})),
+        )
+            .into_response();
+    }
     let msg: Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
         Err(e) => {
@@ -373,6 +399,7 @@ async fn ws_session(st: AppState, access: Access, socket: WebSocket, with_logs: 
                 Ok(env) => {
                     if env.seq <= last_seq { continue; }
                     last_seq = env.seq;
+                    if access == Access::Agent && !agent_enabled(&st.engine) { return; }
                     // `event` is an `Envelope`: {seq, ts, type, ...fields}.
                     let mut event = json!(env.as_ref());
                     if access == Access::Agent {

@@ -147,6 +147,37 @@ pub struct DropTarget {
     pub game: String,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DropAlertKind {
+    /// Fits, but with less than the safety margin.
+    AtRisk,
+    /// Cannot be completed before it ends.
+    WillMiss,
+    /// A wanted game's account is not linked.
+    NotLinked,
+    /// A campaign appeared for a wanted game.
+    NewCampaign,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DropAlertInfo {
+    pub kind: DropAlertKind,
+    pub campaign_id: String,
+    pub campaign: String,
+    pub game: String,
+    pub ends_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub starts_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub missing_minutes: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_url: Option<String>,
+    /// Rewards of the campaign's objective.
+    #[serde(default)]
+    pub rewards: Vec<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SessionStats {
     pub points_earned: i64,
@@ -458,6 +489,8 @@ pub fn apply(state: &mut State, event: &Event, now: DateTime<Utc>) -> bool {
         DropTargetChanged { account, target } => with_account(state, account, |acc| {
             set_if_changed(&mut acc.drop_target, target)
         }),
+        // A notification: the plan itself lives in `module_data.drops.plan`.
+        DropAlert { account, .. } => state.accounts.contains_key(account),
     }
 }
 

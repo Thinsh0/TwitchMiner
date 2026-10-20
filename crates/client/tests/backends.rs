@@ -81,7 +81,20 @@ async fn local_and_remote_mirror_the_same_state() {
         .unwrap_err();
     assert_eq!(bad.code, "invalid");
 
-    // The agent token works but cannot change sensitive engine settings.
+    // The agent token is refused until the owner enables agent access…
+    let early = Remote::connect(&format!("http://{addr}"), "agent")
+        .await
+        .unwrap();
+    assert_ne!(*early.link().borrow(), Link::Connected);
+    remote
+        .execute(Command::SettingsSet {
+            scope: "engine".into(),
+            value: json!({"agent_enabled": true}),
+            merge: true,
+        })
+        .await
+        .unwrap();
+    // …then works, but cannot change sensitive engine settings.
     let agent = Remote::connect(&format!("http://{addr}"), "agent")
         .await
         .unwrap();

@@ -5,15 +5,15 @@ Moteur sans interface, modulaire, pilotable par une API locale. Les interfaces (
 
 ## Fonctionnalités
 
-- **Drops** : découverte des campagnes, y compris quand Twitch masque le tableau de bord (comptes récents). Choix de la meilleure campagne et chaîne selon vos jeux et votre mode (priorité, fin la plus proche, plus proche de la fin). Suivi en temps réel, récupération automatique. Détection des chaînes ou campagnes bloquées (compte de jeu non lié…).
+- **Drops** : découverte des campagnes, y compris quand Twitch masque le tableau de bord (comptes récents). **Planification** : votre ordre de jeux est respecté, mais une campagne qui finit bientôt passe devant si tout tient encore ; les campagnes esport (chaînes imposées) passent en premier dès qu'elles sont en direct ; chaque campagne vise sa meilleure récompense (ou celles que vous voulez). Alertes : campagne à risque, compte de jeu à lier, nouvelle campagne. Suivi en temps réel, récupération automatique. Détection des chaînes ou campagnes bloquées (compte de jeu non lié…).
 - **Points de chaîne** : chaînes choisies + chaînes suivies. Coffres bonus, raids, moments, **séries de visionnage** prioritaires. Soldes et multiplicateurs.
 - **Prédictions** (optionnel) : 4 stratégies, garde-fous sur les mises.
-- **Notifications** : Discord, ntfy, Telegram, webhook.
+- **Notifications** : Discord, ntfy, Telegram, webhook (avec jeton, pour réveiller un agent IA).
 - **Multi-comptes**, chacun isolé.
 - **Historique et statistiques** par jour et par chaîne.
 - **Un seul dossier de données** (une base SQLite), un état unique synchronisé en temps réel.
 - **Résistant aux changements de Twitch** : les identifiants volatils sont dans un manifeste mis à jour à distance, sans recompiler.
-- **Agents IA** (Hermes, OpenClaw, Claude…) : serveur MCP intégré, avec un jeton restreint.
+- **Agents IA** (Hermes, OpenClaw, Claude…) : serveur MCP intégré, désactivé par défaut, avec un jeton restreint.
 - Proxy HTTP (y compris WebSocket), mode portable, journaux tournants.
 
 ## Démarrage rapide

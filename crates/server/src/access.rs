@@ -78,7 +78,14 @@ pub fn redact_settings(scope: &str, doc: &mut Value) {
         && let Some(targets) = doc.get_mut("targets").and_then(Value::as_array_mut)
     {
         for t in targets {
-            for k in ["webhook_url", "url", "token", "bot_token", "chat_id"] {
+            for k in [
+                "webhook_url",
+                "url",
+                "token",
+                "bot_token",
+                "chat_id",
+                "headers",
+            ] {
                 if let Some(v) = t.get_mut(k) {
                     hide(v);
                 }
@@ -135,6 +142,7 @@ mod tests {
             .is_err()
         );
         assert!(authorize(a, &Command::Snapshot).is_ok());
+        assert!(authorize(a, &set("engine", json!({"agent_enabled": true}))).is_err());
         assert!(
             authorize(
                 Access::Full,

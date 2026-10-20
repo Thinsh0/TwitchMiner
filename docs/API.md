@@ -112,12 +112,16 @@ Codes d'erreur : `not_found`, `invalid`, `auth`, `module`, `unavailable`, `timeo
 | `drops` | `refresh` | — | recharge les campagnes maintenant |
 | `drops` | `claim_all` | — | récupère tout ce qui peut l'être |
 | `drops` | `status` | — | cible, chaînes/campagnes écartées |
+| `drops` | `plan` | — | le plan (comme `module_data.drops.plan`) |
+| `drops` | `focus` | `{campaign_id}` ou `{game}` | farmer cette campagne (ou la meilleure de ce jeu) en premier jusqu'à son objectif, puis reprendre le plan |
+| `drops` | `unfocus` | — | annule le focus |
 | `notify` | `test` | — | envoie une notification de test |
 
 ## Réglages
 
 Portées :
-- `engine` : `max_watch_slots` (1-2), `proxy`, `manifest_url`, `manifest_auto_update`, `history_retention_days`, `update_check`, `releases_url`, `paused`, `active_hours` ;
+- `engine` : `max_watch_slots` (1-2), `proxy`, `manifest_url`, `manifest_auto_update`, `history_retention_days`, `update_check`, `releases_url`, `paused`, `active_hours`, `agent_enabled` ;
+  - **Agents IA** : `agent_enabled` (défaut `false`). Désactivé, la route `/mcp` répond 404 et le jeton agent est refusé partout (403), y compris les WebSocket déjà ouverts. Seul le jeton complet peut le changer. Voir [AGENT.md](AGENT.md).
   - **Pause globale** : `settings_set engine {"paused": true}`. Rien n'est regardé (`watch_stopped{cause:"paused"}`), mais les modules continuent de suivre et de récupérer les bonus.
   - **Plusieurs instances** : `role` (`primary` | `secondary`) et `peers: [{name?, url, token?}]`. Un secondaire passe en `standby` les comptes qu'un pair mine déjà, et les reprend si le pair disparaît. Voir [SERVER.md](SERVER.md).
   - **Plages horaires** : `{"active_hours": [{"days": [1,2,3,4,5], "start": "18:00", "end": "02:00"}]}`. Heure locale, `days` en ISO (1 = lundi), une fin avant le début passe minuit, `days` vide = tous les jours. Hors plage : `cause:"outside active hours"`.
@@ -131,9 +135,11 @@ Chaque portée a un **JSON Schema** (`settings_get(...).schema`, ou `modules_lis
 <details><summary>Défauts des modules intégrés</summary>
 
 ```jsonc
-// drops
-{"enabled": true, "games": [], "exclude_games": [], "mode": "priority",   // priority | ending_soonest | least_remaining
- "badges_emotes": true, "require_linked": true, "auto_claim": true, "refresh_minutes": 60, "discovery_channels": 8}
+// drops (voir « Plan des drops » ci-dessous)
+{"enabled": true, "games": [], "exclude_games": [], "wanted_rewards": [],
+ "badges_emotes": true, "require_linked": true, "auto_claim": true, "refresh_minutes": 60, "discovery_channels": 8,
+ "restricted_max_channels": 50, "safety_factor": 1.25, "safety_minutes": 120, "fill_partial": true,
+ "alerts": {"at_risk": true, "will_miss": true, "not_linked": true, "new_campaign": true}}
 // points
 {"enabled": true, "channels": [], "follows": true, "exclude": [], "claim_bonus": true, "join_raids": true,
  "claim_moments": true, "watch_streak": true, "refresh_minutes": 5,
@@ -142,11 +148,35 @@ Chaque portée a un **JSON Schema** (`settings_get(...).schema`, ou `modules_lis
 {"enabled": false, "strategy": "smart", "percent": 5.0, "max_points": 50000, "min_balance": 2000,
  "min_voters": 20, "seconds_before_close": 6, "channels": []}           // most_voted | most_points | high_odds | smart
 // notify
-{"enabled": true, "targets": [], "events": ["drop_claimed", "auth_required", "prediction_result", "notice_raised"], "min_points": 0,
+{"enabled": true, "targets": [], "events": ["drop_claimed", "drop_alert", "auth_required", "prediction_result", "notice_raised"], "min_points": 0,
  "language": "fr"}                                                       // fr | en
-// targets: {"kind":"discord","webhook_url"} | {"kind":"ntfy","url","token?"} | {"kind":"telegram","bot_token","chat_id"} | {"kind":"webhook","url"}
+// targets: {"kind":"discord","webhook_url"} | {"kind":"ntfy","url","token?"} | {"kind":"telegram","bot_token","chat_id"} | {"kind":"webhook","url","token?","headers?"}
+// webhook : POST {"text", "event"} ; token → "Authorization: Bearer …" ; headers = en-têtes en plus (réveil d'un agent IA)
 ```
 </details>
+
+### Plan des drops
+
+Le module `drops` ne se contente pas de trier : il **planifie** (`module_data.drops.plan`, recalculé à chaque choix de cible).
+
+1. **Focus** (`module_call drops focus`) : en premier, jusqu'à son objectif.
+2. **Campagnes à chaînes définies** (moins de `restricted_max_channels` chaînes autorisées, ex. esport) : priorité maximale dès qu'une de leurs chaînes est en direct sur le jeu. Leur temps n'est pas prévisible, elles ne sont pas planifiées.
+3. **Campagnes ouvertes** : admises dans l'ordre de `games`, chacune seulement si **tous** les objectifs admis tiennent encore avant leur fin (temps disponible = `active_hours` ; la pause, temporaire, est ignorée). Les admises sont farmées **échéance la plus proche d'abord** ; à échéance égale (même heure), l'ordre de `games` décide. Une priorité haute n'est donc jamais sacrifiée pour une plus basse.
+4. **Campagnes impossibles à finir** : en dernier, pour leurs premières récompenses (`fill_partial`).
+
+**Objectif** d'une campagne : sa dernière récompense (les plus longues sont souvent les meilleures), ou les récompenses de `wanted_rewards` qu'elle contient (nom partiel, sans casse). Les drops indépendants avancent ensemble ; un drop chaîné compte avec ses prérequis. La **marge** (`× safety_factor + safety_minutes`) n'exclut jamais : elle fait seulement passer une campagne en `at_risk`.
+
+```jsonc
+// module_data.drops.plan : meilleure d'abord
+[{"campaign_id", "campaign", "game", "status", "ends_at", "objective": ["récompenses"], "remaining_minutes",
+  "start_at?", "eta?",          // estimations (planned / at_risk)
+  "missing_minutes?",           // will_miss
+  "starts_at?", "link_url?", "skipped_until?", "game_rank?"}]
+// status : active | focus | restricted | planned | at_risk | will_miss | upcoming | not_linked | skipped | done
+// module_data.drops.focus : {"campaign_id"} ou null
+```
+
+Seuls les jeux de `games` (tous si la liste est vide) apparaissent dans le plan. Les **alertes** (`drop_alert`) ne concernent que les jeux de `games`, une seule fois par campagne et par type.
 
 ## L'état (`State`)
 
@@ -224,6 +254,7 @@ Chaque événement arrive enveloppé : `{seq, ts, type, …champs}`. Ceux marqu�
 | `drop_progress` | `account`, `campaign_id`, `drop_id`, `current_minutes`, `required_minutes` |
 | `drop_claimed` 📜 | `account`, `campaign_id`, `drop_id`, `drop_name`, `game` |
 | `drop_target_changed` | `account`, `target` |
+| `drop_alert` 📜 | `account`, `alert` : `{kind, campaign_id, campaign, game, ends_at, starts_at?, missing_minutes?, link_url?, rewards[]}`, `kind` = `at_risk` \| `will_miss` \| `not_linked` \| `new_campaign` |
 
 ## Exemple de parcours « premier lancement »
 

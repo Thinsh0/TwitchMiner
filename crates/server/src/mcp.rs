@@ -167,6 +167,28 @@ fn tools() -> Vec<Value> {
             false,
         ),
         tool(
+            "get_drop_plan",
+            "The drops plan, best first: status of each campaign of the wanted games (active, focus, restricted = \
+             farmed whenever its few channels are live, planned with estimated start and ETA, at_risk, will_miss with \
+             missing minutes, upcoming, not_linked with link_url, skipped, done), its objective rewards and remaining minutes.",
+            json!({ "account": account_prop() }),
+            &[],
+            true,
+        ),
+        tool(
+            "focus_drops",
+            "Farm one campaign first until its objective is reached, then resume the plan. Give `campaign_id` or \
+             `game` (its best campaign), or `clear: true` to cancel the focus.",
+            json!({
+                "account": account_prop(),
+                "campaign_id": { "type": "string" },
+                "game": { "type": "string" },
+                "clear": { "type": "boolean" },
+            }),
+            &[],
+            false,
+        ),
+        tool(
             "start_login",
             "Start adding or re-authenticating a Twitch account. Returns a code the user must enter at the given URL; \
              relay both to the user.",
@@ -489,6 +511,36 @@ async fn call_tool(
                     module: "drops".into(),
                     name: "refresh".into(),
                     args: json!({}),
+                },
+            )
+            .await
+            .map_err(api)
+        }
+        "get_drop_plan" => {
+            let id = acc()?;
+            let drops = state.accounts[&id].module_data.get("drops");
+            let field = |k: &str| drops.and_then(|d| d.get(k)).cloned().unwrap_or(Value::Null);
+            Ok(json!({ "plan": field("plan"), "focus": field("focus") }))
+        }
+        "focus_drops" => {
+            let id = acc()?;
+            let clear = args.get("clear").and_then(Value::as_bool).unwrap_or(false);
+            let (name, call_args) = if clear {
+                ("unfocus", json!({}))
+            } else {
+                (
+                    "focus",
+                    json!({ "campaign_id": args.get("campaign_id"), "game": args.get("game") }),
+                )
+            };
+            exec(
+                engine,
+                access,
+                Command::ModuleCall {
+                    account: id,
+                    module: "drops".into(),
+                    name: name.into(),
+                    args: call_args,
                 },
             )
             .await

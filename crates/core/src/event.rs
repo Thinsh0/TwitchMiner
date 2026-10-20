@@ -11,7 +11,8 @@ use serde_json::Value;
 use tm_twitch::models::{Campaign, StreamInfo};
 
 use crate::state::{
-    AccountInfo, AccountStatus, ChannelMeta, DropTarget, LoginFlow, ModuleHealth, Notice,
+    AccountInfo, AccountStatus, ChannelMeta, DropAlertInfo, DropTarget, LoginFlow, ModuleHealth,
+    Notice,
 };
 
 /// An event with its position in the global stream.
@@ -188,6 +189,11 @@ pub enum Event {
         account: String,
         target: Option<DropTarget>,
     },
+    /// Something about a wanted campaign needs the user's attention (sent once).
+    DropAlert {
+        account: String,
+        alert: DropAlertInfo,
+    },
 }
 
 impl Event {
@@ -223,6 +229,7 @@ impl Event {
             Event::DropProgress { .. } => "drop_progress",
             Event::DropClaimed { .. } => "drop_claimed",
             Event::DropTargetChanged { .. } => "drop_target_changed",
+            Event::DropAlert { .. } => "drop_alert",
         }
     }
 
@@ -249,7 +256,8 @@ impl Event {
             | Event::CampaignsReplaced { account, .. }
             | Event::DropProgress { account, .. }
             | Event::DropClaimed { account, .. }
-            | Event::DropTargetChanged { account, .. } => Some(account),
+            | Event::DropTargetChanged { account, .. }
+            | Event::DropAlert { account, .. } => Some(account),
             Event::AccountUpserted { info } => Some(&info.id),
             _ => None,
         }
@@ -288,6 +296,7 @@ impl Event {
                 | Event::WatchStarted { .. }
                 | Event::WatchStopped { .. }
                 | Event::DropClaimed { .. }
+                | Event::DropAlert { .. }
                 | Event::AccountStatusChanged { .. }
                 | Event::NoticeRaised { .. }
                 | Event::LoginFinished { .. }

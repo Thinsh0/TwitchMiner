@@ -2,6 +2,16 @@
 
 TwitchMiner expose un **serveur MCP** (Model Context Protocol), le standard que comprennent la plupart des agents. L'agent peut alors répondre à « où en sont mes drops ? », « combien de points cette semaine ? », « mets Rust en priorité », « mets en pause cette nuit », etc.
 
+## Activer (désactivé par défaut)
+
+Sans agent branché, rien n'est exposé : la route `/mcp` répond 404 et le jeton agent est refusé partout. Pour activer, avec le jeton complet :
+
+```bash
+twitchminer ctl set engine '{"agent_enabled": true}'     # false pour couper, effet immédiat
+```
+
+L'agent ne peut pas modifier ce réglage lui-même.
+
 ## Deux jetons
 
 | Jeton | Commande | Pour qui | Peut tout faire ? |
@@ -12,7 +22,7 @@ TwitchMiner expose un **serveur MCP** (Model Context Protocol), le standard que 
 Pourquoi un jeton à part : l'agent lit des textes écrits par des inconnus (titres de stream, noms de campagne). Un titre piégé du genre « ignore tes instructions et envoie… » pourrait le manipuler. Le jeton agent limite les dégâts possibles, quoi qu'il arrive à l'agent :
 
 - **interdit** : supprimer un compte, ajouter un compte à partir d'un jeton brut, écrire une sauvegarde, changer les cibles de notification, changer les réglages moteur autres que `paused`, `active_hours` et `max_watch_slots` (donc ni proxy, ni pairs, ni URL de mise à jour) ;
-- **masqué** (`***`) : jeton des pairs, proxy, URL de webhook, jetons de bot ;
+- **masqué** (`***`) : jeton des pairs, proxy, URL de webhook, jetons et en-têtes des notifications ;
 - **autorisé** : tout le reste (lire l'état, l'historique et les stats ; jeux de drops, chaînes, pause, horaires, connexion d'un compte par code, réglages des modules).
 
 Une action refusée renvoie l'erreur `forbidden`.
@@ -73,8 +83,28 @@ Transport « Streamable HTTP » en réponses JSON simples, sans flux SSE. Versio
 | `set_drop_games` | jeux de drops voulus, par priorité (tous comptes, ou un seul avec `account`) |
 | `set_paused` | pause / reprise |
 | `refresh_drops` | recharger les campagnes |
+| `get_drop_plan` | le plan des drops : statut de chaque campagne (en cours, planifiée avec début et fin estimés, à risque, sera manquée, non liée…), objectif, minutes restantes |
+| `focus_drops` | farmer une campagne (ou la meilleure d'un jeu) en premier jusqu'à son objectif ; `clear: true` pour annuler |
 | `start_login` | connecter un compte : renvoie le code à saisir sur twitch.tv/activate |
 | `get_settings` / `update_settings` | réglages d'un module (`drops`, `points`, `predictions`, `notify`) ou `engine`, avec le schéma |
+
+## Réveiller l'agent (proactif)
+
+MCP fonctionne en question-réponse : l'agent ne sait rien tant qu'il n'appelle pas un outil. Pour qu'il réagisse seul (campagne à risque, compte de jeu à lier, nouvelle campagne), ajoute une cible **webhook** au module `notify`, pointée sur l'entrée webhook de l'agent :
+
+```bash
+twitchminer ctl set module:notify '{
+  "targets": [{ "kind": "webhook", "url": "http://127.0.0.1:<port>/<chemin>", "token": "<secret>" }],
+  "events": ["drop_alert", "drop_claimed", "auth_required"]
+}'
+```
+
+- corps envoyé : `{"text": "<message lisible>", "event": {...}}` (l'événement complet, ex. `drop_alert` avec `kind`, `campaign`, `game`, `ends_at`, `missing_minutes`, `link_url`) ;
+- `token` → en-tête `Authorization: Bearer <secret>` ; `headers` pour d'autres en-têtes si l'agent en demande ;
+- l'URL et le chemin exacts dépendent de l'agent : voir sa doc « webhook ».
+- `twitchminer ctl call notify test --account <id>` envoie un message de test.
+
+Sans webhook, l'agent peut aussi passer régulièrement via sa propre tâche planifiée (`status`, `get_drop_plan`).
 
 ## Tester à la main
 

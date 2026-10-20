@@ -70,6 +70,9 @@ async fn local_and_remote_mirror_the_same_state() {
     assert_eq!(*l, engine.store().snapshot());
     assert_eq!(*r, engine.store().snapshot());
 
+    // Logs are reachable remotely too (this test server keeps none).
+    assert_eq!(remote.logs(10).await.unwrap().len(), 0);
+
     // Errors come back typed.
     let bad = remote
         .execute(Command::SettingsSet {

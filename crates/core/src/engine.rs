@@ -10,7 +10,7 @@ use parking_lot::Mutex;
 use serde_json::{Value, json};
 use tm_twitch::auth;
 use tm_twitch::manifest::{self, Manifest, SharedManifest, merge_json};
-use tm_twitch::{Net, NetConfig};
+use tm_twitch::{Gql, Net, NetConfig};
 use tokio_util::sync::CancellationToken;
 
 use crate::account::AccountRuntime;
@@ -354,6 +354,7 @@ impl Engine {
                     self.notice(
                         &format!("duplicate:{account}"),
                         Level::Warning,
+                        json!({ "account": account, "login": login, "peer": peer }),
                         format!(
                             "{login} is also being mined by {peer}: set one instance to `secondary`"
                         ),
@@ -440,9 +441,14 @@ impl Engine {
                         me.shared.net.store(Arc::new(net));
                         tracing::info!("proxy changed, restarting accounts");
                         me.restart_all_accounts().await;
-                        me.clear_notice("proxy");
+                        me.clear_notice("proxy_invalid");
                     }
-                    Err(e) => me.notice("proxy", Level::Error, format!("Invalid proxy: {e}")),
+                    Err(e) => me.notice(
+                        "proxy_invalid",
+                        Level::Error,
+                        json!({ "error": e.to_string() }),
+                        format!("Invalid proxy: {e}"),
+                    ),
                 }
             }
         });
@@ -543,6 +549,7 @@ impl Engine {
             self.notice(
                 "update",
                 Level::Info,
+                json!({ "version": tag, "current": current, "url": page }),
                 format!("TwitchMiner {tag} is available: {page}"),
             );
         } else {
@@ -551,13 +558,17 @@ impl Engine {
         Ok(json!({ "current": current, "latest": tag, "update_available": newer, "url": page }))
     }
 
-    pub fn notice(&self, id: &str, level: Level, message: impl Into<String>) {
+    /// Raises a notice. `kind` is `id` without its `:<suffix>` (e.g. `duplicate:<account>`).
+    pub fn notice(&self, id: &str, level: Level, params: Value, message: impl Into<String>) {
+        let kind = id.split(':').next().unwrap_or(id).to_string();
         self.shared.store.emit(Event::NoticeRaised {
             notice: Notice {
                 id: id.to_string(),
                 level,
                 message: message.into(),
                 at: Utc::now(),
+                kind: Some(kind),
+                params,
             },
         });
     }
@@ -730,6 +741,18 @@ impl Engine {
                 }
             }
 
+            Command::GamesSearch { query, limit } => {
+                let query = query.trim();
+                if query.chars().count() < 2 {
+                    return Ok(json!([]));
+                }
+                let gql = Gql::anonymous(self.shared.net(), self.shared.manifest.clone());
+                let games = gql
+                    .search_games(query, limit.unwrap_or(10))
+                    .await
+                    .map_err(|e| ApiError::new("unavailable", e.to_string()))?;
+                Ok(json!(games))
+            }
             Command::ManifestRefresh => self.refresh_manifest().await,
             Command::UpdateCheck => self.check_update().await,
             Command::Backup { path } => {

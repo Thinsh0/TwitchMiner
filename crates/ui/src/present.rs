@@ -705,9 +705,15 @@ pub fn when_at(t: Option<DateTime<Utc>>, now: DateTime<Utc>, lang: i32) -> When 
     }
 }
 
-/// Key of today's row in `daily_stats` (the engine counts days in UTC).
+/// Today's key in `stats` rows (local days: queries send [`tz_offset_minutes`]).
 pub fn today_key(now: DateTime<Utc>) -> String {
-    now.format("%Y-%m-%d").to_string()
+    now.with_timezone(&Local).format("%Y-%m-%d").to_string()
+}
+
+/// This machine's offset from UTC, sent with `stats` queries so a remote engine cuts
+/// days in the viewer's time zone.
+pub fn tz_offset_minutes() -> i32 {
+    Local::now().offset().local_minus_utc() / 60
 }
 
 fn minutes_until(now: DateTime<Utc>, t: DateTime<Utc>) -> i32 {

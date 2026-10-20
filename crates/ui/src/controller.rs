@@ -1019,6 +1019,7 @@ impl Controller {
             let day = present::today_key(chrono::Utc::now());
             let Ok(cmd) = serde_json::from_value::<Command>(serde_json::json!({
                 "cmd": "stats", "account": account, "from": day, "to": day,
+                "tz_offset_minutes": present::tz_offset_minutes(),
             })) else {
                 return;
             };

@@ -80,6 +80,7 @@ Transport « Streamable HTTP » en réponses JSON simples, sans flux SSE. Versio
 | `get_history` | derniers événements (points, drops) |
 | `get_stats` | totaux par jour ou par chaîne sur N jours |
 | `add_channel` / `remove_channel` | chaînes à points |
+| `search_games` | chercher un jeu par son nom (noms exacts pour `set_drop_games`) |
 | `set_drop_games` | jeux de drops voulus, par priorité (tous comptes, ou un seul avec `account`) |
 | `set_paused` | pause / reprise |
 | `refresh_drops` | recharger les campagnes |

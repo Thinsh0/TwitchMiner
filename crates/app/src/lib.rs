@@ -75,6 +75,15 @@ impl App {
                 stdout: opts.log_stdout,
             },
         );
+        // Bind first: a busy port must not leave a started engine behind.
+        let listener = match &opts.api {
+            Some(api) => Some(
+                tokio::net::TcpListener::bind(api.bind)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("cannot open the API port {}: {e}", api.bind))?,
+            ),
+            None => None,
+        };
         let mut modules = tm_modules::builtin();
         modules.extend(opts.extra_modules);
         let engine = Engine::start(EngineConfig {
@@ -84,13 +93,22 @@ impl App {
         })
         .await?;
 
-        let api_token = match opts.api.as_ref().and_then(|a| a.token.clone()) {
-            Some(t) => t,
-            None => token_in(engine.store().db(), TokenKind::Full).await?,
+        let tokens = async {
+            let api = match opts.api.as_ref().and_then(|a| a.token.clone()) {
+                Some(t) => t,
+                None => token_in(engine.store().db(), TokenKind::Full).await?,
+            };
+            anyhow::Ok((api, token_in(engine.store().db(), TokenKind::Agent).await?))
         };
-        let agent_token = token_in(engine.store().db(), TokenKind::Agent).await?;
+        let (api_token, agent_token) = match tokens.await {
+            Ok(t) => t,
+            Err(e) => {
+                engine.shutdown().await;
+                return Err(e);
+            }
+        };
         let stop = Arc::new(Notify::new());
-        if let Some(api) = opts.api {
+        if let (Some(api), Some(listener)) = (opts.api, listener) {
             let cfg = tm_server::ServerConfig {
                 bind: api.bind,
                 token: Some(api_token.clone()),
@@ -99,7 +117,6 @@ impl App {
             };
             let engine = engine.clone();
             let stop = stop.clone();
-            let listener = tokio::net::TcpListener::bind(cfg.bind).await?;
             tokio::spawn(async move {
                 if let Err(e) =
                     tm_server::serve_on(listener, engine, cfg, async move { stop.notified().await })
@@ -218,6 +235,31 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(read_ui_prefs(Some(dir.clone())).await.unwrap(), prefs);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn busy_api_port_leaves_nothing_running() {
+        let dir = std::env::temp_dir().join(format!(
+            "tm-app-port-{}-{}",
+            std::process::id(),
+            chrono_free_nanos()
+        ));
+        let taken = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let opts = |api: Option<ApiOptions>| AppOptions {
+            data_dir: Some(dir.clone()),
+            api,
+            ..Default::default()
+        };
+        let busy = App::start(opts(Some(ApiOptions {
+            bind: taken.local_addr().unwrap(),
+            token: None,
+        })))
+        .await;
+        assert!(busy.is_err());
+        // The data directory is not left locked by a half-started engine.
+        let app = App::start(opts(None)).await.unwrap();
+        app.shutdown().await;
         let _ = std::fs::remove_dir_all(dir);
     }
 

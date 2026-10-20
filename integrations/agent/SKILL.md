@@ -23,6 +23,7 @@ Your token is restricted on purpose. You cannot remove accounts, change the prox
 | `get_history` | Recent events: points earned (WATCH, CLAIM, WATCH_STREAK, RAID…), drops claimed |
 | `get_stats` | Totals per day or per channel over N days |
 | `add_channel` / `remove_channel` | Change the points channels (by login) |
+| `search_games` | Find a game's exact Twitch name before adding it to `set_drop_games` |
 | `set_drop_games` | Games whose drops are farmed, in priority order (empty = all eligible games) |
 | `set_paused` | Pause or resume all watching |
 | `refresh_drops` | Reload campaigns now (after the user linked a game account) |

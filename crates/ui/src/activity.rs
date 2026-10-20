@@ -5,7 +5,7 @@ use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde_json::{Value, json};
 use tm_core::State;
 
-use crate::present::{today_key, when_at};
+use crate::present::{today_key, tz_offset_minutes, when_at};
 use crate::{ChartBar, HistoryItem};
 
 /// Page size of the history list.
@@ -25,15 +25,14 @@ pub struct Choice {
 
 pub fn stats_query(c: &Choice, now: DateTime<Utc>) -> Value {
     let to = today_key(now);
-    let from = (now - Duration::days(i64::from(c.days.max(1) - 1)))
-        .format("%Y-%m-%d")
-        .to_string();
+    let from = today_key(now - Duration::days(i64::from(c.days.max(1) - 1)));
     json!({
         "cmd": "stats",
         "account": c.account,
         "from": from,
         "to": to,
         "group_by": if c.group == 1 { "channel" } else { "day" },
+        "tz_offset_minutes": tz_offset_minutes(),
     })
 }
 

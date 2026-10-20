@@ -72,7 +72,7 @@ impl Session {
                     _ => OpenError::Failed(format!("{e:#}")),
                 })?;
                 Ok(Self {
-                    backend: Arc::new(Local::new(app.engine.clone())),
+                    backend: Arc::new(Local::new(app.engine.clone()).with_logs(app.logs.clone())),
                     target,
                     app: Some(app),
                 })

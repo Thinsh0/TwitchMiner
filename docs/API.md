@@ -17,7 +17,7 @@ Le plus simple est de ne pas gérer tout ça à la main :
 ```rust
 use tm_client::{Backend, Local, Remote};
 let app = tm_app::App::start(tm_app::AppOptions { log_stdout: false, ..Default::default() }).await?;
-let backend: Arc<dyn Backend> = Arc::new(Local::new(app.engine.clone()));
+let backend: Arc<dyn Backend> = Arc::new(Local::new(app.engine.clone()).with_logs(app.logs.clone()));
 // ou bien, pour piloter un daemon distant (PC, serveur, téléphone) :
 // let backend: Arc<dyn Backend> = Arc::new(Remote::connect("http://192.168.1.10:7878", &token).await?);
 
@@ -25,6 +25,7 @@ let mut state = backend.state();          // watch::Receiver<Arc<State>>, toujou
 let mut link = backend.link();            // Connecting / Connected / Disconnected (Remote)
 let mut events = backend.events();        // flux brut, pour toasts et animations
 backend.execute(Command::Summary).await?; // mêmes commandes partout
+backend.logs(200).await?;                 // journaux du moteur, local ou distant (à relire pendant l'affichage)
 ```
 
 L'interface est identique, que le moteur tourne dans le même processus ou sur une autre machine. Les rafales d'événements sont regroupées (publication au plus toutes les 50 ms).
@@ -93,7 +94,8 @@ Les commandes s'exécutent en parallèle : utilisez `id` pour associer chaque r�
 | `settings_get` | `scope`, `account?` | `{scope, raw, effective, defaults, schema}` |
 | `settings_set` | `scope`, `value`, `merge?` | document enregistré (`value: null` supprime la portée) |
 | `history` | `account?`, `channel_id?`, `kinds?[]`, `before_id?`, `since?`, `limit?` | `[{id, seq, ts, account, kind, channel_id, event}]`, du plus récent au plus ancien |
-| `stats` | `account?`, `channel_id?`, `from?`, `to?` (`YYYY-MM-DD`), `group_by: "day"\|"channel"` | `[{key, points, watch_minutes, drops}]` |
+| `stats` | `account?`, `channel_id?`, `from?`, `to?` (jours locaux `YYYY-MM-DD`), `group_by: "day"\|"hour"\|"channel"`, `tz_offset_minutes?` | `[{key, points, watch_minutes, drops}]`. Stocké par heure UTC ; les jours sont découpés selon `tz_offset_minutes` (décalage de celui qui demande, ex. `120` pour UTC+2), par défaut le fuseau de la machine du moteur. Une interface distante doit envoyer le sien |
+| `games_search` | `query`, `limit?` (10, max 25) | `[{id, name, slug?, box_art_url?}]`, meilleure correspondance d'abord (autocomplétion de la liste de jeux). Moins de 2 caractères : `[]` |
 | `module_call` | `account`, `module`, `name`, `args?` | défini par le module |
 | `manifest_refresh` | — | `{updated, revision}` |
 | `update_check` | — | `{current, latest, update_available, url}`. Une notice `update` est aussi levée si besoin |
@@ -141,7 +143,7 @@ Chaque portée a un **JSON Schema** (`settings_get(...).schema`, ou `modules_lis
  "restricted_max_channels": 50, "safety_factor": 1.25, "safety_minutes": 120, "fill_partial": true,
  "alerts": {"at_risk": true, "will_miss": true, "not_linked": true, "new_campaign": true}}
 // points
-{"enabled": true, "channels": [], "follows": true, "exclude": [], "claim_bonus": true, "join_raids": true,
+{"enabled": true, "channels": [], "follows": false, "exclude": [], "claim_bonus": true, "join_raids": true,
  "claim_moments": true, "watch_streak": true, "refresh_minutes": 5,
  "order_by": "config"}                                                    // config | multiplier | fewest_points | most_points
 // predictions (désactivé par défaut)
@@ -188,7 +190,12 @@ Seuls les jeux de `games` (tous si la liste est vide) apparaissent dans le plan.
   "started_at": "…",
   "manifest_revision": 1,
   "settings": { "<scope>": { … } },
-  "notices": { "<id>": {"id", "level": "info|warning|error", "message", "at"} },
+  "notices": { "<id>": {"id", "level": "info|warning|error", "message", "at", "kind?", "params?"} },
+  // kind (+ params), pour un texte traduit et le bon bouton :
+  //   "update"        {version, current, url}     → « Télécharger »
+  //   "duplicate"     {account, login, peer}      → compte miné par deux instances principales
+  //   "proxy_invalid" {error}                     → ouvrir les réglages réseau
+  // message : texte anglais de secours
   "logins":  { "<flow_id>": {"flow_id", "user_code", "verification_uri", "verification_uri_complete?", "expires_at"} },
   "accounts": {
     "<user_id>": {

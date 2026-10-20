@@ -43,7 +43,7 @@ impl Default for PointsSettings {
         Self {
             enabled: true,
             channels: Vec::new(),
-            follows: true,
+            follows: false,
             exclude: Vec::new(),
             claim_bonus: true,
             join_raids: true,
@@ -78,6 +78,10 @@ const CONTEXT_REFRESH: Duration = Duration::from_secs(30 * 60);
 /// Watched channels are re-checked often so bonus chests are claimed even if
 /// PubSub misses the `claim-available` message.
 const WATCHED_CONTEXT_REFRESH: Duration = Duration::from_secs(4 * 60);
+/// Offline channels: balance loaded once, then refreshed rarely.
+const OFFLINE_CONTEXT_REFRESH: Duration = Duration::from_secs(6 * 60 * 60);
+/// Offline balances loaded per pass, so many follows do not burst requests.
+const OFFLINE_PER_PASS: usize = 10;
 const FOLLOWS_REFRESH: Duration = Duration::from_secs(60 * 60);
 
 /// Per-broadcast progress persisted across restarts (streak tracking).
@@ -479,14 +483,23 @@ impl Runtime {
                 .map(|a| a.watching.keys().cloned().collect())
                 .unwrap_or_default()
         });
+        let mut offline_budget = OFFLINE_PER_PASS;
         for ch in self.channels.values_mut() {
             let every = if watched.contains(&ch.meta.id) {
                 WATCHED_CONTEXT_REFRESH
-            } else {
+            } else if ch.stream.is_some() {
                 CONTEXT_REFRESH
+            } else {
+                OFFLINE_CONTEXT_REFRESH
             };
-            if ch.stream.is_none() || ch.last_context.is_some_and(|t| t.elapsed() < every) {
+            if ch.last_context.is_some_and(|t| t.elapsed() < every) {
                 continue;
+            }
+            if ch.stream.is_none() {
+                if offline_budget == 0 {
+                    continue;
+                }
+                offline_budget -= 1;
             }
             ch.last_context = Some(Instant::now());
             match ctx.gql().channel_points_context(&ch.meta.login).await {

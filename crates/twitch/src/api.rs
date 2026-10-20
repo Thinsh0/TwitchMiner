@@ -6,6 +6,9 @@ use crate::error::{Error, Result};
 use crate::gql::Gql;
 use crate::models::*;
 
+const SEARCH_GAMES_QUERY: &str = "query($q:String!,$first:Int){searchCategories(query:$q,first:$first){\
+edges{node{id name displayName slug boxArtURL(width:144,height:192)}}}}";
+
 const USERS_QUERY: &str = "query($logins:[String!],$ids:[ID!]){users(logins:$logins,ids:$ids){\
 id login displayName profileImageURL(width:70) \
 stream{id title viewersCount createdAt game{id name displayName slug boxArtURL(width:144,height:192)}}}}";
@@ -208,6 +211,28 @@ impl Gql {
                 });
                 Some(user)
             })
+            .collect())
+    }
+
+    /// Games (Twitch categories) matching `query`, best match first.
+    pub async fn search_games(&self, query: &str, limit: u32) -> Result<Vec<Game>> {
+        if !self.raw_queries_allowed() {
+            return Err(Error::decode(
+                "game search needs a client profile allowing raw queries",
+            ));
+        }
+        let data = self
+            .raw(
+                SEARCH_GAMES_QUERY,
+                json!({ "q": query, "first": limit.clamp(1, 25) }),
+            )
+            .await?;
+        Ok(data
+            .pointer("/searchCategories/edges")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.get("node").and_then(parse_game))
             .collect())
     }
 

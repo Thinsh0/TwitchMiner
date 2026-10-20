@@ -1,5 +1,5 @@
 //! SQLite persistence. One file holds everything: accounts (with credentials),
-//! settings, module key-value data, history and daily statistics.
+//! settings, module key-value data, history and hourly statistics.
 //!
 //! The connection lives on a dedicated thread; async code sends closures to it.
 //! Writes are serialized, which keeps ordering identical to the event stream.
@@ -72,6 +72,23 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (day, account, channel_id)
     );
     "#,
+    // v2: statistics per UTC hour, so days can be cut in any time zone.
+    // Past daily rows go to noon UTC: their day is unchanged from UTC-11 to UTC+11.
+    r#"
+    CREATE TABLE hourly_stats (
+        hour TEXT NOT NULL,
+        account TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        points INTEGER NOT NULL DEFAULT 0,
+        watch_minutes INTEGER NOT NULL DEFAULT 0,
+        drops INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (hour, account, channel_id)
+    );
+    INSERT INTO hourly_stats (hour, account, channel_id, points, watch_minutes, drops)
+        SELECT day || 'T12', account, channel_id, points, watch_minutes, drops FROM daily_stats;
+    DROP TABLE daily_stats;
+    CREATE INDEX hourly_stats_account ON hourly_stats(account, hour);
+    "#,
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,12 +128,16 @@ pub struct HistoryRow {
 pub struct StatsQuery {
     pub account: Option<String>,
     pub channel_id: Option<String>,
-    /// Inclusive `YYYY-MM-DD`.
+    /// Inclusive local days, `YYYY-MM-DD`.
     pub from: Option<String>,
     pub to: Option<String>,
-    /// Group by `day` (default) or `channel`.
+    /// Group by `day` (default), `hour` (`YYYY-MM-DDTHH`) or `channel`.
     #[serde(default)]
     pub group_by: StatsGroup,
+    /// Requester's offset from UTC, in minutes (e.g. 120 for UTC+2), for day boundaries.
+    /// Default: the engine machine's time zone (daylight saving included).
+    #[serde(default)]
+    pub tz_offset_minutes: Option<i32>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -124,6 +145,7 @@ pub struct StatsQuery {
 pub enum StatsGroup {
     #[default]
     Day,
+    Hour,
     Channel,
 }
 
@@ -342,7 +364,7 @@ impl Db {
 
     /// Persists the parts of an event worth keeping (history row, daily stats).
     pub fn record(&self, env: &Envelope) {
-        let day = env.ts.format("%Y-%m-%d").to_string();
+        let hour = env.ts.format("%Y-%m-%dT%H").to_string();
         let account = env.event.account().map(str::to_string);
         let channel = env.event.channel_id().map(str::to_string);
         let stats: Option<(i64, i64, i64)> = match &env.event {
@@ -372,11 +394,11 @@ impl Db {
             }
             if let (Some((points, minutes, drops)), Some(acc)) = (stats, &account) {
                 c.execute(
-                    "INSERT INTO daily_stats (day, account, channel_id, points, watch_minutes, drops)
+                    "INSERT INTO hourly_stats (hour, account, channel_id, points, watch_minutes, drops)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-                     ON CONFLICT(day, account, channel_id) DO UPDATE SET
+                     ON CONFLICT(hour, account, channel_id) DO UPDATE SET
                        points = points + ?4, watch_minutes = watch_minutes + ?5, drops = drops + ?6",
-                    params![day, acc, channel.clone().unwrap_or_default(), points, minutes, drops],
+                    params![hour, acc, channel.clone().unwrap_or_default(), points, minutes, drops],
                 )?;
             }
             Ok(())
@@ -446,26 +468,34 @@ impl Db {
 
     pub async fn stats(&self, q: StatsQuery) -> Result<Vec<StatsRow>, DbError> {
         self.call(move |c| {
+            // `hour` is UTC; shift it to the requester's (or the machine's) local time.
+            let shift = match q.tz_offset_minutes {
+                Some(m) => format!("'{:+} minutes'", m.clamp(-14 * 60, 14 * 60)),
+                None => "'localtime'".to_string(),
+            };
+            let local = |fmt: &str| format!("strftime('{fmt}', hour || ':00', {shift})");
+            let day = local("%Y-%m-%d");
             let key = match q.group_by {
-                StatsGroup::Day => "day",
-                StatsGroup::Channel => "channel_id",
+                StatsGroup::Day => day.clone(),
+                StatsGroup::Hour => local("%Y-%m-%dT%H"),
+                StatsGroup::Channel => "channel_id".to_string(),
             };
             let mut sql = format!(
-                "SELECT {key}, SUM(points), SUM(watch_minutes), SUM(drops) FROM daily_stats WHERE 1=1"
+                "SELECT {key} AS k, SUM(points), SUM(watch_minutes), SUM(drops) FROM hourly_stats WHERE 1=1"
             );
             let mut args: Vec<rusqlite::types::Value> = Vec::new();
             for (col, op, v) in [
                 ("account", "=", q.account),
                 ("channel_id", "=", q.channel_id),
-                ("day", ">=", q.from),
-                ("day", "<=", q.to),
+                (day.as_str(), ">=", q.from),
+                (day.as_str(), "<=", q.to),
             ] {
                 if let Some(v) = v {
                     sql.push_str(&format!(" AND {col} {op} ?"));
                     args.push(v.into());
                 }
             }
-            sql.push_str(&format!(" GROUP BY {key} ORDER BY {key}"));
+            sql.push_str(" GROUP BY k ORDER BY k");
             let mut st = c.prepare(&sql)?;
             let rows = st.query_map(rusqlite::params_from_iter(args), |r| {
                 Ok(StatsRow { key: r.get(0)?, points: r.get(1)?, watch_minutes: r.get(2)?, drops: r.get(3)? })
@@ -568,6 +598,66 @@ mod tests {
             .unwrap();
         assert_eq!(s[0].points, 20);
         assert_eq!(s[0].watch_minutes, 1);
+    }
+
+    #[tokio::test]
+    async fn days_follow_the_requested_time_zone() {
+        let db = Db::open_in_memory().unwrap();
+        // 23:30 UTC on 1 March: still 1 March in UTC, already 2 March in UTC+2.
+        let ts = chrono::DateTime::parse_from_rfc3339("2026-03-01T23:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        db.record(&Envelope {
+            seq: 1,
+            ts,
+            event: Event::WatchMinute {
+                account: "1".into(),
+                channel_id: "9".into(),
+            },
+        });
+        let day = |tz: i32| {
+            let db = db.clone();
+            async move {
+                db.stats(StatsQuery {
+                    tz_offset_minutes: Some(tz),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()[0]
+                    .key
+                    .clone()
+            }
+        };
+        assert_eq!(day(0).await, "2026-03-01");
+        assert_eq!(day(120).await, "2026-03-02");
+        assert_eq!(day(-300).await, "2026-03-01");
+        let only_second = db
+            .stats(StatsQuery {
+                from: Some("2026-03-02".into()),
+                to: Some("2026-03-02".into()),
+                tz_offset_minutes: Some(120),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(only_second[0].watch_minutes, 1);
+    }
+
+    #[test]
+    fn daily_stats_migrate_to_noon_utc() {
+        let mut c = Connection::open_in_memory().unwrap();
+        c.execute_batch(MIGRATIONS[0]).unwrap();
+        c.pragma_update(None, "user_version", 1).unwrap();
+        c.execute(
+            "INSERT INTO daily_stats VALUES ('2026-03-01', '1', '9', 50, 30, 1)",
+            [],
+        )
+        .unwrap();
+        migrate(&mut c).unwrap();
+        let hour: String = c
+            .query_row("SELECT hour FROM hourly_stats", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(hour, "2026-03-01T12");
     }
 
     #[tokio::test]

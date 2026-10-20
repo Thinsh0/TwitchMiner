@@ -84,6 +84,14 @@ pub enum Command {
         path: Option<String>,
     },
 
+    /// Searches Twitch games (categories) by name, for autocompletion.
+    /// Returns `[{id, name, slug?, box_art_url?}]`, best match first.
+    GamesSearch {
+        query: String,
+        #[serde(default)]
+        limit: Option<u32>,
+    },
+
     /// Checks for a newer Twitch manifest now.
     ManifestRefresh,
     /// Checks GitHub releases for a newer application version now.

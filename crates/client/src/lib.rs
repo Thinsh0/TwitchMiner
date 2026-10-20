@@ -21,6 +21,7 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use parking_lot::Mutex;
 use serde_json::{Value, json};
+use tm_core::logging::{LogBuffer, LogLine};
 use tm_core::state::apply_envelope;
 use tm_core::{ApiError, ApiResult, Command, Engine, Envelope, State};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
@@ -43,6 +44,10 @@ pub trait Backend: Send + Sync {
     fn events(&self) -> broadcast::Receiver<Arc<Envelope>>;
     fn link(&self) -> watch::Receiver<Link>;
     async fn execute(&self, cmd: Command) -> ApiResult;
+    /// The engine's last `n` log lines, oldest first (poll it while a log view is open).
+    async fn logs(&self, _n: usize) -> Result<Vec<LogLine>, ApiError> {
+        Ok(Vec::new())
+    }
 }
 
 /// Request id reserved for internal snapshot resyncs (user ids start at 1).
@@ -55,6 +60,7 @@ const PUBLISH_EVERY: Duration = Duration::from_millis(50);
 
 pub struct Local {
     engine: Engine,
+    logs: Option<LogBuffer>,
     state: watch::Receiver<Arc<State>>,
     events: broadcast::Sender<Arc<Envelope>>,
     link: watch::Receiver<Link>,
@@ -104,6 +110,7 @@ impl Local {
         });
         Self {
             engine,
+            logs: None,
             state,
             events,
             link,
@@ -132,6 +139,17 @@ impl Backend for Local {
     async fn execute(&self, cmd: Command) -> ApiResult {
         self.engine.execute(cmd).await
     }
+    async fn logs(&self, n: usize) -> Result<Vec<LogLine>, ApiError> {
+        Ok(self.logs.as_ref().map(|l| l.recent(n)).unwrap_or_default())
+    }
+}
+
+impl Local {
+    /// Serves [`Backend::logs`] from the application's log buffer (`tm_app::App::logs`).
+    pub fn with_logs(mut self, logs: LogBuffer) -> Self {
+        self.logs = Some(logs);
+        self
+    }
 }
 
 // ------------------------------------------------------------------ remote
@@ -140,6 +158,9 @@ type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<ApiResult>>>>;
 
 /// A daemon reached through `tm-server`'s WebSocket. Reconnects forever.
 pub struct Remote {
+    base_url: String,
+    token: String,
+    http: reqwest::Client,
     state: watch::Receiver<Arc<State>>,
     events: broadcast::Sender<Arc<Envelope>>,
     link: watch::Receiver<Link>,
@@ -187,7 +208,15 @@ impl Remote {
             }
         })
         .await;
+        let http = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(15))
+            .build()
+            .map_err(|e| ApiError::new("internal", e.to_string()))?;
         Ok(Self {
+            base_url: base_url.trim_end_matches('/').to_string(),
+            token: token.to_string(),
+            http,
             state,
             events,
             link,
@@ -233,6 +262,27 @@ impl Backend for Remote {
                 Err(ApiError::new("timeout", "no reply from daemon"))
             }
         }
+    }
+    async fn logs(&self, n: usize) -> Result<Vec<LogLine>, ApiError> {
+        let unavailable = |e: reqwest::Error| ApiError::new("unavailable", e.to_string());
+        let resp = self
+            .http
+            .get(format!("{}/api/v1/logs", self.base_url))
+            .query(&[("n", n)])
+            .bearer_auth(&self.token)
+            .send()
+            .await
+            .map_err(unavailable)?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body: Value = resp.json().await.unwrap_or_default();
+            let code = body["error"]["code"].as_str().unwrap_or("unavailable");
+            let msg = body["error"]["message"]
+                .as_str()
+                .unwrap_or("request refused");
+            return Err(ApiError::new(code, format!("{status}: {msg}")));
+        }
+        resp.json().await.map_err(unavailable)
     }
 }
 

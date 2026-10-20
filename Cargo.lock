@@ -5667,6 +5667,7 @@ dependencies = [
  "async-trait",
  "futures-util",
  "parking_lot",
+ "reqwest",
  "serde_json",
  "tm-core",
  "tm-server",

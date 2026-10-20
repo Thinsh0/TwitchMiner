@@ -143,6 +143,13 @@ fn tools() -> Vec<Value> {
             false,
         ),
         tool(
+            "search_games",
+            "Find Twitch games by name, to get the exact names `set_drop_games` expects.",
+            json!({ "query": { "type": "string" } }),
+            &["query"],
+            true,
+        ),
+        tool(
             "set_drop_games",
             "Set the games whose drops are farmed, in priority order. An empty list means every eligible game.",
             json!({
@@ -410,7 +417,8 @@ async fn call_tool(
                 .and_then(Value::as_i64)
                 .unwrap_or(7)
                 .clamp(1, 3650);
-            let from = (Utc::now() - chrono::Duration::days(days - 1))
+            // Local days of the engine machine (the agent usually runs next to it).
+            let from = (chrono::Local::now() - chrono::Duration::days(days - 1))
                 .format("%Y-%m-%d")
                 .to_string();
             let group_by = match arg_str(args, "group_by") {
@@ -515,6 +523,20 @@ async fn call_tool(
             )
             .await
             .map_err(api)
+        }
+        "search_games" => {
+            let query = arg_str(args, "query").ok_or("missing `query`")?.to_string();
+            let games = exec(
+                engine,
+                access,
+                Command::GamesSearch {
+                    query,
+                    limit: Some(10),
+                },
+            )
+            .await
+            .map_err(api)?;
+            Ok(json!({ "games": games }))
         }
         "get_drop_plan" => {
             let id = acc()?;

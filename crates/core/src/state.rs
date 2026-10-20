@@ -33,8 +33,15 @@ pub struct State {
 pub struct Notice {
     pub id: String,
     pub level: Level,
+    /// English fallback text; interfaces build their own from `kind` + `params`.
     pub message: String,
     pub at: DateTime<Utc>,
+    /// Stable type: `update`, `duplicate`, `proxy_invalid`. Absent from older engines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Values for the interface's own text and action, e.g. `{"version", "url"}`.
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub params: Value,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -245,11 +252,12 @@ pub fn apply(state: &mut State, event: &Event, now: DateTime<Utc>) -> bool {
         }
         ManifestUpdated { revision } => set_if_changed(&mut state.manifest_revision, revision),
         NoticeRaised { notice } => {
-            if state
-                .notices
-                .get(&notice.id)
-                .is_some_and(|n| n.level == notice.level && n.message == notice.message)
-            {
+            if state.notices.get(&notice.id).is_some_and(|n| {
+                n.level == notice.level
+                    && n.message == notice.message
+                    && n.kind == notice.kind
+                    && n.params == notice.params
+            }) {
                 return false;
             }
             state.notices.insert(notice.id.clone(), notice.clone());

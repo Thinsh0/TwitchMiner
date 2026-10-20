@@ -23,7 +23,7 @@ Un moteur sans interface, modulaire, qui tourne en arrière-plan (sur ton PC, to
   - Chaque campagne vise sa meilleure récompense, ou celles que tu choisis.
   - « Faire en premier » sur une campagne, récupération automatique, détection des chaînes ou campagnes bloquées.
   - Alertes : campagne à risque, campagne qui sera manquée, compte de jeu à lier, nouvelle campagne.
-- **Points de chaîne** : chaînes choisies et chaînes suivies, coffres bonus, raids, moments, **séries de visionnage** prioritaires.
+- **Points de chaîne** : chaînes choisies (et, en option, toutes les chaînes suivies), coffres bonus, raids, moments, **séries de visionnage** prioritaires.
 - **Prédictions** (optionnel) : 4 stratégies, garde-fous sur les mises.
 - **Notifications** : Discord, ntfy, Telegram, webhook.
 - **Multi-comptes**, chacun isolé. **Historique et statistiques** par jour et par chaîne.

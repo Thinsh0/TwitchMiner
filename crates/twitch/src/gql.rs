@@ -50,6 +50,21 @@ impl Gql {
         }
     }
 
+    /// A client without any account, for public data (e.g. game search). Needs a
+    /// profile that allows raw queries.
+    pub fn anonymous(net: Net, manifest: SharedManifest) -> Self {
+        let profile = manifest.load().default_profile.clone();
+        let creds = Credentials {
+            user_id: String::new(),
+            login: String::new(),
+            access_token: String::new(),
+            refresh_token: None,
+            profile,
+            device_id: format!("{:032x}", rand::random::<u128>()),
+        };
+        Self::new(net, manifest, Arc::new(ArcSwap::from_pointee(creds)))
+    }
+
     pub fn net(&self) -> &Net {
         &self.inner.net
     }
@@ -185,13 +200,12 @@ impl Gql {
             (p.client_id.clone(), p.client_url.clone())
         };
         let creds = self.inner.creds.load_full();
-        let resp = self
-            .inner
-            .net
-            .http
-            .post(GQL_URL)
+        let mut req = self.inner.net.http.post(GQL_URL);
+        if !creds.access_token.is_empty() {
+            req = req.header("Authorization", format!("OAuth {}", creds.access_token));
+        }
+        let resp = req
             .header("Client-Id", client_id)
-            .header("Authorization", format!("OAuth {}", creds.access_token))
             .header("X-Device-Id", &creds.device_id)
             .header("Client-Session-Id", &self.inner.session_id)
             .header("User-Agent", self.user_agent())

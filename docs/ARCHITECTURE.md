@@ -64,7 +64,7 @@ Tables (`crates/core/src/db.rs`, migrations versionnées par `PRAGMA user_versio
 | `settings` | un document JSON par portée (`engine`, `module:<id>`, `account:<id>/module:<id>`) |
 | `history` | événements notables (points, drops, raids, prédictions, statut…), purge configurable |
 | `daily_stats` | agrégats par jour × compte × chaîne (points, minutes, drops), conservés indéfiniment |
-| `kv` | stockage clé-valeur libre, un espace de noms par compte × module |
+| `kv` | stockage clé-valeur libre, un espace de noms par compte × module ; `ui` = préférences de l'interface graphique (`tm_app::read_ui_prefs` / `write_ui_prefs` : thème, langue, serveur distant), hors de l'état et de l'API |
 
 ## Comptes
 

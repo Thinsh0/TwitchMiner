@@ -207,9 +207,7 @@ async fn run(
             .map_err(|e| anyhow::anyhow!(e))?;
         println!(
             "\n  No account yet. Open {} and enter the code: {}\n",
-            flow["verification_uri"]
-                .as_str()
-                .unwrap_or("https://www.twitch.tv/activate"),
+            activation_link(&flow),
             flow["user_code"].as_str().unwrap_or("?")
         );
     }
@@ -360,7 +358,7 @@ async fn ctl(
             let flow = c.call(json!({"cmd": "login_start"})).await?;
             println!(
                 "Open {} and enter: {}",
-                flow["verification_uri"].as_str().unwrap_or(""),
+                activation_link(&flow),
                 flow["user_code"].as_str().unwrap_or("")
             );
             println!(
@@ -546,4 +544,12 @@ fn compact(e: &Value) -> String {
     } else {
         s
     }
+}
+
+/// The activation page of a `login_start` reply, with the code pre-filled when known.
+fn activation_link(flow: &Value) -> &str {
+    flow["verification_uri_complete"]
+        .as_str()
+        .or_else(|| flow["verification_uri"].as_str())
+        .unwrap_or("https://www.twitch.tv/activate")
 }

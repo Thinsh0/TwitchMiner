@@ -297,7 +297,7 @@ async fn call_tool(
             Ok(json!({
                 "summary": summary,
                 "notices": state.notices.values().map(|n| json!({"level": n.level, "message": n.message})).collect::<Vec<_>>(),
-                "pending_logins": state.logins.values().map(|l| json!({"code": l.user_code, "url": l.verification_uri})).collect::<Vec<_>>(),
+                "pending_logins": state.logins.values().map(|l| json!({"code": l.user_code, "url": l.verification_uri_complete.as_ref().unwrap_or(&l.verification_uri)})).collect::<Vec<_>>(),
             }))
         }
         "list_channels" => {

@@ -37,6 +37,9 @@ pub struct DeviceCode {
     pub device_code: String,
     pub user_code: String,
     pub verification_uri: String,
+    /// The activation page with the code already filled in.
+    #[serde(default)]
+    pub verification_uri_complete: String,
     pub interval: u64,
     pub expires_at: DateTime<Utc>,
 }
@@ -93,12 +96,23 @@ pub async fn start_device_flow(net: &Net, profile: &ClientProfile) -> Result<Dev
         .json()
         .await?;
     Ok(DeviceCode {
+        verification_uri_complete: complete_uri(&raw.verification_uri, &raw.user_code),
         device_code: raw.device_code,
         user_code: raw.user_code,
         verification_uri: raw.verification_uri,
         interval: raw.interval.max(1),
         expires_at: Utc::now() + chrono::Duration::seconds(raw.expires_in),
     })
+}
+
+/// Adds the `device-code` parameter, which makes Twitch's activation page pre-fill the
+/// code (Twitch sometimes returns the page without it).
+pub fn complete_uri(uri: &str, user_code: &str) -> String {
+    if uri.contains("device-code=") || !user_code.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return uri.to_string();
+    }
+    let sep = if uri.contains('?') { '&' } else { '?' };
+    format!("{uri}{sep}device-code={user_code}")
 }
 
 pub async fn poll_device_flow(
@@ -230,4 +244,27 @@ pub async fn credentials_from_token(
         },
         v,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::complete_uri;
+
+    #[test]
+    fn activation_link_carries_the_code() {
+        assert_eq!(
+            complete_uri("https://www.twitch.tv/activate", "ABCD1234"),
+            "https://www.twitch.tv/activate?device-code=ABCD1234"
+        );
+        assert_eq!(
+            complete_uri("https://www.twitch.tv/activate?public=true", "ABCD1234"),
+            "https://www.twitch.tv/activate?public=true&device-code=ABCD1234"
+        );
+        let already = "https://www.twitch.tv/activate?public=true&device-code=ABCD1234";
+        assert_eq!(complete_uri(already, "ABCD1234"), already);
+        assert_eq!(
+            complete_uri("https://www.twitch.tv/activate", "a&b"),
+            "https://www.twitch.tv/activate"
+        );
+    }
 }

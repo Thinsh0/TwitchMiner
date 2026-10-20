@@ -838,6 +838,7 @@ impl Engine {
             flow_id: uuid::Uuid::new_v4().to_string(),
             user_code: code.user_code.clone(),
             verification_uri: code.verification_uri.clone(),
+            verification_uri_complete: Some(code.verification_uri_complete.clone()),
             expires_at: code.expires_at,
         };
         let cancel = self.shared.cancel.child_token();

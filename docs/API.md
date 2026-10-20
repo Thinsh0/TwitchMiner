@@ -85,7 +85,7 @@ Les commandes s'exécutent en parallèle : utilisez `id` pour associer chaque r�
 | `snapshot` | — | `State` |
 | `summary` | — | vue dérivée compacte (comptes, chaînes regardées, drop en cours avec progression et ETA, totaux) pour icône de barre système, notifications et widgets. En Rust : `tm_core::view::summary(&state, now)` |
 | `modules_list` | — | `[{id, name, description, default_settings, settings_schema}]` |
-| `login_start` | `profile?` | `{flow_id, user_code, verification_uri, expires_at}`. La fin arrive en événement `login_finished` |
+| `login_start` | `profile?` | `{flow_id, user_code, verification_uri, verification_uri_complete, expires_at}`. `verification_uri_complete` est la même page avec le code déjà rempli. La fin arrive en événement `login_finished` |
 | `login_cancel` | `flow_id` | `{cancelled}` |
 | `login_with_token` | `access_token`, `refresh_token?`, `profile?` | `{account}` |
 | `account_remove` | `account` | `{removed}` |
@@ -189,7 +189,7 @@ Seuls les jeux de `games` (tous si la liste est vide) apparaissent dans le plan.
   "manifest_revision": 1,
   "settings": { "<scope>": { … } },
   "notices": { "<id>": {"id", "level": "info|warning|error", "message", "at"} },
-  "logins":  { "<flow_id>": {"flow_id", "user_code", "verification_uri", "expires_at"} },
+  "logins":  { "<flow_id>": {"flow_id", "user_code", "verification_uri", "verification_uri_complete?", "expires_at"} },
   "accounts": {
     "<user_id>": {
       "info":   {"id", "login", "display_name", "avatar_url", "enabled"},
@@ -259,7 +259,7 @@ Chaque événement arrive enveloppé : `{seq, ts, type, …champs}`. Ceux marqu�
 ## Exemple de parcours « premier lancement »
 
 1. `snapshot` : `accounts` est vide, l'interface affiche « Se connecter ».
-2. `login_start` : afficher `user_code` et ouvrir `verification_uri`.
+2. `login_start` : afficher `user_code` et ouvrir `verification_uri_complete` (code déjà rempli), ou à défaut `verification_uri`.
 3. Attendre l'événement `login_finished` : `account` est rempli, sinon afficher `error`.
 4. `account_upserted` puis `account_status_changed{running}` arrivent ; les modules démarrent.
 5. Proposer d'ajouter des chaînes (`module_call points add_channel`) et des jeux (`settings_set module:drops {"games": [...]}`).

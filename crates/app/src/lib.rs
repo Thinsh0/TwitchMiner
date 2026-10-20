@@ -173,7 +173,58 @@ pub async fn rotate_token(data_dir: Option<PathBuf>, kind: TokenKind) -> anyhow:
     Ok(t)
 }
 
+const UI_NS: &str = "ui";
+const UI_PREFS: &str = "prefs";
+
+/// Preferences of a graphical interface (theme, language, remote server…): a free JSON
+/// document owned by the front-end, kept in the database (not engine state, not exposed
+/// by the API). Works without a local engine, and while one runs. `Null` when unset.
+pub async fn read_ui_prefs(data_dir: Option<PathBuf>) -> anyhow::Result<Value> {
+    let paths = Paths::resolve(data_dir)?;
+    let db = tm_core::db::Db::open(&paths.db_file())?;
+    Ok(db
+        .kv_get(UI_NS.into(), UI_PREFS.into())
+        .await?
+        .unwrap_or(Value::Null))
+}
+
+/// Replaces the interface preferences (see [`read_ui_prefs`]).
+pub async fn write_ui_prefs(data_dir: Option<PathBuf>, prefs: Value) -> anyhow::Result<()> {
+    let paths = Paths::resolve(data_dir)?;
+    let db = tm_core::db::Db::open(&paths.db_file())?;
+    db.kv_put(UI_NS.into(), UI_PREFS.into(), prefs).await?;
+    Ok(())
+}
+
 /// Reads (or creates) the full-access API token without starting the engine.
 pub async fn read_api_token(data_dir: Option<PathBuf>) -> anyhow::Result<String> {
     read_token(data_dir, TokenKind::Full).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn ui_prefs_roundtrip() {
+        let dir = std::env::temp_dir().join(format!(
+            "tm-app-prefs-{}-{}",
+            std::process::id(),
+            chrono_free_nanos()
+        ));
+        assert_eq!(read_ui_prefs(Some(dir.clone())).await.unwrap(), Value::Null);
+        let prefs = json!({"theme": "light", "remote": {"url": "http://h:7878"}});
+        write_ui_prefs(Some(dir.clone()), prefs.clone())
+            .await
+            .unwrap();
+        assert_eq!(read_ui_prefs(Some(dir.clone())).await.unwrap(), prefs);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn chrono_free_nanos() -> u128 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default()
+    }
 }

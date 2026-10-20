@@ -50,6 +50,9 @@ pub struct LoginFlow {
     pub flow_id: String,
     pub user_code: String,
     pub verification_uri: String,
+    /// `verification_uri` with the code already filled in (absent from older engines).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verification_uri_complete: Option<String>,
     pub expires_at: DateTime<Utc>,
 }
 

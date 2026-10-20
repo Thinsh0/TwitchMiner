@@ -15,6 +15,7 @@ tm-core = { path = "crates/core" }
 tm-modules = { path = "crates/modules" }
 tm-server = { path = "crates/server" }
 tm-app = { path = "crates/app" }
+tm-client = { path = "crates/client" }
 
 tokio = { version = "1.47", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "signal", "fs"] }
 tokio-util = { version = "0.7", features = ["rt"] }

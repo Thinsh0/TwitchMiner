@@ -1,0 +1,23 @@
+[package]
+name = "tm-client"
+description = "Front-end backend abstraction: local engine or remote daemon, same state mirror and commands"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+tm-core.workspace = true
+tm-twitch.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tokio-tungstenite.workspace = true
+futures-util.workspace = true
+async-trait.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+
+[dev-dependencies]
+tm-server.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

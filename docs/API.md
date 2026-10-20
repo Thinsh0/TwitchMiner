@@ -10,6 +10,25 @@ Toute interface (desktop, Android, web, bot…) parle au moteur avec **trois pri
 
 Les types sont les mêmes des deux côtés : `tm_core::{State, Envelope, Event, Command, ApiError}`. Une interface Rust peut désérialiser directement le JSON réseau dans ces types.
 
+## Pour une interface Rust : `tm-client`
+
+Le plus simple est de ne pas gérer tout ça à la main :
+
+```rust
+use tm_client::{Backend, Local, Remote};
+let app = tm_app::App::start(tm_app::AppOptions { log_stdout: false, ..Default::default() }).await?;
+let backend: Arc<dyn Backend> = Arc::new(Local::new(app.engine.clone()));
+// ou bien, pour piloter un daemon distant (PC, serveur, téléphone) :
+// let backend: Arc<dyn Backend> = Arc::new(Remote::connect("http://192.168.1.10:7878", &token).await?);
+
+let mut state = backend.state();          // watch::Receiver<Arc<State>>, toujours à jour
+let mut link = backend.link();            // Connecting / Connected / Disconnected (Remote)
+let mut events = backend.events();        // flux brut, pour toasts et animations
+backend.execute(Command::Summary).await?; // mêmes commandes partout
+```
+
+L'interface est identique, que le moteur tourne dans le même processus ou sur une autre machine. Les rafales d'événements sont regroupées (publication au plus toutes les 50 ms).
+
 ## Synchronisation sans trou
 
 ```rust

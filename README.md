@@ -46,6 +46,8 @@ crates/twitch    protocole Twitch (auth, GQL, PubSub, watcher)
 crates/core      moteur (état, persistance, comptes, ordonnanceur, modules)
 crates/modules   fonctionnalités (drops, points, predictions, notify)
 crates/server    API HTTP + WebSocket
+crates/app       démarrage en un appel (daemon, desktop, Android)
+crates/client    Backend local/distant pour les interfaces
 apps/daemon      exécutable `twitchminer`
 manifest/        identifiants Twitch mis à jour à distance
 ```

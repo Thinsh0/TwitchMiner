@@ -2001,6 +2001,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "tm-client"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures-util",
+ "parking_lot",
+ "serde_json",
+ "tm-core",
+ "tm-server",
+ "tm-twitch",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "tm-core"
 version = "0.1.0"
 dependencies = [

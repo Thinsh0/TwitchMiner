@@ -63,6 +63,54 @@ pub struct EngineSettings {
     /// Check GitHub releases for a newer version of the application.
     pub update_check: bool,
     pub releases_url: String,
+    /// Global pause: nothing is watched (modules keep tracking and claiming).
+    pub paused: bool,
+    /// When non-empty, watching only happens inside these local-time windows.
+    pub active_hours: Vec<TimeWindow>,
+}
+
+/// A daily time window in local time. `end` before `start` spans midnight.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
+pub struct TimeWindow {
+    /// ISO weekdays (1 = Monday … 7 = Sunday) on which the window *starts*; empty = every day.
+    #[serde(default)]
+    pub days: Vec<u8>,
+    /// `HH:MM`
+    pub start: String,
+    /// `HH:MM`
+    pub end: String,
+}
+
+fn hm(s: &str) -> Option<u32> {
+    let (h, m) = s.trim().split_once(':')?;
+    let (h, m): (u32, u32) = (h.parse().ok()?, m.parse().ok()?);
+    (h < 24 && m < 60).then_some(h * 60 + m)
+}
+
+impl TimeWindow {
+    pub fn validate(&self) -> Result<(), String> {
+        hm(&self.start).ok_or_else(|| format!("bad start time `{}`", self.start))?;
+        hm(&self.end).ok_or_else(|| format!("bad end time `{}`", self.end))?;
+        if self.days.iter().any(|d| !(1..=7).contains(d)) {
+            return Err("days must be between 1 (Monday) and 7 (Sunday)".into());
+        }
+        Ok(())
+    }
+
+    /// `weekday`: 1 = Monday … 7 = Sunday; `minute`: minutes since local midnight.
+    pub fn contains(&self, weekday: u8, minute: u32) -> bool {
+        let (Some(start), Some(end)) = (hm(&self.start), hm(&self.end)) else {
+            return false;
+        };
+        let day_ok = |d: u8| self.days.is_empty() || self.days.contains(&d);
+        if start <= end {
+            day_ok(weekday) && minute >= start && minute < end
+        } else {
+            // Overnight: today after start, or tomorrow-morning part of yesterday's window.
+            let yesterday = if weekday == 1 { 7 } else { weekday - 1 };
+            (day_ok(weekday) && minute >= start) || (day_ok(yesterday) && minute < end)
+        }
+    }
 }
 
 impl Default for EngineSettings {
@@ -75,11 +123,36 @@ impl Default for EngineSettings {
             history_retention_days: 180,
             update_check: true,
             releases_url: DEFAULT_RELEASES_URL.to_string(),
+            paused: false,
+            active_hours: Vec::new(),
         }
     }
 }
 
 impl EngineSettings {
+    pub fn validate(&self) -> Result<(), String> {
+        if !(1..=2).contains(&self.max_watch_slots) {
+            return Err("max_watch_slots must be 1 or 2".into());
+        }
+        self.active_hours.iter().try_for_each(TimeWindow::validate)
+    }
+
+    /// Whether watching is allowed at local time `now`.
+    pub fn watching_allowed(&self, now: chrono::DateTime<chrono::Local>) -> bool {
+        use chrono::{Datelike, Timelike};
+        if self.paused {
+            return false;
+        }
+        if self.active_hours.is_empty() {
+            return true;
+        }
+        let weekday = now.weekday().number_from_monday() as u8;
+        let minute = now.hour() * 60 + now.minute();
+        self.active_hours
+            .iter()
+            .any(|w| w.contains(weekday, minute))
+    }
+
     pub fn from_state(state: &State) -> Self {
         typed(&effective_raw(
             Some(&serde_json::to_value(Self::default()).unwrap_or_default()),
@@ -147,6 +220,49 @@ mod tests {
             })
         ));
         assert!(parse_scope("account:1").is_none());
+    }
+
+    #[test]
+    fn time_windows() {
+        let day = TimeWindow {
+            days: vec![],
+            start: "08:00".into(),
+            end: "23:30".into(),
+        };
+        assert!(day.contains(3, 8 * 60));
+        assert!(!day.contains(3, 23 * 60 + 30));
+        let night = TimeWindow {
+            days: vec![5],
+            start: "22:00".into(),
+            end: "06:00".into(),
+        };
+        assert!(night.contains(5, 23 * 60), "friday 23:00");
+        assert!(
+            night.contains(6, 5 * 60),
+            "saturday 05:00 belongs to friday's window"
+        );
+        assert!(
+            !night.contains(5, 5 * 60),
+            "friday 05:00 belongs to thursday's window"
+        );
+        assert!(
+            TimeWindow {
+                days: vec![8],
+                start: "1:00".into(),
+                end: "2:00".into()
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            TimeWindow {
+                days: vec![],
+                start: "25:00".into(),
+                end: "2:00".into()
+            }
+            .validate()
+            .is_err()
+        );
     }
 
     #[test]

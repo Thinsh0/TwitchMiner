@@ -609,7 +609,9 @@ impl Engine {
                 let mut eff = json!(EngineSettings::default());
                 merge_json(&mut eff, &next);
                 serde_json::from_value::<EngineSettings>(eff)
-                    .map_err(|e| ApiError::invalid(e.to_string()))?;
+                    .map_err(|e| ApiError::invalid(e.to_string()))?
+                    .validate()
+                    .map_err(ApiError::invalid)?;
             }
             Scope::Module(module) | Scope::AccountModule { module, .. } => {
                 let m = self

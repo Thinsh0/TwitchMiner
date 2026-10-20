@@ -114,7 +114,9 @@ Codes d'erreur : `not_found`, `invalid`, `auth`, `module`, `unavailable`, `timeo
 ## Réglages
 
 Portées :
-- `engine` : `max_watch_slots` (1-2), `proxy`, `manifest_url`, `manifest_auto_update`, `history_retention_days`, `update_check`, `releases_url` ;
+- `engine` : `max_watch_slots` (1-2), `proxy`, `manifest_url`, `manifest_auto_update`, `history_retention_days`, `update_check`, `releases_url`, `paused`, `active_hours` ;
+  - **Pause globale** : `settings_set engine {"paused": true}`. Rien n'est regardé (`watch_stopped{cause:"paused"}`), mais les modules continuent de suivre et de récupérer les bonus.
+  - **Plages horaires** : `{"active_hours": [{"days": [1,2,3,4,5], "start": "18:00", "end": "02:00"}]}`. Heure locale, `days` en ISO (1 = lundi), une fin avant le début passe minuit, `days` vide = tous les jours. Hors plage : `cause:"outside active hours"`.
 - `module:<id>` : réglages partagés par tous les comptes ;
 - `account:<account_id>/module:<id>` : surcharge pour un compte.
 

@@ -156,12 +156,9 @@ pub(crate) async fn run(
         // Reconcile.
         let now = Instant::now();
         cooldown.retain(|_, until| *until > now);
-        let slots = usize::from(
-            store
-                .read(EngineSettings::from_state)
-                .max_watch_slots
-                .clamp(1, 2),
-        );
+        let engine_settings = store.read(EngineSettings::from_state);
+        let slots = usize::from(engine_settings.max_watch_slots.clamp(1, 2));
+        let allowed = engine_settings.watching_allowed(chrono::Local::now());
         let offline = |id: &str| {
             cooldown.contains_key(id)
                 || store.read(|s| {
@@ -171,7 +168,16 @@ pub(crate) async fn run(
                         .is_some_and(|c| c.stream.is_none())
                 })
         };
-        let desired = select(handle.all(), slots, offline);
+        let desired = if allowed {
+            select(handle.all(), slots, offline)
+        } else {
+            Vec::new()
+        };
+        let stop_cause = if engine_settings.paused {
+            "paused"
+        } else {
+            "outside active hours"
+        };
 
         let stale: Vec<String> = active
             .keys()
@@ -179,7 +185,8 @@ pub(crate) async fn run(
             .cloned()
             .collect();
         for id in stale {
-            stop(&store, &account, &mut active, &id, "rescheduled");
+            let cause = if allowed { "rescheduled" } else { stop_cause };
+            stop(&store, &account, &mut active, &id, cause);
         }
         for req in desired {
             if active.contains_key(&req.channel_id) {

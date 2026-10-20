@@ -16,6 +16,9 @@ pub struct Summary {
     pub watch_minutes: u64,
     /// Number of accounts needing attention (login required, errors).
     pub attention: usize,
+    /// Watching is currently allowed (not paused, inside active hours).
+    pub watching_allowed: bool,
+    pub paused: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -54,7 +57,12 @@ pub struct DropSummary {
 }
 
 pub fn summary(state: &State, now: DateTime<Utc>) -> Summary {
-    let mut out = Summary::default();
+    let engine = crate::settings::EngineSettings::from_state(state);
+    let mut out = Summary {
+        watching_allowed: engine.watching_allowed(now.with_timezone(&chrono::Local)),
+        paused: engine.paused,
+        ..Summary::default()
+    };
     for (id, acc) in &state.accounts {
         let name = acc
             .info

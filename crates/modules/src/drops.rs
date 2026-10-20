@@ -70,6 +70,7 @@ const STALL_AFTER: Duration = Duration::from_secs(8 * 60);
 const CHANNEL_BAN: Duration = Duration::from_secs(30 * 60);
 const CAMPAIGN_BAN: Duration = Duration::from_secs(2 * 60 * 60);
 const BANS_KEY: &str = "banned_campaigns";
+const STALLS_KEY: &str = "stalls";
 const PROGRESS_POLL: Duration = Duration::from_secs(90);
 
 #[derive(Debug, Clone)]
@@ -128,6 +129,9 @@ impl Module for Drops {
             tracked: HashSet::new(),
             last_refresh: None,
         };
+        if let Ok(Some(stalls)) = ctx.kv_get::<HashMap<String, u32>>(STALLS_KEY).await {
+            rt.stalls = stalls;
+        }
         if let Ok(Some(bans)) = ctx.kv_get::<HashMap<String, DateTime<Utc>>>(BANS_KEY).await {
             rt.banned_campaigns = bans;
             rt.save_bans(&ctx).await;
@@ -658,9 +662,9 @@ impl Runtime {
                     Utc::now() + chrono::Duration::from_std(CAMPAIGN_BAN).unwrap_or_default();
                 self.banned_campaigns.insert(t.campaign_id.clone(), until);
                 self.stalls.remove(&t.campaign_id.clone());
-                self.save_bans(ctx).await;
             }
             self.target = None;
+            self.save_bans(ctx).await;
             return true;
         }
         false
@@ -814,6 +818,7 @@ impl Runtime {
         if let Err(e) = ctx.kv_put(BANS_KEY, &self.banned_campaigns).await {
             tracing::warn!(error = %e, "could not save campaign bans");
         }
+        let _ = ctx.kv_put(STALLS_KEY, &self.stalls).await;
         ctx.set_data("skipped_campaigns", json!(self.banned_campaigns));
     }
 

@@ -139,11 +139,14 @@ fn real_main() -> anyhow::Result<()> {
         .enable_all()
         .build()?;
     rt.block_on(async move {
-        match cli.command.unwrap_or(Cmd::Run {
-            bind: "127.0.0.1:7878".parse()?,
-            no_api: false,
-            log: None,
-        }) {
+        // No subcommand = `run` with its defaults (and its environment variables).
+        let command = match cli.command {
+            Some(c) => c,
+            None => Cli::parse_from(["twitchminer", "run"])
+                .command
+                .expect("run is a subcommand"),
+        };
+        match command {
             Cmd::Run { bind, no_api, log } => run(cli.data_dir, bind, no_api, log).await,
             Cmd::Ctl { url, token, action } => ctl(cli.data_dir, url, token, action).await,
             Cmd::ApiToken => {

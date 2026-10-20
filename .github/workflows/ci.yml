@@ -74,11 +74,13 @@ jobs:
         with:
           ndk-version: r27c
       - run: cargo install cargo-ndk --locked
-      # The engine as a library (what the Android app embeds) and the daemon (runs in Termux).
-      - run: cargo ndk --target ${{ matrix.target }} --platform 26 build --release --locked -p tm-core -p tm-modules -p tm-server -p twitchminer
+      # libtwitchminer.so (JNI bridge embedding the engine) and the daemon (runs in Termux).
+      - run: cargo ndk --target ${{ matrix.target }} --platform 26 build --release --locked -p tm-android -p twitchminer
         env:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
       - uses: actions/upload-artifact@v4
         with:
           name: twitchminer-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/twitchminer
+          path: |
+            target/${{ matrix.target }}/release/twitchminer
+            target/${{ matrix.target }}/release/libtwitchminer.so

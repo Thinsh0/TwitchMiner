@@ -39,14 +39,19 @@ Autres intégrations possibles, toutes alimentées par `summary` :
 - **Tuile de réglages rapides** (`TileService`) : pause/reprise, via `account_set_enabled` ;
 - **Widget** d'écran d'accueil.
 
-## JNI minimal (si le service Kotlin pilote le moteur)
+## Pont JNI (`crates/android`, fourni)
 
-Exposer depuis Rust 3 fonctions qui échangent du JSON. C'est exactement l'API documentée dans [API.md](API.md) :
+`libtwitchminer.so` est produite par la CI (artefact Android) ou par :
+```bash
+cargo ndk --target aarch64-linux-android --platform 26 build --release -p tm-android
+```
+Côté Kotlin, copier `crates/android/kotlin/Native.kt` :
 
-```rust
-// Java_dev_thinsh0_twitchminer_Native_start(dataDir) -> handle
-// Java_dev_thinsh0_twitchminer_Native_execute(handle, commandJson) -> replyJson
-// Java_dev_thinsh0_twitchminer_Native_summary(handle) -> summaryJson
+```kotlin
+val h = Native.start(filesDir.absolutePath, null)            // "0.0.0.0:7878" pour pilotage à distance
+val reply = Native.execute(h, """{"cmd":"login_start"}""")    // {"ok":true,"data":{...}}
+val summary = Native.summary(h)                               // pour la notification / Now Bar
+Native.stop(h)
 ```
 
-Le service appelle `summary` pour sa notification. L'UI, en Rust, utilise directement `App`.
+Toutes les fonctions échangent le JSON de [API.md](API.md). Le moteur tourne sur son propre runtime (2 threads) : `execute` est bloquant, à appeler hors du thread UI. Le service Kotlin fait `start` dans `onCreate` et `stop` dans `onDestroy`. Il rafraîchit sa notification avec `summary`. Une UI Rust native dans le même processus peut utiliser `tm_client::Local` directement.

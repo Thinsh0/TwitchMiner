@@ -1,0 +1,18 @@
+[package]
+name = "tm-android"
+description = "JNI bridge so an Android service can host the TwitchMiner engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "twitchminer"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+tm-app.workspace = true
+tm-core.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+jni = { version = "0.21", default-features = false }

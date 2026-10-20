@@ -6,7 +6,7 @@ Le moteur compile déjà pour Android (CI : `aarch64-linux-android`, `x86_64-lin
 
 ```
 APK
-├── libtwitchminer.so  (Rust : tm-app + UI native, ex. Slint via android-activity)
+├── libtwitchminer_jni.so  (Rust : tm-app + UI native, ex. Slint via android-activity)
 │     └── tm_app::App::start(AppOptions { data_dir: Some(filesDir), api: None, .. })
 └── MinerService.kt    (~100 lignes : foreground service + notification)
 ```
@@ -41,7 +41,7 @@ Autres intégrations possibles, toutes alimentées par `summary` :
 
 ## Pont JNI (`crates/android`, fourni)
 
-`libtwitchminer.so` est produite par la CI (artefact Android) ou par :
+`libtwitchminer_jni.so` est produite par la CI (artefact Android) ou par :
 ```bash
 cargo ndk --target aarch64-linux-android --platform 26 build --release -p tm-android
 ```

@@ -27,7 +27,7 @@
 | `tm-modules` | Les fonctionnalités, un fichier par module | `tm-core` |
 | `tm-server` | Expose le moteur en HTTP + WebSocket | `tm-core` |
 | `tm-app` | Démarrage en un appel (moteur + modules + logs + API) pour tous les frontends | tout |
-| `tm-android` | Pont JNI (`libtwitchminer.so`) pour un service Android | `tm-app` |
+| `tm-android` | Pont JNI (`libtwitchminer_jni.so`) pour un service Android | `tm-app` |
 | `tm-client` | Abstraction `Backend` pour les interfaces : moteur local ou daemon distant, même miroir d'état | `tm-core` |
 | `twitchminer` | Exécutable sans interface + client `ctl` | tout |
 

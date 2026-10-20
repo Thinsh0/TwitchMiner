@@ -7,7 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [lib]
-name = "twitchminer"
+name = "twitchminer_jni"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

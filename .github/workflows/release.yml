@@ -64,7 +64,7 @@ jobs:
         run: |
           name=twitchminer-${GITHUB_REF_NAME}-${{ matrix.target }}
           mkdir "$name"
-          cp target/${{ matrix.target }}/release/twitchminer target/${{ matrix.target }}/release/libtwitchminer.so crates/android/kotlin/Native.kt docs/ANDROID.md "$name/"
+          cp target/${{ matrix.target }}/release/twitchminer target/${{ matrix.target }}/release/libtwitchminer_jni.so crates/android/kotlin/Native.kt docs/ANDROID.md "$name/"
           tar czf "$name.tar.gz" "$name"
       - uses: softprops/action-gh-release@v2
         with:

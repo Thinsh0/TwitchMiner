@@ -1,12 +1,12 @@
 package dev.thinsh0.twitchminer
 
 /**
- * Thin wrapper over libtwitchminer.so (crate `tm-android`).
+ * Thin wrapper over libtwitchminer_jni.so (crate `tm-android`).
  * All payloads are the JSON documented in docs/API.md.
  */
 object Native {
     init {
-        System.loadLibrary("twitchminer")
+        System.loadLibrary("twitchminer_jni")
     }
 
     /** Starts the engine. [apiBind] e.g. "0.0.0.0:7878" to allow remote control, or null. */

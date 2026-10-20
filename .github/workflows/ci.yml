@@ -26,6 +26,9 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets
       - run: cargo test --workspace
+      - run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
 
   build:
     name: build ${{ matrix.target }}
@@ -80,7 +83,7 @@ jobs:
         with:
           ndk-version: r27c
       - run: cargo install cargo-ndk --locked
-      # libtwitchminer.so (JNI bridge embedding the engine) and the daemon (runs in Termux).
+      # libtwitchminer_jni.so (JNI bridge embedding the engine) and the daemon (runs in Termux).
       - run: cargo ndk --target ${{ matrix.target }} --platform 26 build --release --locked -p tm-android -p twitchminer
         env:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
@@ -89,4 +92,4 @@ jobs:
           name: twitchminer-${{ matrix.target }}
           path: |
             target/${{ matrix.target }}/release/twitchminer
-            target/${{ matrix.target }}/release/libtwitchminer.so
+            target/${{ matrix.target }}/release/libtwitchminer_jni.so

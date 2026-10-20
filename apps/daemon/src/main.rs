@@ -116,7 +116,7 @@ enum Ctl {
     },
     /// Stream live events.
     Events,
-    /// Write a consistent copy of the database (default: <data>/backups/).
+    /// Write a consistent copy of the database (default: `<data>/backups/`).
     Backup { path: Option<String> },
     /// Send a raw command JSON, e.g. '{"cmd":"modules_list"}'.
     Raw { json: String },

@@ -361,10 +361,22 @@ impl Runtime {
             .game_directory(&slug, sample.clamp(1, 30), true)
             .await?;
         let ids: Vec<String> = channels.iter().map(|c| c.id.clone()).collect();
+        // The directory's game, as Twitch names it.
+        let dir_game = channels
+            .iter()
+            .find_map(|c| c.stream.as_ref()?.game.clone());
         let mut out: Vec<Campaign> = Vec::new();
         for list in ctx.gql().available_drops(&ids).await? {
             for mut c in list {
-                if c.game.slug.is_none() {
+                if c.game.id.is_empty()
+                    && let Some(g) = &dir_game
+                {
+                    // Some responses omit the game: it is the directory's.
+                    c.game = g.clone();
+                }
+                let same_game = dir_game.as_ref().is_some_and(|g| g.id == c.game.id)
+                    || norm(&c.game.name) == norm(game);
+                if same_game && c.game.slug.is_none() {
                     c.game.slug = Some(slug.clone());
                 }
                 if !out.iter().any(|o| o.id == c.id) {

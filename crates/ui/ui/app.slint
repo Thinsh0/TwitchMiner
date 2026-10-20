@@ -6,6 +6,7 @@ import { HomeScreen } from "screens/home.slint";
 import { SettingsScreen } from "screens/settings.slint";
 import { ConnectScreen } from "screens/connect.slint";
 import { PlaceholderScreen } from "screens/placeholder.slint";
+import { DropsScreen } from "screens/drops.slint";
 
 export { Bridge, Theme, ThemeMode }
 
@@ -275,7 +276,9 @@ component Toasts inherits VerticalLayout {
             }
             Text {
                 text: toast.kind == ToastKind.error ? @tr("Action failed: {}", toast.detail)
-                    : toast.kind == ToastKind.login-ok ? @tr("{} is connected. Mining starts.", toast.detail) : toast.detail;
+                    : toast.kind == ToastKind.login-ok ? @tr("{} is connected. Mining starts.", toast.detail)
+                    : toast.kind == ToastKind.claimed ? (toast.detail == "0" ? @tr("Nothing to claim right now.") : @tr("Rewards claimed: {}", toast.detail))
+                    : toast.detail;
                 color: Theme.text;
                 wrap: word-wrap;
                 vertical-alignment: center;
@@ -344,11 +347,7 @@ export component MainWindow inherits Window {
         Rectangle {
             horizontal-stretch: 1;
             if Bridge.screen == Screen.home: HomeScreen { }
-            if Bridge.screen == Screen.drops: PlaceholderScreen {
-                title: @tr("Drops");
-                question: @tr("What, in which order, and why?");
-                icon: Icons.gift;
-            }
+            if Bridge.screen == Screen.drops: DropsScreen { }
             if Bridge.screen == Screen.channels: PlaceholderScreen {
                 title: @tr("Channels");
                 question: @tr("Where am I with channel points?");

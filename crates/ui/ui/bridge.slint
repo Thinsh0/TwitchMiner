@@ -14,7 +14,7 @@ export enum LinkState { local, connected, connecting, down }
 // Why the "choose an engine" screen is shown.
 export enum SetupReason { none, busy, failed }
 
-export enum ToastKind { plain, error, login-ok }
+export enum ToastKind { plain, error, login-ok, claimed }
 
 export struct AccountItem {
     id: string,
@@ -103,6 +103,56 @@ export struct TodayItem {
     drops: int,
 }
 
+// A point in time, in local time, for the views to phrase ("today at 18:00").
+export struct When {
+    // 0 = today, 1 = tomorrow, -1 = yesterday, other = see `date`.
+    day-offset: int,
+    // Local date (`24/10` in French, `10/24` in English) and time (`18:00`).
+    date: string,
+    time: string,
+    known: bool,
+}
+
+export struct DropLine {
+    name: string,
+    current: int,
+    required: int,
+    progress: float,
+    claimed: bool,
+}
+
+// One campaign of the drops plan (`module_data.drops.plan`), best first.
+export struct PlanRow {
+    campaign-id: string,
+    campaign: string,
+    game: string,
+    image: image,
+    // active | focus | restricted | planned | at_risk | will_miss | upcoming
+    // | not_linked | skipped | done
+    status: string,
+    rewards: string,
+    has-progress: bool,
+    progress: float,
+    remaining-minutes: int,
+    missing-minutes: int,
+    // planned: start; upcoming: campaign start; skipped: back at.
+    when: When,
+    eta: When,
+    ends: When,
+    link-url: string,
+    details-url: string,
+    // Channel names of a restricted campaign.
+    channels: string,
+    listed: bool,
+    drops: [DropLine],
+}
+
+export struct GameItem {
+    name: string,
+    // Number of campaigns of this game in the plan.
+    campaigns: int,
+}
+
 // Why nothing is watched, when watching is not allowed.
 export enum Idle { none, paused, outside-hours, standby }
 
@@ -139,6 +189,16 @@ export global Bridge {
     // At least one followed channel is live (explains an empty "En ce moment").
     in property <bool> any-live;
 
+    // Drops (selected account)
+    in property <[PlanRow]> plan;
+    in property <string> focus-id;
+    in property <[GameItem]> games;
+    in property <[string]> exclude-games;
+    in property <[string]> wanted-rewards;
+    // Games with campaigns that are neither listed nor excluded.
+    in property <[string]> game-suggestions;
+    in property <bool> drops-enabled;
+
     in property <string> version;
     in property <int> manifest-revision;
 
@@ -169,4 +229,11 @@ export global Bridge {
     callback language-changed(int);
     callback set-paused(bool);
     callback focus-campaign(string);
+    callback unfocus();
+    callback drops-refresh();
+    callback drops-claim-all();
+    // Edits of the drops settings: list name (games | exclude_games | wanted_rewards).
+    callback list-add(string, string);
+    callback list-remove(string, string);
+    callback list-move(string, int, int);
 }

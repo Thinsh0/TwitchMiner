@@ -5604,6 +5604,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "i-slint-backend-testing",
  "image",
  "open",
  "reqwest",

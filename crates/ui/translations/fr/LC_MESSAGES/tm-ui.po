@@ -340,3 +340,174 @@ msgstr "{} ne sera pas terminé"
 
 msgid "paused"
 msgstr "en pause"
+
+msgid "1 campaign"
+msgstr "1 campagne"
+
+msgid "Account to link"
+msgstr "Compte à lier"
+
+msgid "Add a game…"
+msgstr "Ajouter un jeu…"
+
+msgid "Add a reward…"
+msgstr "Ajouter une récompense…"
+
+msgid "Around {}"
+msgstr "Vers {}"
+
+msgid "Being watched now."
+msgstr "Regardée en ce moment."
+
+msgid "Campaign page"
+msgstr "Page de la campagne"
+
+msgid "Claim all"
+msgstr "Tout récupérer"
+
+msgid "Claimed"
+msgstr "Récupéré"
+
+msgid "Details"
+msgstr "Détails"
+
+msgid "Done"
+msgstr "Terminé"
+
+msgid "Empty list: every game with a campaign is mined. Add games to choose and order them."
+msgstr "Liste vide : tous les jeux avec une campagne sont minés. Ajoute des jeux pour choisir et ordonner."
+
+msgid "Ends {}"
+msgstr "Se termine {}"
+
+msgid "Exclude a game…"
+msgstr "Exclure un jeu…"
+
+msgid "Excluded games"
+msgstr "Jeux exclus"
+
+msgid "First"
+msgstr "En premier"
+
+msgid "Fits before it ends."
+msgstr "Tient avant la fin."
+
+msgid "Fits before it ends. Expected to be done {}."
+msgstr "Tient avant la fin. Terminée vers {}."
+
+msgid "Goal reached."
+msgstr "Objectif atteint."
+
+msgid "In progress"
+msgstr "En cours"
+
+msgid "In the order TwitchMiner will do them."
+msgstr "Dans l'ordre où TwitchMiner va les faire."
+
+msgid "My games"
+msgstr "Ma liste de jeux"
+
+msgid "Never mined, even with an empty list."
+msgstr "Jamais minés, même avec une liste vide."
+
+msgid "No campaign for now. Campaigns are refreshed regularly."
+msgstr "Aucune campagne pour l'instant. Les campagnes sont actualisées régulièrement."
+
+msgid "No campaign for the games of your list right now."
+msgstr "Aucune campagne pour les jeux de ta liste en ce moment."
+
+msgid "Not enough time before it ends: games higher in your list come first."
+msgstr "Pas assez de temps avant la fin : les jeux plus haut dans ta liste passent avant."
+
+msgid "Not started"
+msgstr "Pas commencée"
+
+msgid "Nothing to claim right now."
+msgstr "Rien à récupérer pour l'instant."
+
+msgid "Only a few channels count ({}): watched as soon as one of them is live."
+msgstr "Seules quelques chaînes comptent ({}) : regardée dès que l'une d'elles est en direct."
+
+msgid "Only a few channels count: watched as soon as one of them is live."
+msgstr "Seules quelques chaînes comptent : regardée dès que l'une d'elles est en direct."
+
+msgid "Order = priority. Drag the handle to reorder."
+msgstr "L'ordre fait la priorité. Glisse la poignée pour réordonner."
+
+msgid "Part of a reward name. In a campaign that has one, the goal stops at it instead of the last reward."
+msgstr "Une partie du nom d'une récompense. Dans une campagne qui en a une, l'objectif s'arrête à elle au lieu de la dernière récompense."
+
+msgid "Planned"
+msgstr "Prévue"
+
+msgid "Progress stopped moving (often an unlinked account): it will be tried again later."
+msgstr "La progression ne bougeait plus (souvent un compte non lié) : elle sera retentée plus tard."
+
+msgid "Refresh"
+msgstr "Actualiser"
+
+msgid "Remove from the list"
+msgstr "Retirer de la liste"
+
+msgid "Rewards claimed: {}"
+msgstr "Récompenses récupérées : {}"
+
+msgid "Set aside"
+msgstr "Mise de côté"
+
+msgid "Set aside until {}"
+msgstr "Mise de côté jusqu'à {}"
+
+msgid "Should finish, but with little spare time before it ends ({})."
+msgstr "Devrait finir, mais avec peu de marge avant la fin ({})."
+
+msgid "Starts {}"
+msgstr "Commence {}"
+
+msgid "The drops module is turned off (Settings)."
+msgstr "Le module des drops est désactivé (Réglages)."
+
+msgid "The plan"
+msgstr "Le plan"
+
+msgid "This campaign has not started yet."
+msgstr "Cette campagne n'a pas encore commencé."
+
+msgid "Tight"
+msgstr "Juste"
+
+msgid "Wanted rewards"
+msgstr "Récompenses voulues"
+
+msgid "When the channel is live"
+msgstr "Dès que la chaîne est en direct"
+
+msgid "Will miss ~{}"
+msgstr "Manquera ~{}"
+
+msgid "With a campaign now:"
+msgstr "Avec une campagne en ce moment :"
+
+msgid "You asked for it first: watched until its goal, then the plan resumes."
+msgstr "Tu l'as demandée en premier : regardée jusqu'à son objectif, puis le plan reprend."
+
+msgid "Your game account is not linked to Twitch: the rewards would not be given."
+msgstr "Ton compte de jeu n'est pas lié à Twitch : les récompenses ne seraient pas données."
+
+msgid "today at {}"
+msgstr "aujourd'hui à {}"
+
+msgid "tomorrow at {}"
+msgstr "demain à {}"
+
+msgid "yesterday at {}"
+msgstr "hier à {}"
+
+msgid "{} at {}"
+msgstr "le {} à {}"
+
+msgid "{} campaigns"
+msgstr "{} campagnes"
+
+msgid "{} left"
+msgstr "reste {}"

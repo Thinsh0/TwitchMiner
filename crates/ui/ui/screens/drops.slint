@@ -1,0 +1,565 @@
+// Drops: "what, in which order, and why?"
+// The plan (best first) and, on the same screen, the game list that drives it.
+
+import { Theme } from "../theme.slint";
+import { Bridge, PlanRow, GameItem, When } from "../bridge.slint";
+import { Fmt } from "../fmt.slint";
+import { Button, ButtonKind, Card, Icon, IconButton, Icons, Muted, Page, Pill, ProgressBar, TextField, Tone } from "../widgets.slint";
+
+export global Whens {
+    // today at 18:00 · tomorrow at 09:30 · 24/10 at 18:00
+    pure public function text(w: When) -> string {
+        if !w.known {
+            return "";
+        }
+        if w.day-offset == 0 {
+            return @tr("today at {}", w.time);
+        }
+        if w.day-offset == 1 {
+            return @tr("tomorrow at {}", w.time);
+        }
+        if w.day-offset == -1 {
+            return @tr("yesterday at {}", w.time);
+        }
+        return @tr("{} at {}", w.date, w.time);
+    }
+}
+
+// Plan statuses in plain words: a short label and one sentence.
+export global PlanText {
+    pure public function label(r: PlanRow) -> string {
+        if r.status == "active" { return @tr("In progress"); }
+        if r.status == "focus" { return @tr("First"); }
+        if r.status == "restricted" { return @tr("When the channel is live"); }
+        if r.status == "planned" { return r.when.known ? @tr("Around {}", Whens.text(r.when)) : @tr("Planned"); }
+        if r.status == "at_risk" { return @tr("Tight"); }
+        if r.status == "will_miss" { return @tr("Will miss ~{}", Fmt.duration(r.missing-minutes)); }
+        if r.status == "upcoming" { return r.when.known ? @tr("Starts {}", Whens.text(r.when)) : @tr("Not started"); }
+        if r.status == "not_linked" { return @tr("Account to link"); }
+        if r.status == "skipped" { return r.when.known ? @tr("Set aside until {}", Whens.text(r.when)) : @tr("Set aside"); }
+        if r.status == "done" { return @tr("Done"); }
+        return r.status;
+    }
+    pure public function tone(status: string) -> Tone {
+        if status == "active" || status == "focus" { return Tone.accent; }
+        if status == "restricted" || status == "planned" || status == "upcoming" { return Tone.info; }
+        if status == "at_risk" || status == "skipped" { return Tone.warning; }
+        if status == "will_miss" || status == "not_linked" { return Tone.danger; }
+        if status == "done" { return Tone.success; }
+        return Tone.neutral;
+    }
+    pure public function explain(r: PlanRow) -> string {
+        if r.status == "active" { return @tr("Being watched now."); }
+        if r.status == "focus" { return @tr("You asked for it first: watched until its goal, then the plan resumes."); }
+        if r.status == "restricted" {
+            return r.channels == "" ? @tr("Only a few channels count: watched as soon as one of them is live.")
+                : @tr("Only a few channels count ({}): watched as soon as one of them is live.", r.channels);
+        }
+        if r.status == "planned" {
+            return r.eta.known ? @tr("Fits before it ends. Expected to be done {}.", Whens.text(r.eta)) : @tr("Fits before it ends.");
+        }
+        if r.status == "at_risk" { return @tr("Should finish, but with little spare time before it ends ({}).", Whens.text(r.ends)); }
+        if r.status == "will_miss" { return @tr("Not enough time before it ends: games higher in your list come first."); }
+        if r.status == "upcoming" { return @tr("This campaign has not started yet."); }
+        if r.status == "not_linked" { return @tr("Your game account is not linked to Twitch: the rewards would not be given."); }
+        if r.status == "skipped" { return @tr("Progress stopped moving (often an unlinked account): it will be tried again later."); }
+        if r.status == "done" { return @tr("Goal reached."); }
+        return "";
+    }
+}
+
+component SectionTitle inherits Text {
+    font-size: Theme.font-l;
+    font-weight: 700;
+    color: Theme.text;
+}
+
+component PlanRowCard inherits Rectangle {
+    in property <PlanRow> entry;
+    property <bool> open;
+    property <bool> is-focus: entry.campaign-id == Bridge.focus-id && Bridge.focus-id != "";
+    property <bool> can-focus: !is-focus && entry.status != "done" && entry.status != "upcoming" && entry.status != "not_linked" && entry.status != "active";
+    border-radius: Theme.radius-l;
+    background: Theme.card;
+    border-width: 1px;
+    border-color: is-focus ? Theme.accent : Theme.border;
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+        HorizontalLayout {
+            spacing: 12px;
+            Rectangle {
+                width: 48px;
+                height: 64px;
+                border-radius: Theme.radius-s;
+                background: Theme.inset;
+                clip: true;
+                if root.entry.image.width == 0: Icon {
+                    source: Icons.gift;
+                    size: 20px;
+                    colorize: Theme.text-faint;
+                }
+                if root.entry.image.width > 0: Image {
+                    source: root.entry.image;
+                    width: parent.width;
+                    height: parent.height;
+                    image-fit: cover;
+                }
+            }
+            VerticalLayout {
+                spacing: 4px;
+                alignment: center;
+                horizontal-stretch: 1;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text {
+                        text: root.entry.game;
+                        font-weight: 700;
+                        color: Theme.text;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: root.entry.campaign;
+                        font-size: Theme.font-s;
+                        color: Theme.text-faint;
+                        overflow: elide;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                }
+                if root.entry.rewards != "": Text {
+                    text: @tr("Goal: {}", root.entry.rewards);
+                    font-size: Theme.font-s;
+                    color: Theme.text-muted;
+                    overflow: elide;
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    Pill {
+                        text: PlanText.label(root.entry);
+                        tone: PlanText.tone(root.entry.status);
+                    }
+                    if root.entry.has-progress && root.entry.status != "done": VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: @tr("{} left", Fmt.duration(root.entry.remaining-minutes));
+                            font-size: Theme.font-xs;
+                            color: Theme.text-faint;
+                        }
+                    }
+                }
+                if root.entry.has-progress: ProgressBar {
+                    height: 4px;
+                    progress: root.entry.progress;
+                    tint: root.entry.status == "done" ? Theme.success : root.entry.status == "will_miss" ? Theme.danger : Theme.accent;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 6px;
+                horizontal-stretch: 0;
+                if root.is-focus: Button {
+                    compact: true;
+                    kind: ButtonKind.secondary;
+                    text: @tr("Cancel");
+                    clicked => { Bridge.unfocus(); }
+                }
+                if root.can-focus: Button {
+                    compact: true;
+                    kind: root.entry.status == "at_risk" || root.entry.status == "will_miss" ? ButtonKind.primary : ButtonKind.ghost;
+                    icon: Icons.star;
+                    text: @tr("Do it first");
+                    clicked => { Bridge.focus-campaign(root.entry.campaign-id); }
+                }
+                if root.entry.status == "not_linked" && root.entry.link-url != "": Button {
+                    compact: true;
+                    kind: ButtonKind.primary;
+                    icon: Icons.external;
+                    text: @tr("Link my account");
+                    clicked => { Bridge.open-url(root.entry.link-url); }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 0;
+                IconButton {
+                    icon: root.open ? Icons.chevron-down : Icons.chevron-right;
+                    tooltip: @tr("Details");
+                    clicked => { root.open = !root.open; }
+                }
+            }
+        }
+        Muted {
+            text: PlanText.explain(root.entry);
+        }
+        if root.open: VerticalLayout {
+            spacing: 8px;
+            Rectangle {
+                height: 1px;
+                background: Theme.border;
+            }
+            for d in root.entry.drops: HorizontalLayout {
+                spacing: 10px;
+                Icon {
+                    source: d.claimed ? Icons.check : Icons.gift;
+                    size: 14px;
+                    colorize: d.claimed ? Theme.success : Theme.text-faint;
+                }
+                Text {
+                    text: d.name;
+                    font-size: Theme.font-s;
+                    color: d.claimed ? Theme.text-muted : Theme.text;
+                    overflow: elide;
+                    width: 34%;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    ProgressBar {
+                        height: 4px;
+                        progress: d.progress;
+                        tint: d.claimed ? Theme.success : Theme.accent;
+                    }
+                }
+                Text {
+                    text: d.claimed ? @tr("Claimed") : Fmt.duration(d.current) + " / " + Fmt.duration(d.required);
+                    font-size: Theme.font-xs;
+                    color: Theme.text-muted;
+                    horizontal-alignment: right;
+                    width: 110px;
+                }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                Muted {
+                    text: @tr("Ends {}", Whens.text(root.entry.ends));
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                if root.entry.details-url != "": Button {
+                    compact: true;
+                    kind: ButtonKind.ghost;
+                    icon: Icons.external;
+                    text: @tr("Campaign page");
+                    clicked => { Bridge.open-url(root.entry.details-url); }
+                }
+            }
+        }
+    }
+}
+
+component PlanSection inherits VerticalLayout {
+    spacing: 10px;
+    alignment: start;
+    HorizontalLayout {
+        spacing: 8px;
+        VerticalLayout {
+            spacing: 2px;
+            horizontal-stretch: 1;
+            SectionTitle {
+                text: @tr("The plan");
+            }
+            Muted {
+                text: @tr("In the order TwitchMiner will do them.");
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Button {
+                compact: true;
+                kind: ButtonKind.ghost;
+                icon: Icons.refresh;
+                text: @tr("Refresh");
+                clicked => { Bridge.drops-refresh(); }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Button {
+                compact: true;
+                icon: Icons.gift;
+                text: @tr("Claim all");
+                clicked => { Bridge.drops-claim-all(); }
+            }
+        }
+    }
+    if !Bridge.drops-enabled: Card {
+        Muted {
+            font-size: Theme.font-m;
+            text: @tr("The drops module is turned off (Settings).");
+        }
+    }
+    if Bridge.drops-enabled && Bridge.plan.length == 0: Card {
+        Muted {
+            font-size: Theme.font-m;
+            text: Bridge.games.length == 0 ? @tr("No campaign for now. Campaigns are refreshed regularly.")
+                : @tr("No campaign for the games of your list right now.");
+        }
+    }
+    for row in Bridge.plan: PlanRowCard {
+        entry: row;
+    }
+}
+
+// The game list, reordered by dragging the grip (order = priority).
+component GameList inherits Rectangle {
+    property <length> row-h: 40px;
+    property <int> dragging: -1;
+    property <int> target: -1;
+    property <length> drag-y;
+    height: Bridge.games.length * row-h;
+    for game[i] in Bridge.games: Rectangle {
+        property <bool> is-dragged: root.dragging == i;
+        x: 0;
+        width: parent.width;
+        height: root.row-h - 4px;
+        y: is-dragged ? root.drag-y
+            : root.dragging >= 0 && root.dragging < i && i <= root.target ? (i - 1) * root.row-h
+            : root.dragging >= 0 && root.target <= i && i < root.dragging ? (i + 1) * root.row-h
+            : i * root.row-h;
+        animate y {
+            duration: is-dragged ? 0ms : 120ms;
+            easing: ease-out;
+        }
+        z: is-dragged ? 1 : 0;
+        border-radius: Theme.radius-m;
+        background: is-dragged ? Theme.card-hover : Theme.inset;
+        drop-shadow-blur: is-dragged ? 14px : 0px;
+        drop-shadow-color: #00000050;
+        accessible-role: list-item;
+        accessible-label: game.name;
+        accessible-action-increment => {
+            if i > 0 { Bridge.list-move("games", i, i - 1); }
+        }
+        accessible-action-decrement => {
+            if i + 1 < Bridge.games.length { Bridge.list-move("games", i, i + 1); }
+        }
+        HorizontalLayout {
+            padding-left: 4px;
+            padding-right: 4px;
+            spacing: 8px;
+            Rectangle {
+                width: 22px;
+                Icon {
+                    source: Icons.grip;
+                    size: 16px;
+                    colorize: Theme.text-faint;
+                }
+                grip := TouchArea {
+                    mouse-cursor: grab;
+                    pointer-event(ev) => {
+                        if ev.kind == PointerEventKind.down {
+                            root.dragging = i;
+                            root.target = i;
+                            root.drag-y = i * root.row-h;
+                        }
+                        if ev.kind == PointerEventKind.up || ev.kind == PointerEventKind.cancel {
+                            if root.dragging == i && root.target != i && root.target >= 0 {
+                                Bridge.list-move("games", i, root.target);
+                            }
+                            root.dragging = -1;
+                            root.target = -1;
+                        }
+                    }
+                    moved => {
+                        if root.dragging == i {
+                            root.drag-y = clamp(root.drag-y + self.mouse-y - self.pressed-y, 0px, (Bridge.games.length - 1) * root.row-h);
+                            root.target = round(root.drag-y / root.row-h);
+                        }
+                    }
+                }
+            }
+            Text {
+                text: i + 1;
+                width: 16px;
+                font-size: Theme.font-s;
+                font-weight: 700;
+                color: Theme.accent;
+                vertical-alignment: center;
+            }
+            Text {
+                text: game.name;
+                color: Theme.text;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            if game.campaigns > 0: VerticalLayout {
+                alignment: center;
+                Pill {
+                    text: game.campaigns == 1 ? @tr("1 campaign") : @tr("{} campaigns", game.campaigns);
+                    tone: Tone.accent;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: Icons.x;
+                    size: 26px;
+                    tooltip: @tr("Remove from the list");
+                    clicked => { Bridge.list-remove("games", game.name); }
+                }
+            }
+        }
+    }
+}
+
+// A removable list of short values, with an input to add one.
+component ValueList inherits VerticalLayout {
+    in property <string> key;
+    in property <[string]> values;
+    in property <string> placeholder;
+    property <string> draft;
+    spacing: 6px;
+    for v in root.values: Rectangle {
+        height: 32px;
+        border-radius: Theme.radius-m;
+        background: Theme.inset;
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 4px;
+            Text {
+                text: v;
+                color: Theme.text;
+                font-size: Theme.font-s;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: Icons.x;
+                    size: 24px;
+                    tooltip: @tr("Remove");
+                    clicked => { Bridge.list-remove(root.key, v); }
+                }
+            }
+        }
+    }
+    HorizontalLayout {
+        spacing: 6px;
+        field := TextField {
+            height: 34px;
+            placeholder: root.placeholder;
+            text <=> root.draft;
+            accepted => {
+                Bridge.list-add(root.key, root.draft);
+                root.draft = "";
+            }
+        }
+        Button {
+            compact: true;
+            icon: Icons.plus;
+            enabled: root.draft != "";
+            clicked => {
+                Bridge.list-add(root.key, root.draft);
+                root.draft = "";
+            }
+        }
+    }
+}
+
+component GamesSection inherits VerticalLayout {
+    spacing: 14px;
+    alignment: start;
+    Card {
+        SectionTitle {
+            text: @tr("My games");
+        }
+        Muted {
+            text: Bridge.games.length == 0 ? @tr("Empty list: every game with a campaign is mined. Add games to choose and order them.")
+                : @tr("Order = priority. Drag the handle to reorder.");
+        }
+        GameList { }
+        ValueList {
+            key: "games";
+            values: [];
+            placeholder: @tr("Add a game…");
+        }
+        if Bridge.game-suggestions.length > 0: VerticalLayout {
+            spacing: 4px;
+            Text {
+                text: @tr("With a campaign now:");
+                font-size: Theme.font-xs;
+                color: Theme.text-faint;
+            }
+            for s[i] in Bridge.game-suggestions: HorizontalLayout {
+                if i < 8: Rectangle {
+                    height: 30px;
+                    border-radius: Theme.radius-m;
+                    background: t.has-hover ? Theme.inset : transparent;
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        spacing: 6px;
+                        Icon {
+                            source: Icons.plus;
+                            size: 14px;
+                            colorize: Theme.accent;
+                        }
+                        Text {
+                            text: s;
+                            font-size: Theme.font-s;
+                            color: Theme.text-muted;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                    t := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Bridge.list-add("games", s); }
+                    }
+                }
+            }
+        }
+    }
+    Card {
+        SectionTitle {
+            text: @tr("Excluded games");
+        }
+        Muted {
+            text: @tr("Never mined, even with an empty list.");
+        }
+        ValueList {
+            key: "exclude_games";
+            values: Bridge.exclude-games;
+            placeholder: @tr("Exclude a game…");
+        }
+    }
+    Card {
+        SectionTitle {
+            text: @tr("Wanted rewards");
+        }
+        Muted {
+            text: @tr("Part of a reward name. In a campaign that has one, the goal stops at it instead of the last reward.");
+        }
+        ValueList {
+            key: "wanted_rewards";
+            values: Bridge.wanted-rewards;
+            placeholder: @tr("Add a reward…");
+        }
+    }
+}
+
+export component DropsScreen inherits Page {
+    title: @tr("Drops");
+    subtitle: @tr("What, in which order, and why?");
+    max-content-width: 1240px;
+    property <bool> wide: self.width > 1040px;
+    if root.wide: HorizontalLayout {
+        spacing: 18px;
+        PlanSection {
+            horizontal-stretch: 1;
+        }
+        GamesSection {
+            width: 340px;
+        }
+    }
+    if !root.wide: VerticalLayout {
+        spacing: 18px;
+        PlanSection { }
+        GamesSection { }
+    }
+}

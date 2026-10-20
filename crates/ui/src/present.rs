@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Local, Utc};
 use serde::Deserialize;
+use serde_json::Value;
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use tm_client::Link;
 use tm_core::State;
@@ -13,8 +14,8 @@ use tm_core::state::{Account, AccountStatus, Level};
 
 use crate::images;
 use crate::{
-    AccountItem, Bridge, DropItem, Idle, LinkState, LoginItem, MainWindow, NoticeItem, PlanTodo,
-    TodayItem, WatchItem,
+    AccountItem, Bridge, DropItem, DropLine, GameItem, Idle, LinkState, LoginItem, MainWindow,
+    NoticeItem, PlanRow, PlanTodo, TodayItem, WatchItem, When,
 };
 
 /// What the projection needs besides the state.
@@ -66,6 +67,7 @@ pub fn apply(ui: &MainWindow, input: &Input) {
         bridge.set_plan_todos(m)
     });
     home(&bridge, state, selected.as_str(), account, input);
+    drops(&bridge, state, selected.as_str(), account, input);
     sync(bridge.get_accounts(), accounts, |m| bridge.set_accounts(m));
     sync(bridge.get_logins(), logins, |m| bridge.set_logins(m));
     sync(bridge.get_notices(), notices, |m| bridge.set_notices(m));
@@ -138,7 +140,15 @@ pub struct PlanEntry {
     #[serde(default)]
     pub remaining_minutes: u32,
     #[serde(default)]
+    pub start_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub eta: Option<DateTime<Utc>>,
+    #[serde(default)]
     pub missing_minutes: Option<u32>,
+    #[serde(default)]
+    pub starts_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub skipped_until: Option<DateTime<Utc>>,
     #[serde(default)]
     pub link_url: Option<String>,
     #[serde(default)]
@@ -280,6 +290,263 @@ fn reason(raw: &str) -> (&'static str, String) {
         "points" if detail.contains("streak") => ("streak", String::new()),
         "points" => ("points", String::new()),
         _ => ("other", raw.to_string()),
+    }
+}
+
+/// A module setting as the module sees it (top-level key): the account's override,
+/// else the shared scope. `None` = module default.
+pub fn module_setting<'a>(
+    state: &'a State,
+    account: &str,
+    module: &str,
+    key: &str,
+) -> Option<&'a Value> {
+    use tm_core::settings::{account_module_scope, module_scope};
+    state
+        .settings
+        .get(&account_module_scope(account, module))
+        .and_then(|v| v.get(key))
+        .or_else(|| {
+            state
+                .settings
+                .get(&module_scope(module))
+                .and_then(|v| v.get(key))
+        })
+}
+
+/// Scope to write `key` of `module` to: the account's override if it already holds
+/// that key (it would hide the shared value), else the shared scope.
+pub fn module_setting_scope(state: &State, account: &str, module: &str, key: &str) -> String {
+    use tm_core::settings::{account_module_scope, module_scope};
+    let account_scope = account_module_scope(account, module);
+    if state
+        .settings
+        .get(&account_scope)
+        .is_some_and(|v| v.get(key).is_some())
+    {
+        account_scope
+    } else {
+        module_scope(module)
+    }
+}
+
+pub fn string_list(v: Option<&Value>) -> Vec<String> {
+    v.and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The Drops screen: plan, game list, exclusions and wanted rewards.
+fn drops(bridge: &Bridge, state: &State, id: &str, account: Option<&Account>, input: &Input) {
+    let lang = bridge.get_language();
+    let Some(account) = account else {
+        sync(bridge.get_plan(), Vec::new(), |m| bridge.set_plan(m));
+        return;
+    };
+    let entries = plan(account);
+    let rows: Vec<PlanRow> = entries
+        .iter()
+        .map(|e| plan_row(account, e, input.now, lang))
+        .collect();
+    sync(bridge.get_plan(), rows, |m| bridge.set_plan(m));
+    let focus = account
+        .module_data
+        .get("drops")
+        .and_then(|m| m.get("focus"))
+        .and_then(|f| f.get("campaign_id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    bridge.set_focus_id(focus.into());
+    bridge.set_drops_enabled(
+        module_setting(state, id, "drops", "enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
+    );
+
+    let games = string_list(module_setting(state, id, "drops", "games"));
+    let excluded = string_list(module_setting(state, id, "drops", "exclude_games"));
+    let rewards = string_list(module_setting(state, id, "drops", "wanted_rewards"));
+    let same = |a: &str, b: &str| a.eq_ignore_ascii_case(b);
+    let items: Vec<GameItem> = games
+        .iter()
+        .map(|g| GameItem {
+            name: g.as_str().into(),
+            campaigns: account
+                .campaigns
+                .values()
+                .filter(|c| same(&c.game.name, g) && c.is_active(input.now))
+                .count() as i32,
+        })
+        .collect();
+    let mut suggestions: Vec<String> = account
+        .campaigns
+        .values()
+        .filter(|c| c.is_active(input.now))
+        .map(|c| c.game.name.clone())
+        .filter(|n| !games.iter().chain(&excluded).any(|g| same(g, n)))
+        .collect();
+    suggestions.sort_by_key(|s| s.to_lowercase());
+    suggestions.dedup();
+    sync(bridge.get_games(), items, |m| bridge.set_games(m));
+    sync(
+        bridge.get_exclude_games(),
+        excluded.into_iter().map(Into::into).collect(),
+        |m| bridge.set_exclude_games(m),
+    );
+    sync(
+        bridge.get_wanted_rewards(),
+        rewards.into_iter().map(Into::into).collect(),
+        |m| bridge.set_wanted_rewards(m),
+    );
+    sync(
+        bridge.get_game_suggestions(),
+        suggestions.into_iter().map(Into::into).collect(),
+        |m| bridge.set_game_suggestions(m),
+    );
+}
+
+fn plan_row(account: &Account, e: &PlanEntry, now: DateTime<Utc>, lang: i32) -> PlanRow {
+    let campaign = account.campaigns.get(&e.campaign_id);
+    let image = campaign.and_then(|c| {
+        c.image_url.clone().or_else(|| {
+            c.game
+                .box_art_url
+                .as_ref()
+                .map(|u| u.replace("{width}", "144").replace("{height}", "192"))
+        })
+    });
+    // Objective progress: its minutes, prerequisites included (chained drops).
+    let total = campaign
+        .map(|c| {
+            c.drops
+                .iter()
+                .filter(|d| {
+                    e.objective
+                        .iter()
+                        .any(|o| d.name == *o || d.benefits.iter().any(|b| b.name == *o))
+                })
+                .map(|d| chain_minutes(c, &d.id, 0))
+                .max()
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
+    let total = total.max(e.remaining_minutes);
+    let drops = campaign
+        .map(|c| {
+            c.drops
+                .iter()
+                .map(|d| DropLine {
+                    name: d
+                        .benefits
+                        .first()
+                        .map(|b| b.name.as_str())
+                        .unwrap_or(&d.name)
+                        .into(),
+                    current: d.current_minutes.min(d.required_minutes) as i32,
+                    required: d.required_minutes as i32,
+                    progress: if d.claimed {
+                        1.0
+                    } else if d.required_minutes == 0 {
+                        0.0
+                    } else {
+                        (d.current_minutes as f32 / d.required_minutes as f32).clamp(0.0, 1.0)
+                    },
+                    claimed: d.claimed,
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let channels = campaign
+        .and_then(|c| c.allowed_channels.as_ref())
+        .map(|list| {
+            list.iter()
+                .map(|ch| {
+                    ch.display_name
+                        .clone()
+                        .or_else(|| ch.login.clone())
+                        .unwrap_or_else(|| ch.id.clone())
+                })
+                .take(6)
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
+    let when = match e.status.as_str() {
+        "planned" | "at_risk" => e.start_at,
+        "upcoming" => e.starts_at,
+        "skipped" => e.skipped_until,
+        _ => None,
+    };
+    PlanRow {
+        campaign_id: e.campaign_id.as_str().into(),
+        campaign: e.campaign.as_str().into(),
+        game: e.game.as_str().into(),
+        image: images::get(image.as_deref()),
+        status: e.status.as_str().into(),
+        rewards: e.objective.join(", ").into(),
+        has_progress: total > 0,
+        progress: if total == 0 {
+            0.0
+        } else {
+            1.0 - e.remaining_minutes as f32 / total as f32
+        },
+        remaining_minutes: e.remaining_minutes as i32,
+        missing_minutes: e.missing_minutes.unwrap_or_default() as i32,
+        when: when_at(when, now, lang),
+        eta: when_at(e.eta, now, lang),
+        ends: when_at(Some(e.ends_at), now, lang),
+        link_url: e.link_url.clone().unwrap_or_default().into(),
+        details_url: campaign
+            .and_then(|c| c.details_url.clone())
+            .unwrap_or_default()
+            .into(),
+        channels: channels.into(),
+        listed: e.game_rank.is_some(),
+        drops: ModelRc::from(Rc::new(VecModel::from(drops))),
+    }
+}
+
+/// Minutes to reach a drop, its prerequisites included.
+fn chain_minutes(c: &tm_core::twitch::models::Campaign, drop_id: &str, depth: u8) -> u32 {
+    let Some(d) = c.drops.iter().find(|d| d.id == drop_id) else {
+        return 0;
+    };
+    if depth > 8 {
+        return d.required_minutes;
+    }
+    let before = d
+        .preconditions
+        .iter()
+        .map(|p| chain_minutes(c, p, depth + 1))
+        .max()
+        .unwrap_or_default();
+    before + d.required_minutes
+}
+
+/// A point in time for the views (local time, day relative to today).
+pub fn when_at(t: Option<DateTime<Utc>>, now: DateTime<Utc>, lang: i32) -> When {
+    let Some(t) = t else {
+        return When::default();
+    };
+    let local = t.with_timezone(&Local);
+    let today = now.with_timezone(&Local).date_naive();
+    let days = (local.date_naive() - today).num_days();
+    When {
+        day_offset: if (-1..=1).contains(&days) {
+            days as i32
+        } else {
+            99
+        },
+        date: local
+            .format(if lang == 1 { "%m/%d" } else { "%d/%m" })
+            .to_string()
+            .into(),
+        time: local.format("%H:%M").to_string().into(),
+        known: true,
     }
 }
 

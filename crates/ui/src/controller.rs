@@ -8,6 +8,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use serde_json::Value;
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use tm_client::Backend;
 use tm_core::{ApiResult, Command, Event};
@@ -133,6 +134,46 @@ impl Controller {
                 module: "drops".into(),
                 name: "focus".into(),
                 args: serde_json::json!({ "campaign_id": campaign_id.as_str() }),
+            })
+        });
+        let c = self.clone();
+        b.on_unfocus(move || c.module_call("drops", "unfocus", Value::Null, |_| {}));
+        let c = self.clone();
+        b.on_drops_refresh(move || c.module_call("drops", "refresh", Value::Null, |_| {}));
+        let c = self.clone();
+        b.on_drops_claim_all(move || {
+            let me = c.clone();
+            c.module_call("drops", "claim_all", Value::Null, move |r| {
+                if let Ok(v) = r {
+                    let n = v["claimed"].as_u64().unwrap_or_default();
+                    me.toast(ToastKind::Claimed, Tone::Success, n.to_string());
+                }
+            })
+        });
+        let c = self.clone();
+        b.on_list_add(move |key, value| {
+            let value = value.trim().to_string();
+            if value.is_empty() {
+                return;
+            }
+            c.edit_list(&key, move |list| {
+                if !list.iter().any(|v| v.eq_ignore_ascii_case(&value)) {
+                    list.push(value);
+                }
+            })
+        });
+        let c = self.clone();
+        b.on_list_remove(move |key, value| {
+            c.edit_list(&key, move |list| list.retain(|v| v != value.as_str()))
+        });
+        let c = self.clone();
+        b.on_list_move(move |key, from, to| {
+            c.edit_list(&key, move |list| {
+                let (from, to) = (from as usize, to as usize);
+                if from < list.len() && to < list.len() {
+                    let item = list.remove(from);
+                    list.insert(to, item);
+                }
             })
         });
         let weak = ui.as_weak();
@@ -366,6 +407,61 @@ impl Controller {
             {
                 open_url(url);
             }
+        });
+    }
+
+    /// `module_call` for the selected account.
+    fn module_call(
+        &self,
+        module: &str,
+        name: &str,
+        args: Value,
+        done: impl FnOnce(&ApiResult) + Send + 'static,
+    ) {
+        let me = self.clone();
+        let (module, name) = (module.to_string(), name.to_string());
+        self.on_ui(move |ui| {
+            let account = ui.global::<Bridge>().get_account().to_string();
+            if account.is_empty() {
+                return;
+            }
+            me.run(
+                Command::ModuleCall {
+                    account,
+                    module,
+                    name,
+                    args,
+                },
+                done,
+            );
+        });
+    }
+
+    /// Edits a list setting of the drops module (`games`, `exclude_games`,
+    /// `wanted_rewards`) from its current value in the state, and saves it where the
+    /// module reads it.
+    fn edit_list(&self, key: &str, f: impl FnOnce(&mut Vec<String>) + Send + 'static) {
+        const MODULE: &str = "drops";
+        if !matches!(key, "games" | "exclude_games" | "wanted_rewards") {
+            return;
+        }
+        let me = self.clone();
+        let key = key.to_string();
+        self.on_ui(move |ui| {
+            let account = ui.global::<Bridge>().get_account().to_string();
+            let (mut list, scope) = LAST.with(|l| {
+                let l = l.borrow();
+                (
+                    present::string_list(present::module_setting(&l.state, &account, MODULE, &key)),
+                    present::module_setting_scope(&l.state, &account, MODULE, &key),
+                )
+            });
+            f(&mut list);
+            me.command(Command::SettingsSet {
+                scope,
+                value: serde_json::json!({ key: list }),
+                merge: true,
+            });
         });
     }
 

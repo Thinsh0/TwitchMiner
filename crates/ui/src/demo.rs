@@ -79,7 +79,11 @@ fn fixture(now: DateTime<Utc>) -> Value {
         "instance_id": "demo",
         "started_at": m(-95),
         "manifest_revision": 2,
-        "settings": {"module:drops": {"games": ["Rust", "Marvel Rivals", "Deadlock"]}},
+        "settings": {"module:drops": {
+            "games": ["Rust", "Marvel Rivals", "Valorant", "Deadlock", "Apex Legends"],
+            "exclude_games": ["Fortnite"],
+            "wanted_rewards": ["Garage Door"]
+        }},
         "notices": {
             "update": {"id": "update", "level": "info",
                 "message": "TwitchMiner 0.2.0 is available.", "at": m(-30)}
@@ -130,6 +134,23 @@ fn fixture(now: DateTime<Utc>) -> Value {
                              "required_minutes": 360, "current_minutes": 158, "claimed": false,
                              "claim_id": null, "preconditions": [], "benefits": []}
                         ]
+                    },
+                    "c-ow": {
+                        "id": "c-ow", "name": "Overwatch League Viewer Rewards", "game": game("g7", "Overwatch 2"),
+                        "status": "ACTIVE", "starts_at": h(-10), "ends_at": h(300),
+                        "image_url": null, "details_url": null, "link_url": null, "linked": true,
+                        "allowed_channels": null, "drops": []
+                    },
+                    "c-mr": {
+                        "id": "c-mr", "name": "Season 4 Drops", "game": game("g2", "Marvel Rivals"),
+                        "status": "ACTIVE", "starts_at": h(-20), "ends_at": h(9),
+                        "image_url": null, "details_url": "https://example.com/campaign", "link_url": null,
+                        "linked": true, "allowed_channels": null,
+                        "drops": [
+                            {"id": "m1", "name": "Jeff Spray", "starts_at": h(-20), "ends_at": h(9),
+                             "required_minutes": 300, "current_minutes": 0, "claimed": false,
+                             "claim_id": null, "preconditions": [], "benefits": []}
+                        ]
                     }
                 },
                 "drop_target": {"campaign_id": "c-rust", "drop_id": "d2", "channel_id": "11", "game": "Rust"},
@@ -148,7 +169,25 @@ fn fixture(now: DateTime<Utc>) -> Value {
                             {"campaign_id": "c-dl", "campaign": "Deadlock Launch", "game": "Deadlock",
                              "status": "not_linked", "ends_at": h(200), "objective": ["Founder Badge"],
                              "remaining_minutes": 180,
-                             "link_url": "https://example.com/link", "game_rank": 2}
+                             "link_url": "https://example.com/link", "game_rank": 3},
+                            {"campaign_id": "c-vct", "campaign": "VCT Champions", "game": "Valorant",
+                             "status": "restricted", "ends_at": h(120), "objective": ["Champions Spray"],
+                             "remaining_minutes": 120, "game_rank": 2},
+                            {"campaign_id": "c-apex", "campaign": "Apex Legends Global Series", "game": "Apex Legends",
+                             "status": "planned", "ends_at": h(160), "objective": ["Pathfinder Charm"],
+                             "remaining_minutes": 240, "start_at": h(14), "eta": h(19), "game_rank": 4},
+                            {"campaign_id": "c-rust2", "campaign": "Rust Streamer Drops", "game": "Rust",
+                             "status": "will_miss", "ends_at": h(30), "objective": ["Neon Door"],
+                             "remaining_minutes": 600, "missing_minutes": 170, "game_rank": 0},
+                            {"campaign_id": "c-val2", "campaign": "Episode 10 Drops", "game": "Valorant",
+                             "status": "upcoming", "ends_at": h(400), "objective": ["Gun Buddy"],
+                             "remaining_minutes": 180, "starts_at": h(40), "game_rank": 2},
+                            {"campaign_id": "c-apex2", "campaign": "Holo-Day Bash", "game": "Apex Legends",
+                             "status": "skipped", "ends_at": h(90), "objective": ["Holo Banner"],
+                             "remaining_minutes": 60, "skipped_until": h(1), "game_rank": 4},
+                            {"campaign_id": "c-mr0", "campaign": "Launch Drops", "game": "Marvel Rivals",
+                             "status": "done", "ends_at": h(50), "objective": ["Launch Nameplate"],
+                             "remaining_minutes": 0, "game_rank": 1}
                         ]
                     }
                 }

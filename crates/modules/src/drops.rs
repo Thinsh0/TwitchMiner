@@ -454,15 +454,17 @@ impl Runtime {
         c: &Campaign,
     ) -> anyhow::Result<Option<UserInfo>> {
         let gql = ctx.gql();
+        let special = gql.manifest().load().special_game_ids.contains(&c.game.id);
         let plays_game = |u: &UserInfo| {
-            u.stream
-                .as_ref()
-                .and_then(|s| s.game.as_ref())
-                .is_some_and(|g| g.id == c.game.id || norm(&g.name) == norm(&c.game.name))
+            special
+                || u.stream
+                    .as_ref()
+                    .and_then(|s| s.game.as_ref())
+                    .is_some_and(|g| g.id == c.game.id || norm(&g.name) == norm(&c.game.name))
         };
         let ok = |u: &UserInfo| !self.banned_channels.contains_key(&u.id);
         if let Some(acl) = &c.allowed_channels {
-            let ids: Vec<String> = acl.iter().map(|a| a.id.clone()).take(100).collect();
+            let ids: Vec<String> = acl.iter().map(|a| a.id.clone()).collect();
             let mut users: Vec<UserInfo> = gql
                 .users_by_id(&ids)
                 .await?

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "revision": 1,
+  "revision": 2,
   "updated": "2026-10-20",
   "default_profile": "android_tv",
   "profiles": {
@@ -24,6 +24,7 @@
   },
   "web_user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
   "spade_url": "https://spade.twitch.tv/track",
+  "special_game_ids": ["509663", "509672"],
   "operations": {
     "StreamInfo": {
       "name": "VideoPlayerStreamInfoOverlayChannel",

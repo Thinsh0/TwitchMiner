@@ -29,6 +29,10 @@ pub struct Manifest {
     pub profiles: BTreeMap<String, ClientProfile>,
     pub web_user_agent: String,
     pub spade_url: String,
+    /// Drop campaigns of these "games" (e.g. Special Events) count on any allowed
+    /// channel, whatever it streams.
+    #[serde(default)]
+    pub special_game_ids: Vec<String>,
     pub operations: BTreeMap<String, Operation>,
 }
 

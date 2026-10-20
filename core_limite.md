@@ -50,25 +50,19 @@ Les JSON Schema (`settings_schema`, `settings_get(...).schema`) tirent leurs `de
 
 **Proposition** : permettre aux modules de fournir des libellés traduits, par exemple un champ `title` par réglage (`#[schemars(title = "…")]`) et un dictionnaire de traductions publié avec `modules_list` (`{"fr": {"refresh_minutes": {"title", "description"}}}`).
 
-## 7. Solde de points inconnu transmis comme 0
-
-`Gql::channel_points_context` (`crates/twitch/src/api.rs`) fait `balance: u(&cp, "balance").unwrap_or(0)` : quand Twitch ne renvoie pas `community.channel.self.communityPoints` (points de chaîne désactivés, réponse partielle, `self` nul…), le module `points` émet `PointsBalance { balance: 0 }`. L'état contient alors `points: 0` au lieu de `null`, et l'interface affiche « 0 » à la place de « — » : l'utilisateur croit avoir perdu ses points (constaté en test).
-
-**Proposition** : `PointsContext.balance: Option<u64>`, et ne pas émettre `PointsBalance` (ou émettre `null`) quand le solde est absent. Vérifier aussi que le hash de `ChannelPointsContext` du manifeste renvoie bien `communityPoints`.
-
-## 8. Solde des chaînes hors ligne jamais chargé
+## 7. Solde des chaînes hors ligne jamais chargé
 
 `PointsModule::refresh_contexts` ne charge le solde que des chaînes en direct (`if ch.stream.is_none() … continue`). Une chaîne hors ligne depuis le démarrage du moteur reste à `points: null` (« — » dans l'écran Chaînes), même si l'utilisateur y a des points.
 
 **Proposition** : charger une fois le solde de chaque chaîne suivie au démarrage (et toutes les quelques heures), même hors ligne : `ChannelPointsContext` fonctionne aussi pour une chaîne hors ligne.
 
-## 9. Pas de recherche de jeux
+## 8. Pas de recherche de jeux
 
 Pour ajouter un jeu à la liste des drops, l'interface ne peut proposer que les jeux qu'elle connaît déjà : ceux des campagnes (`accounts[].campaigns[].game`) et des chaînes en direct suivies. Un jeu sans campagne en cours doit être tapé exactement.
 
 **Proposition** : une commande `games_search { query }` (GQL `SearchCategories` ou équivalent, hash dans `manifest/twitch.json`) qui renvoie `[{id, name, box_art_url}]`, utilisable pour l'autocomplétion. À refuser ou non au jeton agent selon `access.rs` (trafic sortant).
 
-## 10. Les chaînes suivies sont minées par défaut
+## 9. Les chaînes suivies sont minées par défaut
 
 `PointsSettings::default()` (`crates/modules/src/points.rs`, ligne `follows: true`) fait miner **toutes** les chaînes suivies sur Twitch dès qu'un compte est ajouté. Avec beaucoup de follows, la liste se remplit de chaînes que l'utilisateur ne voulait pas : en test, il en a exclu 32 une par une (`exclude`) pour s'en débarrasser.
 

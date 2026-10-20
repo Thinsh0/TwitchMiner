@@ -108,8 +108,6 @@ msgstr "Sur cet ordinateur"
 msgid "Open the Twitch page"
 msgstr "Ouvrir la page Twitch"
 
-msgid "Open the Twitch page, sign in if needed, then enter this code:"
-msgstr "Ouvre la page Twitch, connecte-toi si besoin, puis saisis ce code :"
 
 msgid "Reconnect"
 msgstr "Se reconnecter"
@@ -204,3 +202,9 @@ msgstr "{} doit se reconnecter"
 
 msgid "TwitchMiner is already running on this computer. Connect to it as a remote server: the address and token are pre-filled."
 msgstr "TwitchMiner tourne déjà sur cet ordinateur. Connecte-toi à lui comme serveur distant : l'adresse et le jeton sont déjà remplis."
+
+msgid "Open the Twitch page and confirm this code (it is usually filled in already):"
+msgstr "Ouvre la page Twitch et valide ce code (il est normalement déjà rempli) :"
+
+msgid "Language"
+msgstr "Langue"

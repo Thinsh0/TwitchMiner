@@ -158,6 +158,16 @@ export component SettingsScreen inherits Page {
                 }
             }
         }
+        SettingRow {
+            label: @tr("Language");
+            // Language names are written in their own language.
+            Segmented {
+                width: 260px;
+                items: [{ label: "Français" }, { label: "English" }];
+                selected: Bridge.language;
+                picked(i) => { Bridge.language-changed(i); }
+            }
+        }
     }
 
     Card {

@@ -5604,6 +5604,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "open",
+ "serde",
  "serde_json",
  "slint",
  "slint-build",

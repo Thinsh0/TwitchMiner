@@ -9,6 +9,7 @@ slint::include_modules!();
 
 mod controller;
 mod dev;
+mod prefs;
 mod present;
 mod session;
 
@@ -52,11 +53,21 @@ pub fn run(runtime: tokio::runtime::Handle, opts: Options) -> anyhow::Result<()>
     }
     backend.select()?;
     let ui = MainWindow::new()?;
-    select_language();
+    let prefs = runtime.block_on(prefs::load(opts.data_dir.clone()));
+    let env_lang = std::env::var("TM_LANG").ok();
+    set_language(&ui, env_lang.as_deref().or(prefs.language.as_deref()));
+    ui.global::<Theme>()
+        .set_mode(theme_from_name(prefs.theme.as_deref()));
     ui.window().set_size(slint::LogicalSize::new(1180.0, 760.0));
-    let ctrl = controller::Controller::new(runtime.clone(), &ui, opts.data_dir);
+    let target = opts.target.clone().or_else(|| {
+        prefs.remote.as_ref().map(|r| Target::Remote {
+            url: r.url.clone(),
+            token: r.token.clone(),
+        })
+    });
+    let ctrl = controller::Controller::new(runtime.clone(), &ui, opts.data_dir, prefs);
     ctrl.bind(&ui);
-    ctrl.open(opts.target.unwrap_or(Target::Local), false);
+    ctrl.open(target.unwrap_or(Target::Local), false);
     // Relative times ("in 12 min") move on even when the state does not.
     let tick = slint::Timer::default();
     tick.start(
@@ -80,11 +91,23 @@ pub fn run(runtime: tokio::runtime::Handle, opts: Options) -> anyhow::Result<()>
     Ok(())
 }
 
-/// French by default (the primary language); `TM_LANG=en` switches to English.
-fn select_language() {
-    let lang = std::env::var("TM_LANG").unwrap_or_default().to_lowercase();
-    let lang = if lang.starts_with("en") { "en" } else { "fr" };
+/// French unless English is asked (`TM_LANG=en` or the preference).
+pub(crate) fn set_language(ui: &MainWindow, lang: Option<&str>) {
+    let lang = match lang {
+        Some(l) if l.to_lowercase().starts_with("en") => "en",
+        _ => "fr",
+    };
     if let Err(e) = slint::select_bundled_translation(lang) {
         tracing::warn!(error = %e, lang, "translation not available");
+    }
+    ui.global::<Bridge>()
+        .set_language(if lang == "en" { 1 } else { 0 });
+}
+
+pub(crate) fn theme_from_name(name: Option<&str>) -> ThemeMode {
+    match name {
+        Some("light") => ThemeMode::Light,
+        Some("oled") => ThemeMode::Oled,
+        _ => ThemeMode::Dark,
     }
 }

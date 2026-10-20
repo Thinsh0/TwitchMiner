@@ -105,6 +105,11 @@ fn logins(state: &State) -> Vec<LoginItem> {
             flow_id: f.flow_id.as_str().into(),
             code: f.user_code.as_str().into(),
             url: f.verification_uri.as_str().into(),
+            link: f
+                .verification_uri_complete
+                .as_deref()
+                .unwrap_or(&f.verification_uri)
+                .into(),
             expires_at: local_hm(f.expires_at).into(),
         })
         .collect()

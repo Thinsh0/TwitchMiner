@@ -32,7 +32,10 @@ export struct AccountItem {
 export struct LoginItem {
     flow-id: string,
     code: string,
+    // Activation page, as shown.
     url: string,
+    // Same page with the code pre-filled, to open.
+    link: string,
     // Local time, `HH:MM`.
     expires-at: string,
 }
@@ -83,6 +86,8 @@ export global Bridge {
     // Selected account id; empty = the only / first account.
     in-out property <string> account;
     in-out property <bool> login-busy;
+    // 0 = French, 1 = English (interface preference).
+    in-out property <int> language;
 
     callback select-account(string);
     callback login-start();
@@ -97,4 +102,5 @@ export global Bridge {
     callback set-account-enabled(string, bool);
     callback remove-account(string);
     callback theme-changed(int);
+    callback language-changed(int);
 }

@@ -23,7 +23,7 @@ export component LoginCard inherits Card {
         }
     }
     Muted {
-        text: @tr("Open the Twitch page, sign in if needed, then enter this code:");
+        text: @tr("Open the Twitch page and confirm this code (it is usually filled in already):");
         font-size: Theme.font-m;
     }
     HorizontalLayout {
@@ -59,7 +59,7 @@ export component LoginCard inherits Card {
             kind: ButtonKind.primary;
             icon: Icons.external;
             text: @tr("Open the Twitch page");
-            clicked => { Bridge.open-url(root.login.url); }
+            clicked => { Bridge.open-url(root.login.link); }
         }
         Button {
             kind: ButtonKind.ghost;

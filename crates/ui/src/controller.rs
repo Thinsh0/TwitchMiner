@@ -14,6 +14,7 @@ use tm_core::{ApiResult, Command, Event};
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 
+use crate::prefs::{self, Prefs, RemotePrefs};
 use crate::present::{self, Input, Last};
 use crate::session::{self, OpenError, Session, Target};
 use crate::{Bridge, Conn, MainWindow, SetupReason, ToastItem, ToastKind, Tone};
@@ -36,10 +37,11 @@ struct Inner {
     backend: Mutex<Option<Arc<dyn Backend>>>,
     session: tokio::sync::Mutex<Option<Session>>,
     watcher: Mutex<Option<JoinHandle<()>>>,
+    prefs: Mutex<Prefs>,
 }
 
 impl Controller {
-    pub fn new(rt: Handle, ui: &MainWindow, data_dir: Option<PathBuf>) -> Self {
+    pub fn new(rt: Handle, ui: &MainWindow, data_dir: Option<PathBuf>, prefs: Prefs) -> Self {
         Self(Arc::new(Inner {
             rt,
             ui: ui.as_weak(),
@@ -47,6 +49,7 @@ impl Controller {
             backend: Mutex::new(None),
             session: tokio::sync::Mutex::new(None),
             watcher: Mutex::new(None),
+            prefs: Mutex::new(prefs),
         }))
     }
 
@@ -111,8 +114,23 @@ impl Controller {
                 render(&ui);
             }
         });
-        b.on_theme_changed(|_| {
-            // Not persisted yet: see the note on interface preferences.
+        let c = self.clone();
+        b.on_theme_changed(move |i| {
+            let name = match i {
+                1 => "light",
+                2 => "oled",
+                _ => "dark",
+            };
+            c.update_prefs(|p| p.theme = Some(name.into()));
+        });
+        let c = self.clone();
+        let weak = ui.as_weak();
+        b.on_language_changed(move |i| {
+            let lang = if i == 1 { "en" } else { "fr" };
+            if let Some(ui) = weak.upgrade() {
+                crate::set_language(&ui, Some(lang));
+            }
+            c.update_prefs(|p| p.language = Some(lang.into()));
         });
     }
 
@@ -153,6 +171,14 @@ impl Controller {
             match Session::open(target.clone(), inner.data_dir.clone()).await {
                 Ok(new) => {
                     let backend = new.backend.clone();
+                    let remote = match &target {
+                        Target::Remote { url, token } => Some(RemotePrefs {
+                            url: url.clone(),
+                            token: token.clone(),
+                        }),
+                        Target::Local => None,
+                    };
+                    me.update_prefs(|p| p.remote = remote);
                     let old = inner.session.lock().await.replace(new);
                     me.watch(backend, &target);
                     if let Some(old) = old {
@@ -289,11 +315,27 @@ impl Controller {
         self.run(Command::LoginStart { profile: None }, move |r| {
             me.on_ui(|ui| ui.global::<Bridge>().set_login_busy(false));
             if let Ok(v) = r
-                && let Some(url) = v["verification_uri"].as_str()
+                && let Some(url) = v["verification_uri_complete"]
+                    .as_str()
+                    .or_else(|| v["verification_uri"].as_str())
             {
                 open_url(url);
             }
         });
+    }
+
+    /// Changes the interface preferences and saves them (in the background) if they
+    /// changed.
+    fn update_prefs(&self, f: impl FnOnce(&mut Prefs)) {
+        let saved = {
+            let mut p = self.0.prefs.lock().expect("prefs lock");
+            let before = p.clone();
+            f(&mut p);
+            (*p != before).then(|| p.clone())
+        };
+        if let Some(p) = saved {
+            self.0.rt.spawn(prefs::save(self.0.data_dir.clone(), p));
+        }
     }
 
     /// Fire-and-forget command; failures become a toast.

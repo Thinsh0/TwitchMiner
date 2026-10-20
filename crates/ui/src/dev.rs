@@ -54,7 +54,7 @@ fn write_bmp(path: &std::path::Path, w: u32, h: u32, rgba: &[u8]) -> std::io::Re
 /// `TM_UI_SCREEN` (home, drops, channels, activity, settings) and `TM_UI_THEME`
 /// (dark, light, oled): start on a given view, for screenshots.
 pub fn apply_env(ui: &MainWindow) {
-    use crate::{Bridge, Screen, Theme, ThemeMode};
+    use crate::{Bridge, Screen, Theme};
     if let Ok(s) = std::env::var("TM_UI_SCREEN") {
         let screen = match s.as_str() {
             "drops" => Screen::Drops,
@@ -66,11 +66,7 @@ pub fn apply_env(ui: &MainWindow) {
         ui.global::<Bridge>().set_screen(screen);
     }
     if let Ok(t) = std::env::var("TM_UI_THEME") {
-        let mode = match t.as_str() {
-            "light" => ThemeMode::Light,
-            "oled" => ThemeMode::Oled,
-            _ => ThemeMode::Dark,
-        };
-        ui.global::<Theme>().set_mode(mode);
+        ui.global::<Theme>()
+            .set_mode(crate::theme_from_name(Some(&t)));
     }
 }

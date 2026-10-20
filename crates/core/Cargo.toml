@@ -26,3 +26,6 @@ arc-swap.workspace = true
 rusqlite.workspace = true
 directories.workspace = true
 rand.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

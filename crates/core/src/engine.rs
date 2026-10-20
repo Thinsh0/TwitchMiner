@@ -547,8 +547,9 @@ impl Engine {
             return Err(ApiError::invalid("settings must be a JSON object"));
         }
 
-        // Validate the resulting effective document.
+        // Validate the resulting effective document (deleting a scope needs no validation).
         match parsed {
+            _ if next.is_null() => {}
             Scope::Engine => {
                 let mut eff = json!(EngineSettings::default());
                 merge_json(&mut eff, &next);

@@ -169,6 +169,29 @@ export struct ChannelItem {
     pending: bool,
 }
 
+export struct ChartBar {
+    label: string,
+    value: int,
+    // value / max, 0..1
+    ratio: float,
+}
+
+// One history row (`history` command), phrased by the view from its kind.
+export struct HistoryItem {
+    id: int,
+    // points_earned | points_spent | raid_joined | moment_claimed | prediction_placed
+    // | prediction_result | watch_started | watch_stopped | drop_claimed | drop_alert
+    // | account_status_changed | notice_raised | login_finished | other
+    kind: string,
+    when: When,
+    channel: string,
+    // Kind-specific values (see present.rs `history_item`).
+    n: int,
+    a: string,
+    b: string,
+    c: string,
+}
+
 export struct GameItem {
     name: string,
     // Number of campaigns of this game in the plan.
@@ -232,6 +255,21 @@ export global Bridge {
     in property <int> points-order;
     in property <bool> points-enabled;
 
+    // Activity (selected account). The view chooses; the controller queries.
+    // 0 = points, 1 = minutes watched, 2 = drops
+    in-out property <int> chart-metric;
+    // 0 = per day, 1 = per channel
+    in-out property <int> chart-group;
+    // 7 or 30
+    in-out property <int> chart-days: 30;
+    in property <[ChartBar]> chart;
+    in property <int> chart-total;
+    // 0 = all, 1 = points, 2 = drops, 3 = watching, 4 = predictions & raids, 5 = account
+    in-out property <int> history-filter;
+    in property <[HistoryItem]> history;
+    in property <bool> history-more;
+    in property <bool> history-loading;
+
     in property <string> version;
     in property <int> manifest-revision;
 
@@ -273,5 +311,10 @@ export global Bridge {
     // Sets one module setting: module, key, JSON value.
     callback set-module-setting(string, string, string);
     callback add-channel(string);
+    // The activity choices changed (chart or filter): query again.
+    callback activity-changed();
+    callback history-load-more();
+    // A screen was opened (lets the controller load what it shows).
+    callback screen-shown();
     callback remove-channel(string);
 }

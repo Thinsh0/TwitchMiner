@@ -1,0 +1,329 @@
+// Activity: "what did it bring in?" A chart on top, the history below.
+
+import { Theme } from "../theme.slint";
+import { Bridge, ChartBar, HistoryItem } from "../bridge.slint";
+import { Fmt } from "../fmt.slint";
+import { Button, ButtonKind, Card, Icon, Icons, Muted, Page, Segmented, Tone, Tones } from "../widgets.slint";
+import { Whens } from "drops.slint";
+import { Labels } from "settings.slint";
+
+component SectionTitle inherits Text {
+    font-size: Theme.font-l;
+    font-weight: 700;
+    color: Theme.text;
+}
+
+global Metric {
+    pure public function value(v: int) -> string {
+        if Bridge.chart-metric == 1 { return Fmt.duration(v); }
+        return Fmt.int(v);
+    }
+    pure public function total(v: int) -> string {
+        if Bridge.chart-metric == 1 { return @tr("{} watched", Fmt.duration(v)); }
+        if Bridge.chart-metric == 2 { return v == 1 ? @tr("1 drop") : @tr("{} drops", Fmt.int(v)); }
+        return @tr("{} points", Fmt.int(v));
+    }
+}
+
+// History rows in plain words.
+global History {
+    pure public function points-reason(r: string) -> string {
+        if r == "CLAIM" { return @tr("bonus chest"); }
+        if r == "WATCH" { return @tr("watching"); }
+        if r == "WATCH_STREAK" { return @tr("watch streak"); }
+        if r == "RAID" { return @tr("raid"); }
+        return r;
+    }
+    pure public function stop-cause(c: string) -> string {
+        if c == "offline" { return @tr("the stream ended"); }
+        if c == "rescheduled" { return @tr("another channel took the slot"); }
+        if c == "paused" { return @tr("paused"); }
+        if c == "outside active hours" { return @tr("outside watching hours"); }
+        return c;
+    }
+    pure public function text(h: HistoryItem) -> string {
+        if h.kind == "points_earned" { return @tr("+{} points on {}", Fmt.int(h.n), h.channel); }
+        if h.kind == "points_spent" { return @tr("{} points spent on {}", Fmt.int(h.n), h.channel); }
+        if h.kind == "raid_joined" { return @tr("Raid from {} to {}", h.channel, h.a); }
+        if h.kind == "moment_claimed" { return @tr("Moment claimed on {}", h.channel); }
+        if h.kind == "prediction_placed" { return @tr("Bet {} points on “{}”", Fmt.int(h.n), h.a); }
+        if h.kind == "prediction_result" {
+            if h.a == "WIN" { return @tr("Prediction won: +{} points", Fmt.int(h.n)); }
+            if h.a == "LOSE" { return @tr("Prediction lost: {} points", Fmt.int(h.n)); }
+            return @tr("Prediction refunded");
+        }
+        if h.kind == "watch_started" { return @tr("Started watching {}", h.channel); }
+        if h.kind == "watch_stopped" { return @tr("Stopped watching {}", h.channel); }
+        if h.kind == "drop_claimed" { return @tr("Drop claimed: {}", h.a); }
+        if h.kind == "drop_alert" {
+            if h.a == "at_risk" { return @tr("{} may not finish in time", h.b); }
+            if h.a == "will_miss" { return @tr("{} will not be finished", h.b); }
+            if h.a == "not_linked" { return @tr("Link your {} account", h.b); }
+            return @tr("New campaign for {}", h.b);
+        }
+        if h.kind == "account_status_changed" { return @tr("Account: {}", Labels.account-status(h.a)); }
+        if h.kind == "login_finished" { return h.a == "" ? @tr("Account connected") : @tr("Sign-in failed: {}", h.a); }
+        if h.kind == "notice_raised" { return h.a; }
+        return h.kind;
+    }
+    pure public function detail(h: HistoryItem) -> string {
+        if h.kind == "points_earned" { return History.points-reason(h.a); }
+        if h.kind == "prediction_placed" { return h.b; }
+        if h.kind == "watch_started" {
+            if h.a == "drops" { return h.b == "" ? @tr("for drops") : @tr("for drops: {}", h.b); }
+            if h.a == "streak" { return @tr("for the watch streak"); }
+            if h.a == "points" { return @tr("for channel points"); }
+            return h.b;
+        }
+        if h.kind == "watch_stopped" { return History.stop-cause(h.a); }
+        if h.kind == "drop_claimed" { return h.b; }
+        if h.kind == "drop_alert" { return h.c; }
+        if h.kind == "account_status_changed" { return h.b; }
+        return "";
+    }
+    pure public function icon(kind: string) -> image {
+        if kind == "points_earned" || kind == "points_spent" { return Icons.coins; }
+        if kind == "drop_claimed" || kind == "drop_alert" { return Icons.gift; }
+        if kind == "watch_started" || kind == "watch_stopped" { return Icons.tv; }
+        if kind == "prediction_placed" || kind == "prediction_result" { return Icons.star; }
+        if kind == "raid_joined" || kind == "moment_claimed" { return Icons.bolt; }
+        if kind == "account_status_changed" || kind == "login_finished" { return Icons.user; }
+        return Icons.info;
+    }
+    pure public function tone(h: HistoryItem) -> Tone {
+        if h.kind == "points_earned" || h.kind == "drop_claimed" { return Tone.success; }
+        if h.kind == "prediction_result" { return h.a == "WIN" ? Tone.success : h.a == "LOSE" ? Tone.danger : Tone.neutral; }
+        if h.kind == "drop_alert" { return Tone.warning; }
+        if h.kind == "watch_started" || h.kind == "raid_joined" || h.kind == "moment_claimed" { return Tone.accent; }
+        return Tone.neutral;
+    }
+}
+
+// Vertical bars, one per day.
+component DayChart inherits Rectangle {
+    property <length> bar-area: 170px;
+    property <int> hovered: -1;
+    height: bar-area + 26px;
+    HorizontalLayout {
+        spacing: Bridge.chart.length > 14 ? 4px : 10px;
+        for bar[i] in Bridge.chart: Rectangle {
+            Rectangle {
+                y: root.bar-area - self.height;
+                height: max(bar.value > 0 ? 3px : 1px, root.bar-area * bar.ratio);
+                border-radius: 3px;
+                background: bar.value == 0 ? Theme.inset : i == root.hovered ? Theme.accent : Theme.accent-strong;
+                animate height { duration: 250ms; easing: ease-out; }
+            }
+            // Day label: every one for a week, every fifth for a month (and the last).
+            if Bridge.chart.length <= 14 || mod(Bridge.chart.length - 1 - i, 5) == 0: Text {
+                y: root.bar-area + 8px;
+                width: 60px;
+                x: (parent.width - self.width) / 2;
+                text: bar.label;
+                font-size: Theme.font-xs;
+                color: Theme.text-faint;
+                horizontal-alignment: center;
+            }
+            if i == root.hovered: Rectangle {
+                y: max(0px, root.bar-area * (1 - bar.ratio) - 30px);
+                x: (parent.width - self.width) / 2;
+                width: tip.preferred-width + 16px;
+                height: 24px;
+                border-radius: Theme.radius-s;
+                background: Theme.is-light ? #17141f : #ffffff;
+                z: 2;
+                tip := Text {
+                    text: bar.label + " · " + Metric.value(bar.value);
+                    font-size: Theme.font-xs;
+                    font-weight: 600;
+                    color: Theme.is-light ? #ffffff : #17141f;
+                }
+            }
+            TouchArea {
+                changed has-hover => {
+                    if self.has-hover { root.hovered = i; } else if root.hovered == i { root.hovered = -1; }
+                }
+            }
+        }
+    }
+}
+
+// Horizontal bars, one per channel (best first).
+component ChannelChart inherits VerticalLayout {
+    spacing: 8px;
+    for bar in Bridge.chart: HorizontalLayout {
+        spacing: 10px;
+        Text {
+            text: bar.label;
+            width: 150px;
+            font-size: Theme.font-s;
+            color: Theme.text;
+            overflow: elide;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            height: 18px;
+            Rectangle {
+                x: 0;
+                width: max(3px, parent.width * bar.ratio);
+                border-radius: 4px;
+                background: Theme.accent-strong;
+                animate width { duration: 250ms; easing: ease-out; }
+            }
+        }
+        Text {
+            text: Metric.value(bar.value);
+            width: 90px;
+            font-size: Theme.font-s;
+            font-weight: 600;
+            color: Theme.text;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component HistoryRow inherits HorizontalLayout {
+    in property <HistoryItem> item;
+    spacing: 12px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    Rectangle {
+        width: 30px;
+        height: 30px;
+        border-radius: Theme.radius-m;
+        background: Tones.bg(History.tone(root.item));
+        Icon {
+            source: History.icon(root.item.kind);
+            size: 15px;
+            colorize: Tones.fg(History.tone(root.item));
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 1px;
+        horizontal-stretch: 1;
+        Text {
+            text: History.text(root.item);
+            color: Theme.text;
+            overflow: elide;
+        }
+        if History.detail(root.item) != "": Text {
+            text: History.detail(root.item);
+            font-size: Theme.font-xs;
+            color: Theme.text-faint;
+            overflow: elide;
+        }
+    }
+    Text {
+        text: Whens.text(root.item.when);
+        font-size: Theme.font-xs;
+        color: Theme.text-faint;
+        vertical-alignment: center;
+    }
+}
+
+export component ActivityScreen inherits Page {
+    title: @tr("Activity");
+    subtitle: @tr("What did it bring in?");
+
+    Card {
+        spacing: 14px;
+        HorizontalLayout {
+            spacing: 10px;
+            VerticalLayout {
+                spacing: 2px;
+                horizontal-stretch: 1;
+                SectionTitle {
+                    text: Metric.total(Bridge.chart-total);
+                }
+                Muted {
+                    text: Bridge.chart-days == 7 ? @tr("Over the last 7 days") : @tr("Over the last 30 days");
+                }
+            }
+            Segmented {
+                width: 150px;
+                items: [{ label: @tr("7 days") }, { label: @tr("30 days") }];
+                selected: Bridge.chart-days == 7 ? 0 : 1;
+                picked(i) => {
+                    Bridge.chart-days = i == 0 ? 7 : 30;
+                    Bridge.activity-changed();
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            Segmented {
+                horizontal-stretch: 1;
+                items: [{ label: @tr("Points") }, { label: @tr("Watched") }, { label: @tr("Drops") }];
+                selected: Bridge.chart-metric;
+                picked(i) => {
+                    Bridge.chart-metric = i;
+                    Bridge.activity-changed();
+                }
+            }
+            Segmented {
+                width: 240px;
+                items: [{ label: @tr("Per day") }, { label: @tr("Per channel") }];
+                selected: Bridge.chart-group;
+                picked(i) => {
+                    Bridge.chart-group = i;
+                    Bridge.activity-changed();
+                }
+            }
+        }
+        if Bridge.chart-group == 0: DayChart { }
+        if Bridge.chart-group == 1 && Bridge.chart.length > 0: ChannelChart { }
+        if Bridge.chart-group == 1 && Bridge.chart.length == 0: Muted {
+            text: @tr("Nothing over this period yet.");
+        }
+    }
+
+    Card {
+        HorizontalLayout {
+            SectionTitle {
+                text: @tr("History");
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+        }
+        Segmented {
+            items: [
+                { label: @tr("All") },
+                { label: @tr("Points") },
+                { label: @tr("Drops") },
+                { label: @tr("Watching") },
+                { label: @tr("Bets & raids") },
+                { label: @tr("Account") },
+            ];
+            selected: Bridge.history-filter;
+            picked(i) => {
+                Bridge.history-filter = i;
+                Bridge.activity-changed();
+            }
+        }
+        for item[i] in Bridge.history: VerticalLayout {
+            if i > 0: Rectangle {
+                height: 1px;
+                background: Theme.border;
+            }
+            HistoryRow {
+                item: item;
+            }
+        }
+        if Bridge.history.length == 0 && !Bridge.history-loading: Muted {
+            font-size: Theme.font-m;
+            text: @tr("Nothing yet. Events appear here as TwitchMiner works.");
+        }
+        if Bridge.history-more: HorizontalLayout {
+            alignment: center;
+            Button {
+                kind: ButtonKind.ghost;
+                text: @tr("Load more");
+                busy: Bridge.history-loading;
+                clicked => { Bridge.history-load-more(); }
+            }
+        }
+    }
+}

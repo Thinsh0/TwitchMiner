@@ -281,7 +281,7 @@ fn home(bridge: &Bridge, state: &State, id: &str, account: Option<&Account>, inp
 
 /// Splits a watch reason (`drops: <game>`, `points: watch streak`, `points`…) into a
 /// kind the views know and a detail.
-fn reason(raw: &str) -> (&'static str, String) {
+pub fn reason(raw: &str) -> (&'static str, String) {
     let (kind, detail) = raw
         .split_once(':')
         .map(|(k, d)| (k.trim(), d.trim()))

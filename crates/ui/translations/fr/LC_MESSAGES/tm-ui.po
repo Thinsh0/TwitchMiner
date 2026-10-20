@@ -157,8 +157,6 @@ msgstr "L'interface est la même dans les deux cas."
 msgid "Theme"
 msgstr "Thème"
 
-msgid "This screen is coming in a next step."
-msgstr "Cet écran arrive dans une prochaine étape."
 
 msgid "To do"
 msgstr "À faire"
@@ -583,3 +581,135 @@ msgstr "Regardées en premier, dans cet ordre. Glisse la poignée pour réordonn
 
 msgid "Your order only breaks ties: the priority below decides first."
 msgstr "Ton ordre ne sert qu'à départager : la priorité ci-dessous décide d'abord."
+
+msgid "+{} points on {}"
+msgstr "+{} points sur {}"
+
+msgid "1 drop"
+msgstr "1 drop"
+
+msgid "30 days"
+msgstr "30 jours"
+
+msgid "7 days"
+msgstr "7 jours"
+
+msgid "Account"
+msgstr "Compte"
+
+msgid "Account connected"
+msgstr "Compte connecté"
+
+msgid "Account: {}"
+msgstr "Compte : {}"
+
+msgid "All"
+msgstr "Tout"
+
+msgid "Bet {} points on “{}”"
+msgstr "Pari de {} points sur « {} »"
+
+msgid "Bets & raids"
+msgstr "Paris et raids"
+
+msgid "Drop claimed: {}"
+msgstr "Drop récupéré : {}"
+
+msgid "History"
+msgstr "Historique"
+
+msgid "Load more"
+msgstr "Voir plus"
+
+msgid "Moment claimed on {}"
+msgstr "Moment récupéré sur {}"
+
+msgid "New campaign for {}"
+msgstr "Nouvelle campagne pour {}"
+
+msgid "Nothing over this period yet."
+msgstr "Rien sur cette période pour l'instant."
+
+msgid "Nothing yet. Events appear here as TwitchMiner works."
+msgstr "Rien pour l'instant. Les événements apparaissent ici au fil du minage."
+
+msgid "Over the last 30 days"
+msgstr "Sur les 30 derniers jours"
+
+msgid "Over the last 7 days"
+msgstr "Sur les 7 derniers jours"
+
+msgid "Per channel"
+msgstr "Par chaîne"
+
+msgid "Per day"
+msgstr "Par jour"
+
+msgid "Prediction lost: {} points"
+msgstr "Prédiction perdue : {} points"
+
+msgid "Prediction refunded"
+msgstr "Prédiction remboursée"
+
+msgid "Prediction won: +{} points"
+msgstr "Prédiction gagnée : +{} points"
+
+msgid "Raid from {} to {}"
+msgstr "Raid de {} vers {}"
+
+msgid "Sign-in failed: {}"
+msgstr "Connexion échouée : {}"
+
+msgid "Started watching {}"
+msgstr "Visionnage de {} commencé"
+
+msgid "Stopped watching {}"
+msgstr "Visionnage de {} arrêté"
+
+msgid "Watching"
+msgstr "Visionnage"
+
+msgid "another channel took the slot"
+msgstr "une autre chaîne a pris la place"
+
+msgid "bonus chest"
+msgstr "coffre bonus"
+
+msgid "for channel points"
+msgstr "pour les points de chaîne"
+
+msgid "for drops"
+msgstr "pour les drops"
+
+msgid "for drops: {}"
+msgstr "pour les drops : {}"
+
+msgid "for the watch streak"
+msgstr "pour la série de visionnage"
+
+msgid "outside watching hours"
+msgstr "hors des plages horaires"
+
+msgid "raid"
+msgstr "raid"
+
+msgid "the stream ended"
+msgstr "le live s'est terminé"
+
+msgid "watch streak"
+msgstr "série de visionnage"
+
+msgid "watching"
+msgstr "visionnage"
+
+msgid "{} drops"
+msgstr "{} drops"
+
+msgid "{} points"
+msgstr "{} points"
+
+msgid "{} points spent on {}"
+msgstr "{} points dépensés sur {}"
+
+msgid "{} watched"
+msgstr "{} regardées"

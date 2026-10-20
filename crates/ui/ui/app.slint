@@ -5,9 +5,9 @@ import { Avatar, Dot, Icon, IconButton, Icons, Muted, Tone, Tones } from "widget
 import { HomeScreen } from "screens/home.slint";
 import { SettingsScreen } from "screens/settings.slint";
 import { ConnectScreen } from "screens/connect.slint";
-import { PlaceholderScreen } from "screens/placeholder.slint";
 import { DropsScreen } from "screens/drops.slint";
 import { ChannelsScreen } from "screens/channels.slint";
+import { ActivityScreen } from "screens/activity.slint";
 
 export { Bridge, Theme, ThemeMode }
 
@@ -330,6 +330,8 @@ export component MainWindow inherits Window {
     default-font-size: Theme.font-m;
 
     property <bool> light: Theme.is-light;
+    property <Screen> shown-screen: Bridge.screen;
+    changed shown-screen => { Bridge.screen-shown(); }
     init => { Palette.color-scheme = Theme.is-light ? ColorScheme.light : ColorScheme.dark; }
     changed light => { Palette.color-scheme = Theme.is-light ? ColorScheme.light : ColorScheme.dark; }
 
@@ -350,11 +352,7 @@ export component MainWindow inherits Window {
             if Bridge.screen == Screen.home: HomeScreen { }
             if Bridge.screen == Screen.drops: DropsScreen { }
             if Bridge.screen == Screen.channels: ChannelsScreen { }
-            if Bridge.screen == Screen.activity: PlaceholderScreen {
-                title: @tr("Activity");
-                question: @tr("What did it bring in?");
-                icon: Icons.chart;
-            }
+            if Bridge.screen == Screen.activity: ActivityScreen { }
             if Bridge.screen == Screen.settings: SettingsScreen { }
         }
     }

@@ -15,6 +15,7 @@ use tm_core::{ApiResult, Command, Event};
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 
+use crate::activity;
 use crate::prefs::{self, Prefs, RemotePrefs};
 use crate::present::{self, Input, Last, Today};
 use crate::session::{self, OpenError, Session, Target};
@@ -115,6 +116,7 @@ impl Controller {
                 ui.global::<Bridge>().set_account(id);
                 render(&ui);
                 c.refresh_today();
+                c.load_activity(false);
             }
         });
         let c = self.clone();
@@ -183,6 +185,12 @@ impl Controller {
                 Err(e) => tracing::warn!(error = %e, %key, "invalid setting value from the view"),
             }
         });
+        let c = self.clone();
+        b.on_activity_changed(move || c.load_activity(false));
+        let c = self.clone();
+        b.on_screen_shown(move || c.load_activity(false));
+        let c = self.clone();
+        b.on_history_load_more(move || c.load_activity(true));
         let c = self.clone();
         b.on_add_channel(move |login| {
             let login = login.trim().trim_start_matches('@').to_lowercase();
@@ -366,6 +374,7 @@ impl Controller {
                 if first {
                     first = false;
                     me.refresh_today();
+                    me.load_activity(false);
                 }
                 // Wait for the next change, handling events (toasts) in between.
                 loop {
@@ -435,6 +444,73 @@ impl Controller {
             {
                 open_url(url);
             }
+        });
+    }
+
+    /// Queries the Activity screen's chart and history (only while it is shown).
+    /// `more`: next page of the history, appended.
+    pub fn load_activity(&self, more: bool) {
+        let me = self.clone();
+        self.on_ui(move |ui| {
+            let b = ui.global::<Bridge>();
+            if b.get_screen() != crate::Screen::Activity {
+                return;
+            }
+            let choice = activity::Choice {
+                account: b.get_account().to_string(),
+                metric: b.get_chart_metric(),
+                group: b.get_chart_group(),
+                days: b.get_chart_days(),
+                filter: b.get_history_filter(),
+            };
+            if choice.account.is_empty() {
+                return;
+            }
+            let Some(backend) = me.0.backend.lock().expect("backend lock").clone() else {
+                return;
+            };
+            let before = more
+                .then(|| ACTIVITY.with(|a| a.borrow().history.last().map(|r| r["id"].as_i64())))
+                .flatten()
+                .flatten();
+            if more && before.is_none() {
+                return;
+            }
+            b.set_history_loading(true);
+            let now = chrono::Utc::now();
+            let stats_cmd = serde_json::from_value::<Command>(activity::stats_query(&choice, now));
+            let history_cmd =
+                serde_json::from_value::<Command>(activity::history_query(&choice, before));
+            let ui = me.0.ui.clone();
+            me.0.rt.spawn(async move {
+                let stats = match (more, stats_cmd) {
+                    (false, Ok(cmd)) => backend.execute(cmd).await.ok(),
+                    _ => None,
+                };
+                let history = match history_cmd {
+                    Ok(cmd) => backend.execute(cmd).await.ok(),
+                    Err(_) => None,
+                };
+                let _ = ui.upgrade_in_event_loop(move |ui| {
+                    ACTIVITY.with(|a| {
+                        let mut a = a.borrow_mut();
+                        if !more {
+                            a.history.clear();
+                        }
+                        if let Some(s) = stats {
+                            a.stats = s;
+                        }
+                        let rows = history
+                            .and_then(|h| h.as_array().cloned())
+                            .unwrap_or_default();
+                        a.more = rows.len() >= activity::PAGE;
+                        a.history.extend(rows);
+                        a.choice = Some(choice);
+                    });
+                    render_activity(&ui);
+                    ui.global::<Bridge>().set_history_loading(false);
+                });
+            });
         });
     }
 
@@ -510,6 +586,15 @@ impl Controller {
                 merge: true,
             });
         });
+    }
+
+    /// Periodic refresh of query-based views; keeps extra history pages.
+    pub fn tick(&self) {
+        self.refresh_today();
+        let paged = ACTIVITY.with(|a| a.borrow().history.len() > activity::PAGE);
+        if !paged {
+            self.load_activity(false);
+        }
     }
 
     /// Reloads today's totals of the selected account (`stats` query, not engine state).
@@ -605,6 +690,42 @@ impl Controller {
             s.close().await;
         }
     }
+}
+
+/// Last Activity query results, on the UI thread.
+#[derive(Default)]
+struct ActivityCache {
+    choice: Option<activity::Choice>,
+    stats: Value,
+    history: Vec<Value>,
+    more: bool,
+}
+
+thread_local! {
+    static ACTIVITY: RefCell<ActivityCache> = RefCell::new(ActivityCache::default());
+}
+
+fn render_activity(ui: &MainWindow) {
+    let b = ui.global::<Bridge>();
+    let lang = b.get_language();
+    let now = chrono::Utc::now();
+    ACTIVITY.with(|a| {
+        let a = a.borrow();
+        let Some(choice) = &a.choice else { return };
+        LAST.with(|l| {
+            let state = &l.borrow().state;
+            let (bars, total) = activity::chart(&a.stats, choice, state, now, lang);
+            b.set_chart(ModelRc::new(VecModel::from(bars)));
+            b.set_chart_total(total.clamp(i32::MIN as i64, i32::MAX as i64) as i32);
+            let items: Vec<_> = a
+                .history
+                .iter()
+                .map(|r| activity::history_item(r, state, now, lang))
+                .collect();
+            present::sync(b.get_history(), items, |m| b.set_history(m));
+        });
+        b.set_history_more(a.more);
+    });
 }
 
 /// Re-renders every view from the last state (UI thread).

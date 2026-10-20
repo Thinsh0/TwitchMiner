@@ -10,6 +10,7 @@
 
 slint::include_modules!();
 
+mod activity;
 mod controller;
 mod demo;
 mod dev;
@@ -82,7 +83,7 @@ pub fn run(runtime: tokio::runtime::Handle, opts: Options) -> anyhow::Result<()>
                 if let Some(ui) = weak.upgrade() {
                     controller::render(&ui);
                 }
-                ctrl.refresh_today();
+                ctrl.tick();
             }
         },
     );

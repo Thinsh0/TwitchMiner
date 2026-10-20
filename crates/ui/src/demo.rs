@@ -53,13 +53,130 @@ impl Backend for Demo {
         self.link.clone()
     }
     async fn execute(&self, cmd: Command) -> ApiResult {
-        Ok(match cmd {
-            Command::Stats { .. } => json!([
-                {"key": "today", "points": 1840, "watch_minutes": 212, "drops": 2}
-            ]),
+        let q = serde_json::to_value(&cmd).unwrap_or_default();
+        Ok(match q["cmd"].as_str() {
+            Some("stats") => demo_stats(&q),
+            Some("history") => demo_history(&q),
             _ => Value::Null,
         })
     }
+}
+
+/// Daily rows over the asked period (a deterministic wave), or totals per channel.
+fn demo_stats(q: &Value) -> Value {
+    if q["group_by"] == "channel" {
+        return json!([
+            {"key": "12", "points": 5210, "watch_minutes": 610, "drops": 0},
+            {"key": "11", "points": 3870, "watch_minutes": 980, "drops": 5},
+            {"key": "14", "points": 1460, "watch_minutes": 220, "drops": 0},
+            {"key": "15", "points": 640, "watch_minutes": 95, "drops": 0}
+        ]);
+    }
+    let from = q["from"]
+        .as_str()
+        .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
+    let to = q["to"]
+        .as_str()
+        .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
+    let (Some(from), Some(to)) = (from, to) else {
+        return json!([]);
+    };
+    let mut rows = Vec::new();
+    let mut day = from;
+    let mut i = 0i64;
+    while day <= to {
+        // Some days without activity, others with more.
+        let wave = [0, 620, 1340, 980, 0, 1810, 2240, 760, 1450, 1990][(i % 10) as usize];
+        if wave > 0 {
+            rows.push(json!({
+                "key": day.format("%Y-%m-%d").to_string(),
+                "points": wave,
+                "watch_minutes": wave / 9,
+                "drops": (i % 4 == 1) as i64,
+            }));
+        }
+        day += Duration::days(1);
+        i += 1;
+    }
+    Value::Array(rows)
+}
+
+/// A page of plausible history rows, newest first.
+fn demo_history(q: &Value) -> Value {
+    let now = Utc::now();
+    let before = q["before_id"].as_i64().unwrap_or(1000);
+    let kinds: Vec<&str> = q["kinds"]
+        .as_array()
+        .map(|k| k.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+    let samples = [
+        (
+            "points_earned",
+            Some("11"),
+            json!({"amount": 50, "reason": "CLAIM", "balance": 48210}),
+        ),
+        (
+            "drop_claimed",
+            None,
+            json!({"campaign_id": "c-rust", "drop_id": "d1", "drop_name": "Hazmat Hoodie", "game": "Rust"}),
+        ),
+        (
+            "points_earned",
+            Some("12"),
+            json!({"amount": 450, "reason": "WATCH_STREAK", "balance": 152340}),
+        ),
+        (
+            "watch_started",
+            Some("12"),
+            json!({"reason": "points: watch streak"}),
+        ),
+        (
+            "prediction_result",
+            Some("12"),
+            json!({"event_id": "e1", "result": "WIN", "points_won": 1200}),
+        ),
+        (
+            "raid_joined",
+            Some("14"),
+            json!({"target_login": "otplol_"}),
+        ),
+        ("watch_stopped", Some("14"), json!({"cause": "offline"})),
+        (
+            "drop_alert",
+            None,
+            json!({"alert": {"kind": "at_risk", "campaign_id": "c-mr", "campaign": "Season 4 Drops", "game": "Marvel Rivals", "ends_at": ts(now + Duration::hours(9)), "rewards": ["Jeff Spray"]}}),
+        ),
+        (
+            "points_earned",
+            Some("11"),
+            json!({"amount": 10, "reason": "WATCH", "balance": 48160}),
+        ),
+        (
+            "account_status_changed",
+            None,
+            json!({"status": {"state": "running"}}),
+        ),
+    ];
+    let rows: Vec<Value> = samples
+        .iter()
+        .enumerate()
+        .filter(|(_, (kind, _, _))| kinds.is_empty() || kinds.contains(kind))
+        .map(|(i, (kind, channel, fields))| {
+            let id = before - 1 - i as i64;
+            let mut event = fields.clone();
+            event["type"] = json!(kind);
+            event["account"] = json!("1001");
+            if let Some(c) = channel {
+                event["channel_id"] = json!(c);
+            }
+            json!({
+                "id": id, "seq": id, "account": "1001", "kind": kind, "channel_id": channel,
+                "ts": ts(now - Duration::minutes(7 * i as i64 + (1000 - before) * 3)),
+                "event": event,
+            })
+        })
+        .collect();
+    Value::Array(rows)
 }
 
 fn ts(t: DateTime<Utc>) -> String {

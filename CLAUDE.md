@@ -26,6 +26,8 @@ cargo run -p twitchminer-desktop            # app de bureau (TM_UI_DEMO=1 : éta
 TM_TOKEN=... cargo run -p tm-twitch --example smoke   # test réel contre Twitch
 ```
 
+Avant de valider un changement : `rustup update stable`, puis fmt, clippy et tests. La CI prend toujours la dernière Rust stable, dont les nouvelles règles clippy peuvent la faire échouer alors que tout passe avec une version plus ancienne. Après un push, vérifier que la CI passe.
+
 Android : `cargo ndk --target aarch64-linux-android --platform 26 build -p tm-app`.
 
 ## Style

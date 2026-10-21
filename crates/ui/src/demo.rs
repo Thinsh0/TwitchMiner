@@ -341,8 +341,16 @@ fn fixture(now: DateTime<Utc>) -> Value {
                 "session": {"points_earned": 1030, "watch_minutes": 95, "drops_claimed": 1,
                     "bonuses_claimed": 6, "raids_joined": 0, "moments_claimed": 0},
                 "module_data": {
+                    "predictions": {
+                        "summary": {"bets": 14, "wins": 8, "losses": 5, "refunds": 1, "net": 3420}
+                    },
                     "drops": {
                         "focus": null,
+                        "inventory": [
+                            {"id": "b1", "name": "Tempered Garage Door", "game": "Rust", "count": 1, "last_awarded_at": h(-20)},
+                            {"id": "b2", "name": "Launch Nameplate", "game": "Marvel Rivals", "count": 1, "last_awarded_at": h(-50)},
+                            {"id": "b3", "name": "Champions Spray", "game": "Valorant", "count": 2, "last_awarded_at": h(-200)}
+                        ],
                         "plan": [
                             {"campaign_id": "c-rust", "campaign": "Rust Twitch Drops #38", "game": "Rust",
                              "status": "active", "ends_at": h(70), "objective": ["Garage Door Skin"],

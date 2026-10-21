@@ -47,6 +47,9 @@ export global SettingText {
         if key == "predictions.min_voters" { return @tr("Fewest participants"); }
         if key == "predictions.seconds_before_close" { return @tr("Bet this many seconds before the end"); }
         if key == "predictions.channels" { return @tr("Channels"); }
+        if key == "predictions.min_odds" { return @tr("Lowest payout"); }
+        if key == "predictions.max_odds" { return @tr("Highest payout"); }
+        if key == "predictions.stealth" { return @tr("Discreet bets"); }
         // notify
         if key == "notify.events" { return @tr("Events sent"); }
         if key == "notify.min_points" { return @tr("Lowest points to send"); }
@@ -89,6 +92,9 @@ export global SettingText {
         if key == "engine.releases_url" { return @tr("Where new versions are looked for."); }
         if key == "predictions.min_voters" { return @tr("Predictions with fewer participants are skipped."); }
         if key == "predictions.channels" { return @tr("Logins to bet on; empty = every channel."); }
+        if key == "predictions.min_odds" { return @tr("No bet on an answer that pays back less than this many times the bet (e.g. 1.5). 0 = no limit."); }
+        if key == "predictions.max_odds" { return @tr("No bet on long shots paying more than this many times the bet. 0 = no limit."); }
+        if key == "predictions.stealth" { return @tr("Never bet more than the biggest bet already on the chosen answer."); }
         if key == "notify.events" { return @tr("Event kinds, e.g. drop_claimed, drop_alert, auth_required, prediction_result, notice_raised."); }
         if key == "notify.targets" { return @tr("JSON list. Example: {}. Kinds: discord, ntfy (url, token), telegram (bot_token, chat_id), webhook (url, token, headers).", "[{\"kind\": \"discord\", \"webhook_url\": \"https://…\"}]"); }
         if key == "engine.max_watch_slots" { return @tr("Per account. Twitch credits at most 2."); }

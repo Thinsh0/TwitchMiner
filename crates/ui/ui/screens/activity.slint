@@ -280,6 +280,29 @@ export component ActivityScreen inherits Page {
         }
     }
 
+    if Bridge.predictions.bets > 0: Card {
+        HorizontalLayout {
+            spacing: 10px;
+            VerticalLayout {
+                spacing: 2px;
+                horizontal-stretch: 1;
+                SectionTitle {
+                    text: @tr("Predictions");
+                }
+                Muted {
+                    text: @tr("{} bets: {} won, {} lost, {} refunded", Fmt.int(Bridge.predictions.bets), Fmt.int(Bridge.predictions.wins), Fmt.int(Bridge.predictions.losses), Fmt.int(Bridge.predictions.refunds));
+                }
+            }
+            Text {
+                text: (Bridge.predictions.net > 0 ? "+" : "") + @tr("{} points", Fmt.int(Bridge.predictions.net));
+                font-size: Theme.font-l;
+                font-weight: 700;
+                vertical-alignment: center;
+                color: Bridge.predictions.net > 0 ? Theme.success : Bridge.predictions.net < 0 ? Theme.danger : Theme.text-muted;
+            }
+        }
+    }
+
     Card {
         HorizontalLayout {
             SectionTitle {

@@ -432,11 +432,14 @@
       "default_settings": {
         "channels": [],
         "enabled": false,
+        "max_odds": 0.0,
         "max_points": 50000,
         "min_balance": 2000,
+        "min_odds": 0.0,
         "min_voters": 20,
         "percent": 5.0,
         "seconds_before_close": 6,
+        "stealth": false,
         "strategy": "smart"
       },
       "description": "Bets a share of your channel points on predictions using a configurable strategy.",
@@ -483,6 +486,12 @@
             "default": false,
             "type": "boolean"
           },
+          "max_odds": {
+            "default": 0.0,
+            "description": "Skip when the chosen outcome pays more than this (long shots). 0 = no limit.",
+            "format": "double",
+            "type": "number"
+          },
           "max_points": {
             "default": 50000,
             "format": "uint64",
@@ -495,6 +504,12 @@
             "format": "uint64",
             "minimum": 0,
             "type": "integer"
+          },
+          "min_odds": {
+            "default": 0.0,
+            "description": "Skip when the chosen outcome pays less than this (×, e.g. 1.5). 0 = no limit.",
+            "format": "double",
+            "type": "number"
           },
           "min_voters": {
             "default": 20,
@@ -515,6 +530,11 @@
             "format": "uint64",
             "minimum": 0,
             "type": "integer"
+          },
+          "stealth": {
+            "default": false,
+            "description": "Never bet more than the biggest bet already on the chosen outcome.",
+            "type": "boolean"
           },
           "strategy": {
             "$ref": "#/$defs/Strategy",

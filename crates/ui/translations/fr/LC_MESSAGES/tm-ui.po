@@ -1225,3 +1225,36 @@ msgstr "Ce compte ne peut pas tourner : {}"
 
 msgid "None of your channels is live and no drops campaign can be watched right now."
 msgstr "Aucune de tes chaînes n'est en direct et aucune campagne de drops ne peut être regardée pour l'instant."
+
+msgid "Rewards received"
+msgstr "Récompenses obtenues"
+
+msgid "Nothing yet. Rewards appear here once received (refreshed with the campaigns)."
+msgstr "Rien pour l'instant. Les récompenses apparaissent ici une fois reçues (mises à jour avec les campagnes)."
+
+msgid "{} ×{}"
+msgstr "{} ×{}"
+
+msgid "…and {} older ones."
+msgstr "…et {} plus anciennes."
+
+msgid "Lowest payout"
+msgstr "Gain minimum"
+
+msgid "Highest payout"
+msgstr "Gain maximum"
+
+msgid "Discreet bets"
+msgstr "Paris discrets"
+
+msgid "No bet on an answer that pays back less than this many times the bet (e.g. 1.5). 0 = no limit."
+msgstr "Pas de pari sur une réponse qui rapporte moins de ce nombre de fois la mise (ex. 1,5). 0 = sans limite."
+
+msgid "No bet on long shots paying more than this many times the bet. 0 = no limit."
+msgstr "Pas de pari risqué qui rapporterait plus de ce nombre de fois la mise. 0 = sans limite."
+
+msgid "Never bet more than the biggest bet already on the chosen answer."
+msgstr "Ne jamais miser plus que le plus gros pari déjà placé sur la réponse choisie."
+
+msgid "{} bets: {} won, {} lost, {} refunded"
+msgstr "{} paris : {} gagnés, {} perdus, {} remboursés"

@@ -112,6 +112,10 @@ impl Gql {
                 Some(ClaimedBenefit {
                     id: s(b, "id")?,
                     last_awarded_at: date(b, "lastAwardedAt"),
+                    name: s(b, "name"),
+                    image_url: s(b, "imageURL"),
+                    game: b.get("game").and_then(|g| s(g, "name")),
+                    count: b.get("totalCount").and_then(Value::as_u64).unwrap_or(1) as u32,
                 })
             })
             .collect();

@@ -152,6 +152,45 @@ pub fn norm(s: &str) -> String {
     s.trim().to_lowercase()
 }
 
+/// Remembers the Twitch id of each configured game name that campaigns show
+/// (`norm(name) → id`). Returns whether something was learned.
+pub fn learn_game_ids<'a>(
+    names: &[String],
+    campaigns: impl IntoIterator<Item = &'a Campaign>,
+    ids: &mut HashMap<String, String>,
+) -> bool {
+    let mut changed = false;
+    for c in campaigns {
+        let name = norm(&c.game.name);
+        if c.game.id.is_empty() || !names.iter().any(|n| norm(n) == name) {
+            continue;
+        }
+        if ids.get(&name) != Some(&c.game.id) {
+            ids.insert(name, c.game.id.clone());
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// The configured names, each one replaced by the name Twitch now shows for its game
+/// when that game was renamed (known id, other name): the list keeps matching.
+pub fn resolve_games<'a>(
+    names: &[String],
+    campaigns: impl IntoIterator<Item = &'a Campaign> + Clone,
+    ids: &HashMap<String, String>,
+) -> Vec<String> {
+    names
+        .iter()
+        .map(|n| {
+            ids.get(&norm(n))
+                .and_then(|id| campaigns.clone().into_iter().find(|c| &c.game.id == id))
+                .map(|c| c.game.name.clone())
+                .unwrap_or_else(|| n.clone())
+        })
+        .collect()
+}
+
 /// Whether a campaign can only be watched on a short channel list.
 pub fn is_restricted(c: &Campaign, max_channels: usize) -> bool {
     c.allowed_channels
@@ -443,6 +482,22 @@ mod tests {
                 kind: "DIRECT_ENTITLEMENT".into(),
             }],
         }
+    }
+
+    #[test]
+    fn a_renamed_game_keeps_matching_through_its_id() {
+        let mut ids = HashMap::new();
+        let names = vec!["Old Name".to_string()];
+        let mut before = campaign("c1", "x", 10, Vec::new());
+        before.game.id = "42".into();
+        before.game.name = "Old Name".into();
+        assert!(learn_game_ids(&names, [&before], &mut ids));
+        assert!(!learn_game_ids(&names, [&before], &mut ids));
+        let mut after = before.clone();
+        after.game.name = "New Name".into();
+        assert_eq!(resolve_games(&names, [&after], &ids), vec!["New Name"]);
+        // Unknown id or no campaign: the name stays as typed.
+        assert_eq!(resolve_games(&names, [], &ids), vec!["Old Name"]);
     }
 
     fn campaign(id: &str, game: &str, hours_left: i64, drops: Vec<TimedDrop>) -> Campaign {

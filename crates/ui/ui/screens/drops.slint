@@ -2,7 +2,7 @@
 // The plan (best first) and, on the same screen, the game list that drives it.
 
 import { Theme } from "../theme.slint";
-import { Bridge, PlanRow, GameItem, When } from "../bridge.slint";
+import { Bridge, PlanRow, GameItem, RewardItem, When } from "../bridge.slint";
 import { Fmt } from "../fmt.slint";
 import { Button, ButtonKind, Card, Icon, IconButton, Icons, Muted, Page, Pill, ProgressBar, TextField, Tone } from "../widgets.slint";
 import { ValueList } from "lists.slint";
@@ -303,6 +303,85 @@ component PlanSection inherits VerticalLayout {
     }
 }
 
+// Rewards already received (the account's inventory), folded by default.
+component RewardsSection inherits VerticalLayout {
+    property <bool> open: Bridge.dev-expand;
+    spacing: 10px;
+    alignment: start;
+    HorizontalLayout {
+        spacing: 8px;
+        accessible-role: button;
+        accessible-label: @tr("Rewards received");
+        accessible-expanded: root.open;
+        accessible-action-default => { root.open = !root.open; }
+        Icon {
+            source: root.open ? Icons.chevron-down : Icons.chevron-right;
+        }
+        SectionTitle {
+            text: @tr("Rewards received");
+            horizontal-stretch: 1;
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.open = !root.open; }
+            }
+        }
+        Muted {
+            text: Bridge.rewards-total;
+            vertical-alignment: center;
+        }
+    }
+    if root.open && Bridge.rewards-total == 0: Card {
+        Muted {
+            font-size: Theme.font-m;
+            text: @tr("Nothing yet. Rewards appear here once received (refreshed with the campaigns).");
+        }
+    }
+    if root.open && Bridge.rewards-total > 0: Card {
+        for r in Bridge.rewards: HorizontalLayout {
+            spacing: 12px;
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: Theme.radius-m;
+                background: Theme.inset;
+                clip: true;
+                if r.image.width == 0: Icon {
+                    source: Icons.gift;
+                    colorize: Theme.accent;
+                }
+                if r.image.width > 0: Image {
+                    source: r.image;
+                    width: parent.width;
+                    height: parent.height;
+                    image-fit: contain;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 1px;
+                horizontal-stretch: 1;
+                Text {
+                    text: r.count > 1 ? @tr("{} ×{}", r.name, r.count) : r.name;
+                    color: Theme.text;
+                    font-weight: 600;
+                    overflow: elide;
+                }
+                Muted {
+                    text: r.game;
+                    overflow: elide;
+                }
+            }
+            Muted {
+                text: Whens.text(r.when);
+                vertical-alignment: center;
+            }
+        }
+        if Bridge.rewards-total > Bridge.rewards.length: Muted {
+            text: @tr("…and {} older ones.", Bridge.rewards-total - Bridge.rewards.length);
+        }
+    }
+}
+
 // The game list, reordered by dragging the grip (order = priority).
 component GameList inherits Rectangle {
     property <length> row-h: 40px;
@@ -497,8 +576,12 @@ export component DropsScreen inherits Page {
     property <bool> wide: self.width > 1040px;
     if root.wide: HorizontalLayout {
         spacing: 18px;
-        PlanSection {
+        VerticalLayout {
+            spacing: 18px;
+            alignment: start;
             horizontal-stretch: 1;
+            PlanSection { }
+            RewardsSection { }
         }
         GamesSection {
             width: 340px;
@@ -508,5 +591,6 @@ export component DropsScreen inherits Page {
         spacing: 18px;
         PlanSection { }
         GamesSection { }
+        RewardsSection { }
     }
 }

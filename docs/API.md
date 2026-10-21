@@ -150,7 +150,11 @@ Chaque portée a un **JSON Schema** (`settings_get(...).schema`, ou `modules_lis
  "order_by": "config"}                                                    // config | multiplier | fewest_points | most_points
 // predictions (désactivé par défaut)
 {"enabled": false, "strategy": "smart", "percent": 5.0, "max_points": 50000, "min_balance": 2000,
- "min_voters": 20, "seconds_before_close": 6, "channels": []}           // most_voted | most_points | high_odds | smart
+ "min_voters": 20, "seconds_before_close": 6, "channels": [],           // most_voted | most_points | high_odds | smart
+ "min_odds": 0, "max_odds": 0,          // gain (pot total / pot de la réponse) hors de ces bornes : pas de pari ; 0 = sans limite
+ "stealth": false}                      // jamais plus que le plus gros pari déjà placé sur la réponse
+// module_data.predictions.summary : {"bets", "wins", "losses", "refunds", "net"} (net = gagné - misé),
+//   repris de l'historique au premier démarrage ; aussi dans module_call predictions status
 // notify
 {"enabled": true, "targets": [], "events": ["drop_claimed", "drop_alert", "auth_required", "prediction_result", "notice_raised"], "min_points": 0,
  "language": "fr"}                                                       // fr | en
@@ -178,6 +182,10 @@ Le module `drops` ne se contente pas de trier : il **planifie** (`module_data.dr
   "starts_at?", "link_url?", "skipped_until?", "game_rank?"}]
 // status : active | focus | restricted | planned | at_risk | will_miss | upcoming | not_linked | skipped | done
 // module_data.drops.focus : {"campaign_id"} ou null
+// module_data.drops.game_ids : {"<nom de la liste, en minuscules>": "<id du jeu>"} ; un jeu renommé
+//   par Twitch reste reconnu par son id (le nom de la liste n'a pas besoin de changer)
+// module_data.drops.inventory : toutes les récompenses reçues, plus récente d'abord
+[{"id", "name?", "image_url?", "game?", "count", "last_awarded_at?"}]
 ```
 
 Seuls les jeux de `games` (tous si la liste est vide) apparaissent dans le plan. Les **alertes** (`drop_alert`) ne concernent que les jeux de `games`, une seule fois par campagne et par type.

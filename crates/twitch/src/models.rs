@@ -167,10 +167,20 @@ impl Campaign {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// A reward of the account's inventory (every drop reward ever received).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClaimedBenefit {
     pub id: String,
     pub last_awarded_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub image_url: Option<String>,
+    #[serde(default)]
+    pub game: Option<String>,
+    /// Times it was received (some rewards stack).
+    #[serde(default)]
+    pub count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -15,7 +15,8 @@ use tm_core::state::{Account, AccountStatus, Level};
 use crate::images;
 use crate::{
     AccountItem, Bridge, ChannelItem, DropItem, DropLine, GameItem, Idle, LinkState, LoginItem,
-    MainWindow, NoticeItem, PlanRow, PlanTodo, TodayItem, WatchItem, When,
+    MainWindow, NoticeItem, PlanRow, PlanTodo, PredictionSummary, RewardItem, TodayItem, WatchItem,
+    When,
 };
 
 /// What the projection needs besides the state.
@@ -75,6 +76,7 @@ pub fn apply(ui: &MainWindow, input: &Input) {
     });
     home(&bridge, state, selected.as_str(), account, input);
     drops(&bridge, state, selected.as_str(), account, input);
+    bridge.set_predictions(account.map(predictions).unwrap_or_default());
     channels(&bridge, state, selected.as_str(), account);
     sync(bridge.get_accounts(), accounts, |m| bridge.set_accounts(m));
     sync(bridge.get_logins(), logins, |m| bridge.set_logins(m));
@@ -168,6 +170,41 @@ pub fn plan(account: &Account) -> Vec<PlanEntry> {
         .module_data
         .get("drops")
         .and_then(|m| m.get("plan"))
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default()
+}
+
+/// Results of the account's prediction bets (`module_data.predictions.summary`).
+fn predictions(account: &Account) -> PredictionSummary {
+    let s = account
+        .module_data
+        .get("predictions")
+        .and_then(|m| m.get("summary"))
+        .cloned()
+        .unwrap_or_default();
+    let n = |k: &str| {
+        s[k].as_i64()
+            .unwrap_or(0)
+            .clamp(i32::MIN.into(), i32::MAX.into()) as i32
+    };
+    PredictionSummary {
+        bets: n("bets"),
+        wins: n("wins"),
+        losses: n("losses"),
+        refunds: n("refunds"),
+        net: n("net"),
+    }
+}
+
+/// Rewards shown on the Drops screen (the inventory can hold hundreds).
+const REWARDS_SHOWN: usize = 48;
+
+/// Rewards received by the account, most recent first (`module_data.drops.inventory`).
+fn inventory(account: &Account) -> Vec<tm_core::twitch::models::ClaimedBenefit> {
+    account
+        .module_data
+        .get("drops")
+        .and_then(|m| m.get("inventory"))
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default()
 }
@@ -366,8 +403,24 @@ fn drops(bridge: &Bridge, state: &State, id: &str, account: Option<&Account>, in
     let lang = bridge.get_language();
     let Some(account) = account else {
         sync(bridge.get_plan(), Vec::new(), |m| bridge.set_plan(m));
+        sync(bridge.get_rewards(), Vec::new(), |m| bridge.set_rewards(m));
+        bridge.set_rewards_total(0);
         return;
     };
+    let inventory = inventory(account);
+    bridge.set_rewards_total(inventory.len() as i32);
+    let rewards: Vec<RewardItem> = inventory
+        .into_iter()
+        .take(REWARDS_SHOWN)
+        .map(|r| RewardItem {
+            name: r.name.unwrap_or_default().into(),
+            game: r.game.unwrap_or_default().into(),
+            image: images::get(r.image_url.as_deref()),
+            count: r.count.max(1) as i32,
+            when: when_at(r.last_awarded_at, input.now, lang),
+        })
+        .collect();
+    sync(bridge.get_rewards(), rewards, |m| bridge.set_rewards(m));
     let entries = plan(account);
     let mut rows: Vec<PlanRow> = entries
         .iter()
@@ -393,7 +446,17 @@ fn drops(bridge: &Bridge, state: &State, id: &str, account: Option<&Account>, in
     let games = string_list(module_setting(state, id, "drops", "games"));
     let excluded = string_list(module_setting(state, id, "drops", "exclude_games"));
     let rewards = string_list(module_setting(state, id, "drops", "wanted_rewards"));
-    let same = |a: &str, b: &str| a.eq_ignore_ascii_case(b);
+    // A listed game renamed by Twitch is still recognised by its id.
+    let game_ids = account
+        .module_data
+        .get("drops")
+        .and_then(|m| m.get("game_ids"))
+        .cloned()
+        .unwrap_or_default();
+    let same = |listed: &str, game: &tm_core::twitch::models::Game| {
+        game.name.eq_ignore_ascii_case(listed)
+            || game_ids[listed.trim().to_lowercase()].as_str() == Some(game.id.as_str())
+    };
     let items: Vec<GameItem> = games
         .iter()
         .map(|g| GameItem {
@@ -401,7 +464,7 @@ fn drops(bridge: &Bridge, state: &State, id: &str, account: Option<&Account>, in
             campaigns: account
                 .campaigns
                 .values()
-                .filter(|c| same(&c.game.name, g) && c.is_active(input.now))
+                .filter(|c| same(g, &c.game) && c.is_active(input.now))
                 .count() as i32,
         })
         .collect();
@@ -409,8 +472,8 @@ fn drops(bridge: &Bridge, state: &State, id: &str, account: Option<&Account>, in
         .campaigns
         .values()
         .filter(|c| c.is_active(input.now))
+        .filter(|c| !games.iter().chain(&excluded).any(|g| same(g, &c.game)))
         .map(|c| c.game.name.clone())
-        .filter(|n| !games.iter().chain(&excluded).any(|g| same(g, n)))
         .collect();
     suggestions.sort_by_key(|s| s.to_lowercase());
     suggestions.dedup();

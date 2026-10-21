@@ -123,6 +123,25 @@ export struct When {
     known: bool,
 }
 
+// Results of the prediction bets, since the first one.
+export struct PredictionSummary {
+    bets: int,
+    wins: int,
+    losses: int,
+    refunds: int,
+    // Points won minus points bet.
+    net: int,
+}
+
+// A reward of the inventory (received at least once).
+export struct RewardItem {
+    name: string,
+    game: string,
+    image: image,
+    count: int,
+    when: When,
+}
+
 export struct DropLine {
     name: string,
     current: int,
@@ -312,6 +331,11 @@ export global Bridge {
 
     // Drops (selected account)
     in property <[PlanRow]> plan;
+    // Results of the account's prediction bets (all zero: never bet).
+    in property <PredictionSummary> predictions;
+    // Rewards received (most recent first, at most `REWARDS_SHOWN`) and their total.
+    in property <[RewardItem]> rewards;
+    in property <int> rewards-total;
     in property <string> focus-id;
     in property <[GameItem]> games;
     in property <[string]> exclude-games;

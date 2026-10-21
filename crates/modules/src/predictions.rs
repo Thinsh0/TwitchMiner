@@ -46,6 +46,12 @@ pub struct PredictionSettings {
     pub seconds_before_close: u64,
     /// Logins to bet on; empty = every tracked channel.
     pub channels: Vec<String>,
+    /// Skip when the chosen outcome pays less than this (×, e.g. 1.5). 0 = no limit.
+    pub min_odds: f64,
+    /// Skip when the chosen outcome pays more than this (long shots). 0 = no limit.
+    pub max_odds: f64,
+    /// Never bet more than the biggest bet already on the chosen outcome.
+    pub stealth: bool,
 }
 
 impl Default for PredictionSettings {
@@ -59,6 +65,9 @@ impl Default for PredictionSettings {
             min_voters: 20,
             seconds_before_close: 6,
             channels: Vec::new(),
+            min_odds: 0.0,
+            max_odds: 0.0,
+            stealth: false,
         }
     }
 }
@@ -69,7 +78,43 @@ pub struct Outcome {
     pub title: String,
     pub users: u64,
     pub points: u64,
+    /// Biggest single bet on this outcome (0 = unknown).
+    pub top_bet: u64,
 }
+
+/// What `points / outcome` pays back for a bet on `o` (total pool / outcome pool).
+pub fn odds(o: &Outcome, outcomes: &[Outcome]) -> f64 {
+    let total: u64 = outcomes.iter().map(|x| x.points).sum();
+    if o.points == 0 {
+        return 0.0;
+    }
+    total as f64 / o.points as f64
+}
+
+/// Results of this account's bets, kept across restarts (`module_data.predictions.summary`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Summary {
+    pub bets: u64,
+    pub wins: u64,
+    pub losses: u64,
+    pub refunds: u64,
+    /// Points won minus points bet.
+    pub net: i64,
+}
+
+impl Summary {
+    fn add(&mut self, result: &str, net: i64) {
+        self.bets += 1;
+        match result {
+            "WIN" => self.wins += 1,
+            "LOSE" => self.losses += 1,
+            _ => self.refunds += 1,
+        }
+        self.net += net;
+    }
+}
+
+const SUMMARY_KEY: &str = "summary";
 
 #[derive(Debug, Clone)]
 struct Pending {
@@ -95,8 +140,17 @@ impl Module for Predictions {
 
     fn validate_settings(&self, v: &Value) -> Result<(), String> {
         let s: PredictionSettings = serde_json::from_value(v.clone()).map_err(|e| e.to_string())?;
-        if !(0.0..=100.0).contains(&s.percent) {
-            return Err("percent must be between 0 and 100".into());
+        if !(s.percent > 0.0 && s.percent <= 100.0) {
+            return Err("percent must be above 0 and at most 100".into());
+        }
+        if !(1..=120).contains(&s.seconds_before_close) {
+            return Err("seconds_before_close must be between 1 and 120".into());
+        }
+        if s.min_odds < 0.0 || s.max_odds < 0.0 {
+            return Err("odds limits cannot be negative".into());
+        }
+        if s.max_odds > 0.0 && s.min_odds > s.max_odds {
+            return Err("min_odds must not be above max_odds".into());
         }
         Ok(())
     }
@@ -108,6 +162,16 @@ impl Module for Predictions {
         let mut ps = ctx.pubsub().subscribe();
         let mut pending: HashMap<String, Pending> = HashMap::new();
         let mut refresh = tokio::time::interval(Duration::from_secs(120));
+        let mut summary = match ctx.kv_get::<Summary>(SUMMARY_KEY).await.ok().flatten() {
+            Some(s) => s,
+            None => {
+                // First run with a summary: start from the results already in the history.
+                let s = summary_from_history(&ctx).await;
+                let _ = ctx.kv_put(SUMMARY_KEY, &s).await;
+                s
+            }
+        };
+        ctx.set_data("summary", json!(summary));
 
         loop {
             let next = pending
@@ -136,16 +200,48 @@ impl Module for Predictions {
                     }
                 }
                 ev = ps.recv() => match ev {
-                    Ok(PubSubEvent::Message(m)) => on_message(&ctx, &settings, &mut pending, &m),
+                    Ok(PubSubEvent::Message(m)) => {
+                        if let Some((result, net)) = on_message(&ctx, &settings, &mut pending, &m) {
+                            summary.add(&result, net);
+                            if let Err(e) = ctx.kv_put(SUMMARY_KEY, &summary).await {
+                                tracing::warn!(error = %e, "could not save predictions summary");
+                            }
+                            ctx.set_data("summary", json!(summary));
+                        }
+                    }
                     Ok(_) => {}
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
                     Err(_) => return Ok(()),
                 },
                 call = ctx.next_call() => {
                     let Some(call) = call else { return Ok(()) };
-                    let _ = call.reply.send(Ok(json!({ "pending": pending.len() })));
+                    let _ = call.reply.send(Ok(json!({ "pending": pending.len(), "summary": summary })));
                 }
             }
+        }
+    }
+}
+
+/// The summary of the bet results kept in the history (`prediction_result`).
+async fn summary_from_history(ctx: &ModuleContext) -> Summary {
+    let mut s = Summary::default();
+    let mut before_id = None;
+    loop {
+        let q = tm_core::db::HistoryQuery {
+            account: Some(ctx.account_id().to_string()),
+            kinds: vec!["prediction_result".into()],
+            before_id,
+            limit: Some(1000),
+            ..Default::default()
+        };
+        let rows = ctx.db().history(q).await.unwrap_or_default();
+        for row in &rows {
+            let result = row.event["result"].as_str().unwrap_or_default();
+            s.add(result, row.event["points_won"].as_i64().unwrap_or(0));
+        }
+        match rows.last() {
+            Some(last) if rows.len() == 1000 => before_id = Some(last.id),
+            _ => return s,
         }
     }
 }
@@ -182,35 +278,41 @@ fn parse_outcomes(event: &Value) -> Vec<Outcome> {
                     .to_string(),
                 users: o.get("total_users").and_then(Value::as_u64).unwrap_or(0),
                 points: o.get("total_points").and_then(Value::as_u64).unwrap_or(0),
+                top_bet: o
+                    .get("top_predictors")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|p| p.get("points").and_then(Value::as_u64))
+                    .max()
+                    .unwrap_or(0),
             })
         })
         .collect()
 }
 
+/// Tracks predictions from PubSub. Returns the result and net points of one of this
+/// account's bets when it is settled.
 fn on_message(
     ctx: &ModuleContext,
     s: &PredictionSettings,
     pending: &mut HashMap<String, Pending>,
     m: &PubSubMessage,
-) {
+) -> Option<(String, i64)> {
     let account = ctx.account_id().to_string();
     match (m.topic_kind.as_str(), m.kind.as_str()) {
         ("predictions-channel-v1", "event-created" | "event-updated") => {
-            let Some(ev) = m.data.get("event") else {
-                return;
-            };
-            let Some(id) = ev.get("id").and_then(Value::as_str) else {
-                return;
-            };
+            let ev = m.data.get("event")?;
+            let id = ev.get("id").and_then(Value::as_str)?;
             let status = ev.get("status").and_then(Value::as_str).unwrap_or("");
             let outcomes = parse_outcomes(ev);
             if let Some(p) = pending.get_mut(id) {
                 p.outcomes = outcomes;
                 p.open = status == "ACTIVE";
-                return;
+                return None;
             }
             if status != "ACTIVE" {
-                return;
+                return None;
             }
             let created = ev
                 .get("created_at")
@@ -242,11 +344,10 @@ fn on_message(
                     placed: false,
                 },
             );
+            None
         }
         ("predictions-user-v1", "prediction-result") => {
-            let Some(p) = m.data.get("prediction") else {
-                return;
-            };
+            let p = m.data.get("prediction")?;
             let event_id = p
                 .get("event_id")
                 .and_then(Value::as_str)
@@ -274,11 +375,12 @@ fn on_message(
                 account,
                 channel_id,
                 event_id,
-                result: kind,
+                result: kind.clone(),
                 points_won: net,
             });
+            Some((kind, net))
         }
-        _ => {}
+        _ => None,
     }
 }
 
@@ -329,14 +431,22 @@ async fn place(ctx: &ModuleContext, s: &PredictionSettings, event_id: &str, p: &
     if balance < s.min_balance {
         return;
     }
-    let amount = ((balance as f64) * s.percent / 100.0).floor() as u64;
-    let amount = amount.min(s.max_points).min(250_000);
-    if amount < 10 {
-        return;
-    }
     let Some(outcome) = choose(s.strategy, &p.outcomes) else {
         return;
     };
+    let pays = odds(outcome, &p.outcomes);
+    if (s.min_odds > 0.0 && pays < s.min_odds) || (s.max_odds > 0.0 && pays > s.max_odds) {
+        tracing::info!(title = %p.title, outcome = %outcome.title, odds = pays, "prediction skipped (odds out of range)");
+        return;
+    }
+    let amount = ((balance as f64) * s.percent / 100.0).floor() as u64;
+    let mut amount = amount.min(s.max_points).min(250_000);
+    if s.stealth && outcome.top_bet > 0 {
+        amount = amount.min(outcome.top_bet.saturating_sub(1));
+    }
+    if amount < 10 {
+        return;
+    }
     match ctx
         .gql()
         .make_prediction(event_id, &outcome.id, amount)
@@ -368,7 +478,23 @@ mod tests {
             title: id.into(),
             users,
             points,
+            top_bet: 0,
         }
+    }
+
+    #[test]
+    fn odds_and_summary() {
+        let v = [o("a", 80, 1000), o("b", 20, 3000)];
+        assert_eq!(odds(&v[0], &v), 4.0);
+        assert!((odds(&v[1], &v) - 4.0 / 3.0).abs() < 1e-9);
+        let mut s = Summary::default();
+        s.add("WIN", 300);
+        s.add("LOSE", -100);
+        s.add("REFUND", 0);
+        assert_eq!(
+            (s.bets, s.wins, s.losses, s.refunds, s.net),
+            (3, 1, 1, 1, 200)
+        );
     }
 
     #[test]

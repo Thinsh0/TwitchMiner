@@ -109,6 +109,8 @@ const STALLS_KEY: &str = "stalls";
 const FOCUS_KEY: &str = "focus";
 const ALERTED_KEY: &str = "alerted";
 const KNOWN_KEY: &str = "known_campaigns";
+/// Twitch id of each listed game name, so a renamed game keeps matching.
+const GAME_IDS_KEY: &str = "game_ids";
 const PROGRESS_POLL: Duration = Duration::from_secs(90);
 /// How often a better campaign (e.g. an esports channel going live) is looked for.
 const RECHECK: Duration = Duration::from_secs(5 * 60);
@@ -128,6 +130,8 @@ struct Target {
 struct Runtime {
     campaigns: BTreeMap<String, Campaign>,
     claimed: Vec<ClaimedBenefit>,
+    /// `norm(listed name) → game id` (persisted).
+    game_ids: HashMap<String, String>,
     target: Option<Target>,
     banned_channels: HashMap<String, Instant>,
     /// Persisted: survives restarts so a broken campaign is not retried immediately.
@@ -149,6 +153,7 @@ impl Runtime {
         Self {
             campaigns: BTreeMap::new(),
             claimed: Vec::new(),
+            game_ids: HashMap::new(),
             target: None,
             banned_channels: HashMap::new(),
             banned_campaigns: HashMap::new(),
@@ -204,6 +209,13 @@ impl Module for Drops {
             rt.alerted = alerted;
         }
         rt.known = ctx.kv_get(KNOWN_KEY).await.ok().flatten();
+        rt.game_ids = ctx
+            .kv_get(GAME_IDS_KEY)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        ctx.set_data("game_ids", json!(rt.game_ids));
         ctx.set_data("focus", json!(rt.focus));
         if let Ok(Some(bans)) = ctx.kv_get::<HashMap<String, DateTime<Utc>>>(BANS_KEY).await {
             rt.banned_campaigns = bans;
@@ -376,6 +388,10 @@ impl Runtime {
         let gql = ctx.gql();
         let (in_progress, claimed) = gql.inventory().await?;
         self.claimed = claimed;
+        // Every reward ever received, most recent first (`module_data.drops.inventory`).
+        let mut inventory = self.claimed.clone();
+        inventory.sort_by_key(|b| std::cmp::Reverse(b.last_awarded_at));
+        ctx.set_data("inventory", json!(inventory));
         let mut campaigns: BTreeMap<String, Campaign> = BTreeMap::new();
 
         match gql.dashboard().await {
@@ -388,16 +404,19 @@ impl Runtime {
             Err(e) => tracing::warn!(error = %e, "dashboard failed"),
         }
 
+        let seen = campaigns.values().chain(in_progress.iter());
+        let mut learned = self.learn_games(s, seen.clone());
         // Discovery through live channels of wanted games (works when the dashboard is hidden,
         // and catches campaigns the dashboard omits).
-        let mut games: Vec<String> = s.games.clone();
+        let mut games: Vec<String> = plan::resolve_games(&s.games, seen.clone(), &self.game_ids);
+        let exclude_games = plan::resolve_games(&s.exclude_games, seen, &self.game_ids);
         if games.is_empty() {
             games = in_progress.iter().map(|c| c.game.name.clone()).collect();
             games.extend(campaigns.values().map(|c| c.game.name.clone()));
             games.sort();
             games.dedup();
         }
-        let excluded: HashSet<String> = s.exclude_games.iter().map(|g| norm(g)).collect();
+        let excluded: HashSet<String> = exclude_games.iter().map(|g| norm(g)).collect();
         if campaigns.is_empty() || !s.games.is_empty() {
             for game in games
                 .iter()
@@ -444,6 +463,13 @@ impl Runtime {
         }
         for c in campaigns.values_mut() {
             mark_claimed_from_benefits(c, &self.claimed);
+        }
+        learned |= self.learn_games(s, campaigns.values());
+        if learned {
+            if let Err(e) = ctx.kv_put(GAME_IDS_KEY, &self.game_ids).await {
+                tracing::warn!(error = %e, "could not save game ids");
+            }
+            ctx.set_data("game_ids", json!(self.game_ids));
         }
         self.campaigns = campaigns;
         self.last_refresh = Some(Instant::now());
@@ -514,10 +540,27 @@ impl Runtime {
     }
 
     /// Recomputes the plan (pure: see [`plan`]).
+    /// Learns the ids of the listed games shown by `campaigns` (see `plan::learn_game_ids`).
+    fn learn_games<'a>(
+        &mut self,
+        s: &DropsSettings,
+        campaigns: impl IntoIterator<Item = &'a Campaign>,
+    ) -> bool {
+        let names: Vec<String> = s.games.iter().chain(&s.exclude_games).cloned().collect();
+        plan::learn_game_ids(&names, campaigns, &mut self.game_ids)
+    }
+
+    /// A game list of the settings, renamed games under their current Twitch name.
+    fn resolved(&self, names: &[String]) -> Vec<String> {
+        plan::resolve_games(names, self.campaigns.values(), &self.game_ids)
+    }
+
     fn replan(&mut self, s: &DropsSettings, engine: &EngineSettings, now: DateTime<Utc>) {
+        let games = self.resolved(&s.games);
+        let exclude_games = self.resolved(&s.exclude_games);
         let params = plan::Params {
-            games: &s.games,
-            exclude_games: &s.exclude_games,
+            games: &games,
+            exclude_games: &exclude_games,
             wanted_rewards: &s.wanted_rewards,
             badges_emotes: s.badges_emotes,
             require_linked: s.require_linked,
@@ -735,7 +778,7 @@ impl Runtime {
             self.known = Some(listed);
             return;
         };
-        let wanted: Vec<String> = s.games.iter().map(|g| norm(g)).collect();
+        let wanted: Vec<String> = self.resolved(&s.games).iter().map(|g| norm(g)).collect();
         let fresh: Vec<Campaign> = self
             .campaigns
             .values()
@@ -1377,6 +1420,7 @@ mod tests {
             &[ClaimedBenefit {
                 id: "ba".into(),
                 last_awarded_at: Some(Utc::now()),
+                ..Default::default()
             }],
         );
         assert!(c.drops[0].claimed);

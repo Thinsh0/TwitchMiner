@@ -218,19 +218,29 @@ impl Module for Drops {
         recheck.tick().await;
         let mut need_refresh = true;
         let mut need_pick = true;
+        // After a failed refresh, the next one waits (Twitch outage: no hammering).
+        let mut retry =
+            tm_twitch::net::Backoff::new(Duration::from_secs(30), Duration::from_secs(15 * 60));
+        let mut retry_at: Option<Instant> = None;
 
         loop {
-            if need_refresh
+            let due = need_refresh
                 || rt.last_refresh.is_none_or(|t| {
                     t.elapsed() > Duration::from_secs(60 * settings.refresh_minutes)
-                })
-            {
+                });
+            if due && retry_at.is_none_or(|t| Instant::now() >= t) {
                 need_refresh = false;
                 if let Err(e) = rt.refresh(&ctx, &settings).await {
-                    tracing::warn!(error = %e, "drops refresh failed");
+                    let delay = retry.next_delay();
+                    tracing::warn!(error = %e, ?delay, "drops refresh failed");
                     ctx.set_data("last_error", json!(e.to_string()));
+                    retry_at = Some(Instant::now() + delay);
+                    // Still owed: retried at `retry_at` (keeps that timer meaningful).
+                    need_refresh = true;
                 } else {
                     ctx.set_data("last_error", Value::Null);
+                    retry.reset();
+                    retry_at = None;
                 }
                 need_pick = true;
             }
@@ -257,6 +267,7 @@ impl Module for Drops {
                     }
                 }
                 _ = sleep_until_utc(next_trigger) => need_refresh = true,
+                _ = tokio::time::sleep_until(retry_at.unwrap_or_else(Instant::now)), if retry_at.is_some() => {}
                 _ = tokio::time::sleep(Duration::from_secs(60 * settings.refresh_minutes)) => need_refresh = true,
                 _ = progress_poll.tick() => {
                     let (refresh, pick) = rt.poll_progress(&ctx, &settings).await;
@@ -277,7 +288,10 @@ impl Module for Drops {
                 ev = events.recv() => {
                     if let Ok(env) = ev
                         && let Event::WatchStopped { account, channel_id, cause } = &env.event
-                            && account == &uid && rt.target.as_ref().is_some_and(|t| &t.channel.id == channel_id) && cause != "rescheduled" {
+                            && account == &uid && rt.target.as_ref().is_some_and(|t| &t.channel.id == channel_id)
+                            // Only a channel problem (not a pause, the active hours or a
+                            // reschedule) puts the channel aside.
+                            && (cause == "offline" || cause.starts_with("error")) {
                                 tracing::info!(%cause, "drops channel stopped, picking another");
                                 rt.banned_channels.insert(channel_id.clone(), Instant::now() + Duration::from_secs(5 * 60));
                                 need_pick = true;

@@ -157,6 +157,10 @@ async fn auth(
     }
 }
 
+/// WebSocket clients are pinged this often, and dropped after this long in silence.
+const WS_PING_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
+const WS_SILENCE_LIMIT: std::time::Duration = std::time::Duration::from_secs(90);
+
 const AGENT_DISABLED: &str =
     "AI agent access is disabled (set engine.agent_enabled to true with the full token)";
 
@@ -397,9 +401,16 @@ async fn ws_session(st: AppState, access: Access, socket: WebSocket, with_logs: 
         .filter(|_| with_logs)
         .map(|l| l.subscribe());
     let (reply_tx, mut reply_rx) = tokio::sync::mpsc::channel::<Value>(32);
+    // Pings find clients that vanished without closing (sleep, network change).
+    let mut ping = tokio::time::interval(WS_PING_EVERY);
+    let mut last_seen = tokio::time::Instant::now();
 
     loop {
         tokio::select! {
+            _ = ping.tick() => {
+                if last_seen.elapsed() > WS_SILENCE_LIMIT { return; }
+                if tx.send(Message::Ping(Default::default())).await.is_err() { return; }
+            }
             ev = events.recv() => match ev {
                 Ok(env) => {
                     if env.seq <= last_seq { continue; }
@@ -430,6 +441,7 @@ async fn ws_session(st: AppState, access: Access, socket: WebSocket, with_logs: 
                 if tx.send(Message::text(r.to_string())).await.is_err() { return; }
             }
             msg = rx.next() => {
+                last_seen = tokio::time::Instant::now();
                 let text = match msg {
                     Some(Ok(Message::Text(t))) => t,
                     Some(Ok(Message::Close(_))) | None | Some(Err(_)) => return,

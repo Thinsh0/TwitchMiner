@@ -125,6 +125,31 @@ async fn local_and_remote_mirror_the_same_state() {
         .await
         .unwrap();
     assert_ne!(*intruder.link().borrow(), Link::Connected);
+    // Commands are refused at once while the link is down.
+    let started = std::time::Instant::now();
+    let down = intruder.execute(Command::Snapshot).await.unwrap_err();
+    assert_eq!(down.code, "unavailable");
+    assert!(started.elapsed() < Duration::from_secs(1));
+
+    // A burst of events ends in the same state on both sides.
+    let burst = (0..100).map(|i| {
+        let engine = engine.clone();
+        tokio::spawn(async move {
+            engine
+                .execute(Command::SettingsSet {
+                    scope: "engine".into(),
+                    value: json!({"max_watch_slots": 1 + i % 2}),
+                    merge: true,
+                })
+                .await
+        })
+    });
+    for b in burst.collect::<Vec<_>>() {
+        b.await.unwrap().unwrap();
+    }
+    let seq = engine.store().snapshot().seq;
+    let r = wait_for(&remote, |s| s.seq == seq).await;
+    assert_eq!(*r, engine.store().snapshot());
 
     engine.shutdown().await;
     let _ = std::fs::remove_dir_all(dir);

@@ -73,9 +73,9 @@ Tables (`crates/core/src/db.rs`, migrations versionnées par `PRAGMA user_versio
 Chaque compte activé a un `AccountRuntime` (`crates/core/src/account.rs`) :
 
 1. **Validation du token** au démarrage, rafraîchissement automatique si un `refresh_token` existe, statut `auth_required` si le token est révoqué. Dans ce cas, seuls les modules qui n'ont pas besoin de connexion (les notifications) continuent de tourner, pour prévenir qu'il faut se reconnecter. Les erreurs réseau sont réessayées indéfiniment avec backoff.
-2. **PubSub** : un pool de WebSockets (50 topics par connexion) qui se reconnecte seul, avec ping/pong et ré-abonnement. Les topics sont comptés par référence entre modules.
+2. **PubSub** : un pool de WebSockets (50 topics par connexion) qui se reconnecte seul, avec ping/pong et ré-abonnement. Les topics sont comptés par référence entre modules. Après un renouvellement du jeton, les connexions se rouvrent pour réabonner les topics avec le nouveau. Fermé plus de 10 min : notice `realtime_down`.
 3. **Ordonnanceur** de visionnage (`scheduler.rs`) : chaque module déclare des `WatchRequest { channel, priority, reason }`. L'ordonnanceur garde les N meilleures chaînes (N = `engine.max_watch_slots`, 2 par défaut : la limite que Twitch crédite) et lance un *watcher* par chaîne.
-4. **Supervision des modules** : un module en erreur ou qui panique redémarre avec backoff (5 s → 5 min). Un module est démarré ou arrêté à chaud quand son réglage `enabled` change.
+4. **Supervision des modules** : un module en erreur ou qui panique redémarre avec backoff (5 s → 5 min). Ses demandes de visionnage et ses chaînes sont libérées avant le redémarrage. Un module est démarré ou arrêté à chaud quand son réglage `enabled` change.
 5. **Contrôle horaire du token** + réaction immédiate à `ERR_BADAUTH` côté PubSub.
 
 Priorités standard (`tm_core::priority`) : `MANUAL 1000 > DROPS 500 > STREAK 300 > POINTS 100`.
@@ -100,7 +100,7 @@ Le schéma est validé (hashes de 64 caractères hexadécimaux, profil par défa
 
 - **GQL** : lots de 30 requêtes, 6 requêtes concurrentes au maximum par compte, retry avec backoff sur les erreurs transitoires (`service timeout`…). Les erreurs partielles sont tolérées (champ à `null`). `PersistedQueryNotFound` est une erreur distincte, qui signale un manifeste périmé.
 - **Réseau** : un seul pool HTTP. TLS par rustls/ring avec les racines Mozilla + les racines du système (fonctionne derrière un proxy d'entreprise). Proxy HTTP configurable, y compris pour les WebSockets (tunnel `CONNECT`).
-- **Drops** : si la progression ne bouge pas pendant 8 min, la chaîne est écartée 30 min. Après 2 blocages sur la même campagne, la campagne est écartée 2 h (cas typique : compte de jeu non lié).
+- **Drops** : si la progression ne bouge pas pendant 8 min, la chaîne est écartée 30 min. Après 2 blocages sur la même campagne, la campagne est écartée 2 h (cas typique : compte de jeu non lié). Un rafraîchissement des campagnes qui échoue est réessayé après 30 s, puis jusqu'à 15 min.
 - **Persistance** : SQLite en WAL, toutes les écritures sur un thread dédié, donc dans l'ordre des événements. Checkpoint à l'arrêt, sauvegarde à chaud (`backup`).
 - **Sans PubSub** (si Twitch le coupait) : le minage continue grâce aux interrogations périodiques.
   - En ligne / hors ligne : toutes les 5 min.
@@ -110,7 +110,7 @@ Le schéma est validé (hashes de 64 caractères hexadécimaux, profil par défa
 
   Seuls les raids, moments et prédictions (purement temps réel) seraient perdus, jusqu'à un passage à Hermes, le successeur de PubSub, déjà joignable (`hermes.twitch.tv`).
 - **Une seule instance par compte** : verrou exclusif sur le dossier de données. Entre machines, coordination par l'API avec les `peers` (principal / secondaire, bascule automatique, voir [SERVER.md](SERVER.md)).
-- **Jetons** : validation horaire, revalidation immédiate sur une réponse 401 (au plus une par minute), contrôle planifié avant l'expiration, rafraîchissement automatique. Sinon le statut passe à `auth_required`.
+- **Jetons** : validation horaire, revalidation immédiate sur une réponse 401 ou un `ERR_BADAUTH` de PubSub (au plus une par minute), contrôle planifié avant l'expiration, rafraîchissement automatique. Une validation impossible (réseau) est réessayée après 30 s, puis jusqu'à 5 min. Sinon le statut passe à `auth_required`.
 
 ## Plateformes
 

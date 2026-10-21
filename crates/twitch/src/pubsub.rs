@@ -7,6 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use arc_swap::ArcSwap;
@@ -78,11 +79,13 @@ struct PoolState {
 struct ConnHandle {
     topics: Arc<Mutex<HashSet<String>>>,
     cmd: mpsc::UnboundedSender<Cmd>,
+    connected: Arc<AtomicBool>,
 }
 
 enum Cmd {
     Listen(Vec<String>),
     Unlisten(Vec<String>),
+    Reconnect,
 }
 
 impl PubSub {
@@ -113,6 +116,24 @@ impl PubSub {
 
     pub fn active_topics(&self) -> usize {
         self.inner.state.lock().refcounts.len()
+    }
+
+    /// Whether every connection of the pool is open (`true` when there is none).
+    pub fn is_connected(&self) -> bool {
+        self.inner
+            .state
+            .lock()
+            .conns
+            .iter()
+            .all(|c| c.connected.load(Ordering::Relaxed))
+    }
+
+    /// Reconnects every connection, which LISTENs its topics again with the
+    /// current token (after a refresh, topics LISTENed with the old one may stop).
+    pub fn reconnect_all(&self) {
+        for c in &self.inner.state.lock().conns {
+            let _ = c.cmd.send(Cmd::Reconnect);
+        }
     }
 
     fn listen(&self, topics: Vec<String>) {
@@ -168,13 +189,16 @@ impl PubSub {
 
     fn spawn_conn(&self, index: usize) -> ConnHandle {
         let topics = Arc::new(Mutex::new(HashSet::new()));
+        let connected = Arc::new(AtomicBool::new(false));
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
         let inner = self.inner.clone();
         let t = topics.clone();
-        tokio::spawn(async move { run_conn(inner, index, t, cmd_rx).await });
+        let c = connected.clone();
+        tokio::spawn(async move { run_conn(inner, index, t, c, cmd_rx).await });
         ConnHandle {
             topics,
             cmd: cmd_tx,
+            connected,
         }
     }
 }
@@ -232,6 +256,7 @@ async fn run_conn(
     inner: Arc<Inner>,
     index: usize,
     topics: Arc<Mutex<HashSet<String>>>,
+    connected: Arc<AtomicBool>,
     mut cmd_rx: mpsc::UnboundedReceiver<Cmd>,
 ) {
     let mut backoff = Backoff::new(Duration::from_secs(1), Duration::from_secs(120));
@@ -259,9 +284,12 @@ async fn run_conn(
             }
         };
         tracing::debug!(conn = index, "pubsub connected");
+        connected.store(true, Ordering::Relaxed);
         let _ = inner.tx.send(PubSubEvent::Connected { connection: index });
         let started = tokio::time::Instant::now();
-        match session(&inner, ws, &topics, &mut cmd_rx).await {
+        let exit = session(&inner, ws, &topics, &mut cmd_rx).await;
+        connected.store(false, Ordering::Relaxed);
+        match exit {
             Exit::Cancelled => return,
             Exit::Reconnect(reason) => {
                 tracing::debug!(conn = index, %reason, "pubsub reconnecting");
@@ -323,6 +351,10 @@ async fn session(
                 let (kind, list) = match cmd {
                     Some(Cmd::Listen(t)) => ("LISTEN", t),
                     Some(Cmd::Unlisten(t)) => ("UNLISTEN", t),
+                    Some(Cmd::Reconnect) => {
+                        let _ = sink.close().await;
+                        return Exit::Reconnect("credentials changed".into());
+                    }
                     None => return Exit::Cancelled,
                 };
                 if let Err(e) = send_listen(inner, &mut sink, kind, list, &mut pending).await {

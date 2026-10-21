@@ -73,6 +73,7 @@ pub enum OrderBy {
 
 /// Minutes to watch for a streak to count (Twitch requires a few minutes).
 const STREAK_MINUTES: u64 = 7;
+const RESOLVE_RETRY: Duration = Duration::from_secs(60);
 const ONLINE_RECHECK: Duration = Duration::from_secs(60);
 const CONTEXT_REFRESH: Duration = Duration::from_secs(30 * 60);
 /// Watched channels are re-checked often so bonus chests are claimed even if
@@ -146,6 +147,7 @@ impl Module for Points {
         let mut follows: Vec<String> = Vec::new();
         let mut follows_at: Option<Instant> = None;
         let mut resolve = true;
+        let mut resolve_retry: Option<Instant> = None;
         let mut poll =
             tokio::time::interval(Duration::from_secs(60 * settings.refresh_minutes.max(1)));
         poll.tick().await;
@@ -162,22 +164,32 @@ impl Module for Points {
                         Err(e) => tracing::warn!(error = %e, "could not load follows"),
                     }
                 }
-                let users = resolve_channels(&ctx, &settings, &follows).await?;
-                rt.sync(&ctx, users);
-                rt.restore(std::mem::take(&mut memory));
-                let mut wanted = vec![topics::community_points_user(&uid)];
-                for id in rt.channels.keys() {
-                    wanted.push(topics::playback(id));
-                    if settings.join_raids {
-                        wanted.push(topics::raid(id));
+                // A Twitch error keeps the current channels and retries shortly:
+                // failing the module would stop every points watch until its restart.
+                match resolve_channels(&ctx, &settings, &follows).await {
+                    Err(e) => {
+                        tracing::warn!(error = %e, "could not resolve points channels, retrying");
+                        resolve_retry = Some(Instant::now() + RESOLVE_RETRY);
                     }
-                    if settings.claim_moments {
-                        wanted.push(topics::moments(id));
+                    Ok(users) => {
+                        resolve_retry = None;
+                        rt.sync(&ctx, users);
+                        rt.restore(std::mem::take(&mut memory));
+                        let mut wanted = vec![topics::community_points_user(&uid)];
+                        for id in rt.channels.keys() {
+                            wanted.push(topics::playback(id));
+                            if settings.join_raids {
+                                wanted.push(topics::raid(id));
+                            }
+                            if settings.claim_moments {
+                                wanted.push(topics::moments(id));
+                            }
+                        }
+                        topics.set(wanted);
+                        rt.refresh_contexts(&ctx, &settings).await;
+                        ctx.set_data("channels", json!(rt.channels.len()));
                     }
                 }
-                topics.set(wanted);
-                rt.refresh_contexts(&ctx, &settings).await;
-                ctx.set_data("channels", json!(rt.channels.len()));
             }
             let balances = ctx.store().read(|st| {
                 st.accounts
@@ -213,6 +225,10 @@ impl Module for Points {
                     if follows_at.is_some_and(|t| t.elapsed() > FOLLOWS_REFRESH) {
                         resolve = true;
                     }
+                }
+                _ = sleep_until_opt(resolve_retry) => {
+                    resolve_retry = None;
+                    resolve = true;
                 }
                 _ = sleep_until_opt(next_recheck) => {
                     let now = Instant::now();
@@ -318,6 +334,7 @@ async fn set_account_settings(
     scope: &str,
     patch: Value,
 ) -> Result<Value, String> {
+    let _write = ctx.store().lock_settings().await;
     let mut doc = ctx
         .store()
         .read(|s| s.settings.get(scope).cloned())

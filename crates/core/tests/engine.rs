@@ -167,3 +167,41 @@ async fn subscribers_see_every_event_in_order() {
     engine.shutdown().await;
     let _ = std::fs::remove_dir_all(&paths.root);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_settings_merges_are_all_kept() {
+    tm_twitch::tls::install_crypto_provider();
+    let paths = temp_paths();
+    let engine = start(&paths).await;
+    let writes = (0..30).map(|i| {
+        let engine = engine.clone();
+        tokio::spawn(async move {
+            engine
+                .execute(Command::SettingsSet {
+                    scope: "module:dummy".into(),
+                    value: json!({ format!("k{i}"): i }),
+                    merge: true,
+                })
+                .await
+                .unwrap();
+        })
+    });
+    for w in writes.collect::<Vec<_>>() {
+        w.await.unwrap();
+    }
+    let expected: serde_json::Map<String, serde_json::Value> =
+        (0..30).map(|i| (format!("k{i}"), json!(i))).collect();
+    let state = engine.store().snapshot();
+    assert_eq!(state.settings["module:dummy"], json!(expected));
+    engine.shutdown().await;
+    drop(engine);
+
+    // The database holds the same document as the state.
+    let engine = start(&paths).await;
+    assert_eq!(
+        engine.store().snapshot().settings["module:dummy"],
+        json!(expected)
+    );
+    engine.shutdown().await;
+    let _ = std::fs::remove_dir_all(&paths.root);
+}

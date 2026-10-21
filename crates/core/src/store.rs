@@ -21,6 +21,7 @@ struct Inner {
     state: RwLock<State>,
     tx: broadcast::Sender<Arc<Envelope>>,
     db: Db,
+    settings_write: tokio::sync::Mutex<()>,
 }
 
 impl Store {
@@ -31,12 +32,19 @@ impl Store {
                 state: RwLock::new(State::default()),
                 tx,
                 db,
+                settings_write: tokio::sync::Mutex::new(()),
             }),
         }
     }
 
     pub fn db(&self) -> &Db {
         &self.inner.db
+    }
+
+    /// Held while a settings document is read, changed, saved and emitted, so two
+    /// concurrent changes never lose one another or leave the database behind the state.
+    pub async fn lock_settings(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.inner.settings_write.lock().await
     }
 
     /// Applies, persists and broadcasts an event. Returns its sequence number, or

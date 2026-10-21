@@ -46,7 +46,9 @@ Si le client prend trop de retard (`RecvError::Lagged`), il reprend un snapshot.
 **Compatibilité de versions** :
 - `api_version` ne change que sur une rupture du protocole.
 - Les champs inconnus sont ignorés à la désérialisation, donc un client plus ancien lit l'état d'un daemon plus récent.
-- `tm_client::Remote` se resynchronise sur un snapshot s'il voit un trou dans les `seq` ou un type d'événement qu'il ne connaît pas.
+- `tm_client::Remote` se resynchronise sur un snapshot s'il voit un trou dans les `seq` ou un type d'événement qu'il ne connaît pas. Les événements reçus pendant la resynchronisation sont appliqués ensuite.
+
+**Connexion distante** : `Remote` publie son état au plus toutes les 50 ms, comme `Local`. Il envoie un ping WebSocket toutes les 20 s et considère la connexion perdue après 60 s sans réponse (veille, réseau changé). Le serveur fait de même avec ses clients (ping toutes les 30 s, fermeture après 90 s de silence). Tant que le lien n'est pas `Connected`, `execute` répond tout de suite `unavailable` : une commande n'est jamais exécutée plus tard, au retour de la connexion.
 
 ## Serveur HTTP / WebSocket
 
@@ -195,6 +197,8 @@ Seuls les jeux de `games` (tous si la liste est vide) apparaissent dans le plan.
   //   "update"        {version, current, url}     → « Télécharger »
   //   "duplicate"     {account, login, peer}      → compte miné par deux instances principales
   //   "proxy_invalid" {error}                     → ouvrir les réglages réseau
+  //   "realtime_down" {account, login}            → PubSub injoignable depuis 10 min : drops et points
+  //                                                 continuent, raids, moments et prédictions attendent
   // message : texte anglais de secours
   "logins":  { "<flow_id>": {"flow_id", "user_code", "verification_uri", "verification_uri_complete?", "expires_at"} },
   "accounts": {
@@ -255,7 +259,7 @@ Chaque événement arrive enveloppé : `{seq, ts, type, …champs}`. Ceux marqu�
 | `moment_claimed` 📜 | `account`, `channel_id` |
 | `prediction_placed` 📜 | `account`, `channel_id`, `event_id`, `title`, `outcome`, `points` |
 | `prediction_result` 📜 | `account`, `channel_id`, `event_id`, `result` (`WIN`/`LOSE`/`REFUND`), `points_won` (net) |
-| `watch_started` 📜 / `watch_stopped` 📜 | `account`, `channel_id`, `reason` / `cause` (`offline`, `rescheduled`, `error: …`) |
+| `watch_started` 📜 / `watch_stopped` 📜 | `account`, `channel_id`, `reason` / `cause` (`offline`, `rescheduled`, `paused`, `outside active hours`, `error: …`) |
 | `watch_minute` | `account`, `channel_id` (une minute créditée) |
 | `campaigns_replaced` | `account`, `campaigns[]` |
 | `drop_progress` | `account`, `campaign_id`, `drop_id`, `current_minutes`, `required_minutes` |

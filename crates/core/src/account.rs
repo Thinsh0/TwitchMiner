@@ -17,9 +17,13 @@ use crate::event::Event;
 use crate::module::{AccountServices, Module, ModuleCall, ModuleContext};
 use crate::scheduler::{self, WatchHandle};
 use crate::settings::{self, Scope};
-use crate::state::{AccountInfo, AccountStatus, ModuleHealth};
+use crate::state::{AccountInfo, AccountStatus, Level, ModuleHealth, Notice};
 
 const TOKEN_CHECK_EVERY: Duration = Duration::from_secs(60 * 60);
+/// Minimum delay between two validations triggered by Twitch rejecting the token.
+const RECHECK_MIN: Duration = Duration::from_secs(60);
+/// PubSub closed this long raises the `realtime_down` notice.
+const REALTIME_DOWN_AFTER: Duration = Duration::from_secs(10 * 60);
 
 pub(crate) struct AccountRuntime {
     pub cancel: CancellationToken,
@@ -219,55 +223,50 @@ async fn run(
     start_modules(true, &session);
     set_status(&shared, &id, AccountStatus::Running);
 
-    // 4. Token health: periodic validation + PubSub auth errors.
-    let auth_failed = CancellationToken::new();
-    {
-        let mut rx = pubsub.subscribe();
-        let auth_failed = auth_failed.clone();
-        let cancel = cancel.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = cancel.cancelled() => return,
-                    ev = rx.recv() => match ev {
-                        Ok(PubSubEvent::ListenError { error, .. }) if error == "ERR_BADAUTH" => {
-                            auth_failed.cancel();
-                            return;
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
-                        _ => {}
-                    }
-                }
-            }
-        });
-    }
+    // 4. Token health: periodic validation, plus re-validation when Twitch rejects
+    //    the token (GQL 401, PubSub `ERR_BADAUTH`), at most once per minute.
+    let bad_auth = Arc::new(tokio::sync::Notify::new());
+    spawn_pubsub_watcher(
+        &shared,
+        &id,
+        &account.login,
+        &pubsub,
+        bad_auth.clone(),
+        session.clone(),
+    );
+    let mut backoff =
+        tm_twitch::net::Backoff::new(Duration::from_secs(30), Duration::from_secs(300));
+    let mut next_at = tokio::time::Instant::now() + next_check(expires_in);
     let mut last_check = tokio::time::Instant::now();
     loop {
-        tokio::select! {
+        let rejected = tokio::select! {
             _ = cancel.cancelled() => break,
-            _ = tokio::time::sleep(next_check(expires_in)) => {}
-            _ = auth_failed.cancelled() => {}
-            _ = gql.unauthorized() => {
-                // At most one 401-triggered validation per minute.
-                if last_check.elapsed() < Duration::from_secs(60) {
-                    continue;
-                }
-                tracing::info!("Twitch rejected the token, re-validating");
+            _ = tokio::time::sleep_until(next_at) => false,
+            _ = bad_auth.notified() => true,
+            _ = gql.unauthorized() => true,
+        };
+        if rejected {
+            if last_check.elapsed() < RECHECK_MIN {
+                // Checked moments ago: check again once the minute is over.
+                next_at = next_at.min(last_check + RECHECK_MIN);
+                continue;
             }
+            tracing::info!("Twitch rejected the token, re-validating");
         }
         last_check = tokio::time::Instant::now();
         match ensure_valid(&shared, &creds.load()).await {
             Ok(Some((c, exp))) => {
+                backoff.reset();
                 expires_in = exp;
+                next_at = tokio::time::Instant::now() + next_check(expires_in);
                 if *creds.load_full() != c {
                     creds.store(Arc::new(c.clone()));
                     account.credentials = c;
                     let _ = shared.store.db().upsert_account(account.clone()).await;
-                }
-                if auth_failed.is_cancelled() {
-                    // Token is fine after all (transient PubSub error); keep running.
-                    tracing::warn!("pubsub reported bad auth but token validates");
-                    break_on_repeat(&cancel).await;
+                    // Topics LISTENed with the old token: LISTEN them again.
+                    pubsub.reconnect_all();
+                } else if rejected {
+                    tracing::warn!("Twitch rejected the token but it validates; keeping it");
                 }
             }
             Ok(None) => {
@@ -277,18 +276,81 @@ async fn run(
                 cancel.cancelled().await;
                 return;
             }
-            Err(e) => tracing::debug!(error = %e, "token check failed (network), will retry"),
+            Err(e) => {
+                let delay = backoff.next_delay();
+                tracing::debug!(error = %e, ?delay, "token check failed (network), will retry");
+                next_at = tokio::time::Instant::now() + delay;
+            }
         }
     }
     set_status(&shared, &id, AccountStatus::Stopped);
 }
 
-/// Avoids a hot loop when PubSub keeps reporting bad auth while the token validates.
-async fn break_on_repeat(cancel: &CancellationToken) {
-    tokio::select! {
-        _ = cancel.cancelled() => {}
-        _ = tokio::time::sleep(TOKEN_CHECK_EVERY) => {}
-    }
+/// Forwards PubSub `ERR_BADAUTH` to `bad_auth`, and raises a `realtime_down` notice
+/// while the account's PubSub connections stay closed for `REALTIME_DOWN_AFTER`.
+fn spawn_pubsub_watcher(
+    shared: &Arc<Shared>,
+    account: &str,
+    login: &str,
+    pubsub: &PubSub,
+    bad_auth: Arc<tokio::sync::Notify>,
+    cancel: CancellationToken,
+) {
+    let mut rx = pubsub.subscribe();
+    let pubsub = pubsub.clone();
+    let shared = shared.clone();
+    let notice_id = format!("realtime_down:{account}");
+    let params = serde_json::json!({ "account": account, "login": login });
+    let login = login.to_string();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_secs(30));
+        let mut down_since: Option<tokio::time::Instant> = None;
+        let mut raised = false;
+        loop {
+            tokio::select! {
+                _ = cancel.cancelled() => break,
+                _ = tick.tick() => {}
+                ev = rx.recv() => match ev {
+                    Ok(PubSubEvent::ListenError { error, .. }) if error == "ERR_BADAUTH" => {
+                        bad_auth.notify_one();
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    _ => {}
+                }
+            }
+            if pubsub.is_connected() {
+                down_since = None;
+            } else {
+                down_since.get_or_insert_with(tokio::time::Instant::now);
+            }
+            let down = down_since.is_some_and(|t| t.elapsed() >= REALTIME_DOWN_AFTER);
+            if down && !raised {
+                tracing::warn!(%login, "pubsub unreachable");
+                shared.store.emit(Event::NoticeRaised {
+                    notice: Notice {
+                        id: notice_id.clone(),
+                        level: Level::Warning,
+                        message: format!(
+                            "Real-time updates for {login} are down: drops and points still progress, raids, moments and predictions wait for the connection"
+                        ),
+                        at: chrono::Utc::now(),
+                        kind: Some("realtime_down".into()),
+                        params: params.clone(),
+                    },
+                });
+                raised = true;
+            } else if !down && raised {
+                tracing::info!(%login, "pubsub back");
+                shared.store.emit(Event::NoticeCleared {
+                    id: notice_id.clone(),
+                });
+                raised = false;
+            }
+        }
+        if raised {
+            shared.store.emit(Event::NoticeCleared { id: notice_id });
+        }
+    });
 }
 
 /// Bumps `gen` whenever a settings scope relevant to `account` changes.
@@ -344,6 +406,31 @@ fn is_enabled(services: &AccountServices, module: &str, defaults: &serde_json::V
         .unwrap_or(true)
 }
 
+/// Drops what a module run left behind: its watch requests and its channels. A run
+/// that ends cleanly releases them itself; a crash, a panic or an abort does not.
+fn release_all(services: &AccountServices, module: &str) {
+    services.watch.clear(module);
+    let channels: Vec<String> = services.store.read(|s| {
+        s.accounts
+            .get(&services.account_id)
+            .map(|a| {
+                a.channels
+                    .values()
+                    .filter(|c| c.sources.contains(module))
+                    .map(|c| c.id.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    });
+    for channel_id in channels {
+        services.store.emit(Event::ChannelReleased {
+            account: services.account_id.clone(),
+            channel_id,
+            source: module.to_string(),
+        });
+    }
+}
+
 /// Runs a module for one account: restart on failure, follow its `enabled` flag.
 async fn supervise(
     module: Arc<dyn Module>,
@@ -360,7 +447,7 @@ async fn supervise(
         }
         if !is_enabled(&services, id, &info.default_settings) {
             health(&services, id, ModuleHealth::Disabled);
-            services.watch.clear(id);
+            release_all(&services, id);
             tokio::select! {
                 _ = cancel.cancelled() => return,
                 _ = services.settings_gen.changed() => continue,
@@ -405,11 +492,11 @@ async fn supervise(
                 {
                     task.abort();
                 }
-                services.watch.clear(id);
+                release_all(&services, id);
                 continue;
             }
         };
-        services.watch.clear(id);
+        release_all(&services, id);
         let error = match outcome {
             Ok(Ok(())) => {
                 if cancel.is_cancelled() {

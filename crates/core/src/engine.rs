@@ -792,6 +792,7 @@ impl Engine {
         let store = &self.shared.store;
         let parsed =
             settings::parse_scope(&scope).ok_or_else(|| ApiError::invalid("unknown scope"))?;
+        let _write = store.lock_settings().await;
         let mut next = value;
         if merge && !next.is_null() {
             let mut base = store

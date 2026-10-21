@@ -55,6 +55,10 @@ const RESYNC_ID: u64 = 0;
 
 /// Publishes the mirror at most this often (coalesces bursts of events).
 const PUBLISH_EVERY: Duration = Duration::from_millis(50);
+/// The remote client pings the engine this often…
+const PING_EVERY: Duration = Duration::from_secs(20);
+/// …and gives the connection up after this long without hearing from it.
+const SILENCE_LIMIT: Duration = Duration::from_secs(60);
 
 // ------------------------------------------------------------------- local
 
@@ -246,6 +250,10 @@ impl Backend for Remote {
         self.link.clone()
     }
     async fn execute(&self, cmd: Command) -> ApiResult {
+        // Refused at once rather than run whenever the link comes back.
+        if !matches!(*self.link.borrow(), Link::Connected) {
+            return Err(ApiError::new("unavailable", "not connected to the engine"));
+        }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
         self.pending.lock().insert(id, tx);
@@ -327,14 +335,34 @@ async fn run_remote(
         backoff.reset();
         let (mut sink, mut stream) = ws.split();
         let mut mirror: Option<State> = None;
-        let mut resyncing = false;
+        // Events received while a resync snapshot is on its way, applied after it.
+        let mut resync: Option<Vec<Value>> = None;
+        // Coalesces bursts of events into one state publication.
+        let mut publish_at: Option<tokio::time::Instant> = None;
+        let mut ping = tokio::time::interval(PING_EVERY);
+        let mut last_seen = tokio::time::Instant::now();
         let reason = loop {
             tokio::select! {
                 _ = cancel.cancelled() => { let _ = sink.close().await; return; }
                 Some(msg) = out_rx.recv() => {
                     if sink.send(Message::text(msg)).await.is_err() { break "send failed".to_string(); }
                 }
+                _ = ping.tick() => {
+                    // A half-open connection (sleep, NAT timeout) never errors: the
+                    // missing answers to our pings tell.
+                    if last_seen.elapsed() > SILENCE_LIMIT {
+                        break "no answer from the engine".to_string();
+                    }
+                    if sink.send(Message::Ping(Default::default())).await.is_err() { break "send failed".to_string(); }
+                }
+                _ = sleep_until_opt(publish_at) => {
+                    publish_at = None;
+                    if let Some(m) = &mirror {
+                        let _ = state_tx.send(Arc::new(m.clone()));
+                    }
+                }
                 msg = stream.next() => {
+                    last_seen = tokio::time::Instant::now();
                     let text = match msg {
                         Some(Ok(Message::Text(t))) => t,
                         Some(Ok(Message::Close(_))) | None => break "closed".to_string(),
@@ -352,32 +380,44 @@ async fn run_remote(
                             }
                         }
                         Some("event") => {
+                            if let Some(buffer) = resync.as_mut() {
+                                buffer.push(v["event"].clone());
+                                continue;
+                            }
                             let Some(m) = mirror.as_mut() else { continue };
-                            match serde_json::from_value::<Envelope>(v["event"].clone()) {
-                                // In order: apply.
-                                Ok(env) if env.seq == m.seq + 1 => {
-                                    apply_envelope(m, &env);
-                                    let _ = events.send(Arc::new(env));
-                                    let _ = state_tx.send(Arc::new(m.clone()));
+                            match apply_remote(m, &v["event"], &events) {
+                                Applied::Yes => {
+                                    publish_at.get_or_insert_with(|| tokio::time::Instant::now() + PUBLISH_EVERY);
                                 }
-                                Ok(env) if env.seq <= m.seq => {}
+                                Applied::Old => {}
                                 // A gap, or an event type this client does not know (newer
                                 // daemon): resynchronise from a fresh snapshot.
-                                _ => {
-                                    if !resyncing {
-                                        resyncing = true;
-                                        let req = json!({"id": RESYNC_ID, "cmd": {"cmd": "snapshot"}}).to_string();
-                                        if sink.send(Message::text(req)).await.is_err() { break "send failed".to_string(); }
-                                    }
+                                Applied::Gap => {
+                                    resync = Some(Vec::new());
+                                    let req = json!({"id": RESYNC_ID, "cmd": {"cmd": "snapshot"}}).to_string();
+                                    if sink.send(Message::text(req)).await.is_err() { break "send failed".to_string(); }
                                 }
                             }
                         }
                         Some("reply") if v["id"].as_u64() == Some(RESYNC_ID) => {
-                            if let Ok(s) = serde_json::from_value::<State>(v["data"].clone()) {
-                                let _ = state_tx.send(Arc::new(s.clone()));
-                                mirror = Some(s);
+                            let buffered = resync.take().unwrap_or_default();
+                            let Ok(mut s) = serde_json::from_value::<State>(v["data"].clone()) else { continue };
+                            // The snapshot already holds some of the buffered events.
+                            let mut gap = false;
+                            for e in &buffered {
+                                if apply_remote(&mut s, e, &events) == Applied::Gap {
+                                    gap = true;
+                                    break;
+                                }
                             }
-                            resyncing = false;
+                            let _ = state_tx.send(Arc::new(s.clone()));
+                            mirror = Some(s);
+                            publish_at = None;
+                            if gap {
+                                resync = Some(Vec::new());
+                                let req = json!({"id": RESYNC_ID, "cmd": {"cmd": "snapshot"}}).to_string();
+                                if sink.send(Message::text(req)).await.is_err() { break "send failed".to_string(); }
+                            }
                         }
                         Some("reply") => {
                             let Some(id) = v["id"].as_u64() else { continue };
@@ -396,11 +436,48 @@ async fn run_remote(
             }
         };
         let _ = link.send(Link::Disconnected(reason));
-        // Fail in-flight commands: their replies are lost with the connection.
+        // Fail in-flight commands (their replies are lost with the connection), and
+        // drop unsent ones: their callers were told the link is down.
         pending.lock().clear();
+        while out_rx.try_recv().is_ok() {}
         tokio::select! {
             _ = cancel.cancelled() => return,
             _ = tokio::time::sleep(backoff.next_delay()) => {}
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Applied {
+    Yes,
+    /// Already in the mirror.
+    Old,
+    /// Out of order or unknown to this client: needs a fresh snapshot.
+    Gap,
+}
+
+/// Applies one event received from the engine to `mirror` and forwards it.
+fn apply_remote(
+    mirror: &mut State,
+    event: &Value,
+    events: &broadcast::Sender<Arc<Envelope>>,
+) -> Applied {
+    if event["seq"].as_u64().is_some_and(|seq| seq <= mirror.seq) {
+        return Applied::Old;
+    }
+    match serde_json::from_value::<Envelope>(event.clone()) {
+        Ok(env) if env.seq == mirror.seq + 1 => {
+            apply_envelope(mirror, &env);
+            let _ = events.send(Arc::new(env));
+            Applied::Yes
+        }
+        _ => Applied::Gap,
+    }
+}
+
+async fn sleep_until_opt(t: Option<tokio::time::Instant>) {
+    match t {
+        Some(t) => tokio::time::sleep_until(t).await,
+        None => std::future::pending().await,
     }
 }

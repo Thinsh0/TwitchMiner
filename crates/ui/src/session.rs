@@ -26,12 +26,13 @@ pub struct Session {
     pub backend: Arc<dyn Backend>,
     pub target: Target,
     app: Option<tm_app::App>,
+    /// Why the local engine runs without the API it was asked to serve.
+    pub api_error: Option<String>,
 }
 
-/// Logs and API tokens of a local engine.
+/// API tokens of a local engine.
 #[derive(Clone)]
 pub struct LocalInfo {
-    pub logs: tm_core::logging::LogBuffer,
     pub agent_token: String,
     pub api_token: String,
 }
@@ -50,22 +51,34 @@ pub const LOCAL_DAEMON_URL: &str = "http://127.0.0.1:7878";
 
 impl Session {
     /// `api`: for a local engine, also serve the HTTP/WebSocket API on this address
-    /// (remote control from a phone, AI agents).
+    /// (remote control from a phone, AI agents). `keep_trying`: a remote engine that
+    /// does not answer is kept (it reconnects by itself) instead of failing.
     pub async fn open(
         target: Target,
         data_dir: Option<PathBuf>,
         api: Option<std::net::SocketAddr>,
+        keep_trying: bool,
     ) -> Result<Self, OpenError> {
         match &target {
             Target::Local => {
-                let app = tm_app::App::start(tm_app::AppOptions {
-                    data_dir,
-                    log_stdout: false,
-                    api: api.map(|bind| tm_app::ApiOptions { bind, token: None }),
-                    ..Default::default()
-                })
-                .await
-                .map_err(|e| match e.downcast_ref::<EngineError>() {
+                let start = |api: Option<std::net::SocketAddr>| {
+                    tm_app::App::start(tm_app::AppOptions {
+                        data_dir: data_dir.clone(),
+                        log_stdout: false,
+                        api: api.map(|bind| tm_app::ApiOptions { bind, token: None }),
+                        ..Default::default()
+                    })
+                };
+                // A busy or not-yet-available API address must not keep the engine
+                // from mining: start it without the API and say so.
+                let (started, api_error) = match start(api).await {
+                    Err(e) if e.downcast_ref::<tm_app::ApiBindError>().is_some() => {
+                        tracing::warn!(error = %e, "starting the engine without its API");
+                        (start(None).await, Some(e.to_string()))
+                    }
+                    r => (r, None),
+                };
+                let app = started.map_err(|e| match e.downcast_ref::<EngineError>() {
                     Some(EngineError::Lock(LockError::Busy { pid })) => {
                         OpenError::Busy { pid: pid.clone() }
                     }
@@ -75,12 +88,14 @@ impl Session {
                     backend: Arc::new(Local::new(app.engine.clone()).with_logs(app.logs.clone())),
                     target,
                     app: Some(app),
+                    api_error,
                 })
             }
             Target::Demo => Ok(Self {
                 backend: Arc::new(crate::demo::Demo::new()),
                 target,
                 app: None,
+                api_error: None,
             }),
             Target::Remote { url, token } => {
                 let remote = Remote::connect(url.trim(), token.trim())
@@ -98,10 +113,19 @@ impl Session {
                 .await;
                 let current = link.borrow().clone();
                 match current {
+                    // A saved engine that is down keeps being retried: the view shows
+                    // it unreachable instead of asking again which engine to use.
+                    _ if keep_trying => Ok(Self {
+                        backend: Arc::new(remote),
+                        target,
+                        app: None,
+                        api_error: None,
+                    }),
                     Link::Connected => Ok(Self {
                         backend: Arc::new(remote),
                         target,
                         app: None,
+                        api_error: None,
                     }),
                     Link::Disconnected(reason) => Err(OpenError::Failed(reason)),
                     Link::Connecting => Err(OpenError::Failed("no answer".into())),
@@ -113,7 +137,6 @@ impl Session {
     /// What only a local engine has (`None` for a remote one).
     pub fn local(&self) -> Option<LocalInfo> {
         self.app.as_ref().map(|a| LocalInfo {
-            logs: a.logs.clone(),
             agent_token: a.agent_token.clone(),
             api_token: a.api_token.clone(),
         })
@@ -134,4 +157,32 @@ pub async fn local_daemon_token(data_dir: Option<PathBuf>) -> Option<String> {
     tm_app::read_token(data_dir, tm_app::TokenKind::Full)
         .await
         .ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_busy_api_port_does_not_stop_the_engine() {
+        let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = taken.local_addr().unwrap();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("tm-ui-session-{n}"));
+        let session = Session::open(Target::Local, Some(dir.clone()), Some(addr), false)
+            .await
+            .expect("the engine starts without its API");
+        assert!(
+            session
+                .api_error
+                .as_ref()
+                .unwrap()
+                .contains(&addr.to_string())
+        );
+        session.close().await;
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

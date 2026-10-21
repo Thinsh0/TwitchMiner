@@ -64,6 +64,22 @@ pub struct App {
 
 const TOKEN_NS: &str = "server";
 
+/// The API address could not be opened (port in use, address not available yet).
+/// Nothing was started; retrying without `api` starts the engine alone.
+#[derive(Debug)]
+pub struct ApiBindError {
+    pub bind: std::net::SocketAddr,
+    pub error: std::io::Error,
+}
+
+impl std::fmt::Display for ApiBindError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "cannot open the API port {}: {}", self.bind, self.error)
+    }
+}
+
+impl std::error::Error for ApiBindError {}
+
 impl App {
     pub async fn start(opts: AppOptions) -> anyhow::Result<Self> {
         tm_twitch::tls::install_crypto_provider();
@@ -76,14 +92,16 @@ impl App {
             },
         );
         // Bind first: a busy port must not leave a started engine behind.
-        let listener = match &opts.api {
-            Some(api) => Some(
-                tokio::net::TcpListener::bind(api.bind)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("cannot open the API port {}: {e}", api.bind))?,
-            ),
-            None => None,
-        };
+        let listener =
+            match &opts.api {
+                Some(api) => Some(tokio::net::TcpListener::bind(api.bind).await.map_err(
+                    |error| ApiBindError {
+                        bind: api.bind,
+                        error,
+                    },
+                )?),
+                None => None,
+            };
         let mut modules = tm_modules::builtin();
         modules.extend(opts.extra_modules);
         let engine = Engine::start(EngineConfig {

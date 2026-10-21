@@ -200,7 +200,20 @@ fn home(bridge: &Bridge, state: &State, id: &str, account: Option<&Account>, inp
         Some(AccountStatus::Standby { peer }) => Some(peer.clone()),
         _ => None,
     };
-    let (idle, detail) = if summary.paused {
+    let disabled = account
+        .and_then(|a| a.info.as_ref())
+        .is_some_and(|i| !i.enabled);
+    let (idle, detail) = if disabled {
+        (Idle::Disabled, String::new())
+    } else if let Some(AccountStatus::AuthRequired) = account.and_then(|a| a.status.as_ref()) {
+        (Idle::SignedOut, String::new())
+    } else if let Some(AccountStatus::Starting | AccountStatus::Stopped) =
+        account.and_then(|a| a.status.as_ref())
+    {
+        (Idle::NotRunning, String::new())
+    } else if let Some(AccountStatus::Error { message }) = account.and_then(|a| a.status.as_ref()) {
+        (Idle::NotRunning, message.clone())
+    } else if summary.paused {
         (Idle::Paused, String::new())
     } else if let Some(peer) = standby {
         (Idle::Standby, peer)
@@ -356,11 +369,13 @@ fn drops(bridge: &Bridge, state: &State, id: &str, account: Option<&Account>, in
         return;
     };
     let entries = plan(account);
-    let rows: Vec<PlanRow> = entries
+    let mut rows: Vec<PlanRow> = entries
         .iter()
         .map(|e| plan_row(account, e, input.now, lang))
         .collect();
-    sync(bridge.get_plan(), rows, |m| bridge.set_plan(m));
+    let current = bridge.get_plan();
+    reuse_drop_models(&current, &mut rows);
+    sync(current, rows, |m| bridge.set_plan(m));
     let focus = account
         .module_data
         .get("drops")
@@ -527,6 +542,19 @@ fn channels(bridge: &Bridge, state: &State, id: &str, account: Option<&Account>)
         excluded.into_iter().map(Into::into).collect(),
         |m| bridge.set_excluded_channels(m),
     );
+}
+
+/// Keeps a row's drop-line model when its lines did not change: Slint compares models
+/// by identity, so a new one would make every row look changed and be rebuilt.
+fn reuse_drop_models(current: &ModelRc<PlanRow>, rows: &mut [PlanRow]) {
+    for (i, row) in rows.iter_mut().enumerate() {
+        let Some(old) = current.row_data(i) else {
+            break;
+        };
+        if old.campaign_id == row.campaign_id && old.drops.iter().eq(row.drops.iter()) {
+            row.drops = old.drops;
+        }
+    }
 }
 
 fn plan_row(account: &Account, e: &PlanEntry, now: DateTime<Utc>, lang: i32) -> PlanRow {
@@ -756,8 +784,19 @@ fn notices(state: &State) -> Vec<NoticeItem> {
             }
             .into(),
             message: n.message.as_str().into(),
+            kind: n.kind.as_deref().unwrap_or_default().into(),
+            login: param(&n.params, "login"),
+            peer: param(&n.params, "peer"),
+            version: param(&n.params, "version"),
+            current: param(&n.params, "current"),
+            url: param(&n.params, "url"),
+            error: param(&n.params, "error"),
         })
         .collect()
+}
+
+fn param(params: &Value, key: &str) -> SharedString {
+    params[key].as_str().unwrap_or_default().into()
 }
 
 pub fn initial(name: &str) -> String {
@@ -796,12 +835,17 @@ pub fn sync<T: Clone + PartialEq + 'static>(
     }
 }
 
+/// A state to show, with the remote engine's address and link (`None` when local).
+pub type Update = (Arc<State>, Option<(String, Link)>);
+
 /// Last state and link, kept on the UI thread to re-render on a timer (relative times).
 #[derive(Default)]
 pub struct Last {
     pub state: Arc<State>,
     pub remote: Option<(String, Link)>,
     pub today: Option<Today>,
+    /// Game names found by Twitch's search (their exact spelling).
+    pub found_games: Vec<String>,
 }
 
 #[cfg(test)]

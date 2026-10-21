@@ -130,8 +130,11 @@ component NowCard inherits Card {
         text: Bridge.idle == Idle.paused ? @tr("Paused: nothing is watched.")
             : Bridge.idle == Idle.outside-hours ? @tr("Outside your watching hours: nothing is watched for now.")
             : Bridge.idle == Idle.standby ? @tr("This account is mined by {}.", Bridge.idle-detail)
+            : Bridge.idle == Idle.disabled ? @tr("This account is turned off (Settings › Accounts): nothing is mined for it.")
+            : Bridge.idle == Idle.signed-out ? @tr("This account must sign in again before anything is watched.")
+            : Bridge.idle == Idle.not-running ? (Bridge.idle-detail == "" ? @tr("Starting…") : @tr("This account cannot run: {}", Bridge.idle-detail))
             : Bridge.any-live ? @tr("Choosing what to watch…")
-            : @tr("None of the followed channels is live right now.");
+            : @tr("None of your channels is live and no drops campaign can be watched right now.");
     }
 }
 

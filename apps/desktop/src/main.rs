@@ -6,7 +6,7 @@
 mod instance;
 mod tray;
 
-use tm_ui::{AppHandle, Platform, Status};
+use tm_ui::{AppHandle, Notification, Platform, Status};
 
 /// Argument used when starting with the session: start hidden in the tray.
 const BACKGROUND: &str = "--background";
@@ -30,6 +30,21 @@ impl Platform for Desktop {
         if let Some(tray) = &mut self.tray {
             tray.update(status);
         }
+    }
+
+    fn notify(&mut self, n: &Notification) {
+        let (title, body) = (n.title.clone(), n.body.clone());
+        // Off the UI thread: the notification service may answer slowly.
+        std::thread::spawn(move || {
+            let shown = notify_rust::Notification::new()
+                .appname("TwitchMiner")
+                .summary(&title)
+                .body(&body)
+                .show();
+            if let Err(e) = shown {
+                eprintln!("notification not shown: {e}");
+            }
+        });
     }
 
     fn autostart(&self) -> Option<bool> {

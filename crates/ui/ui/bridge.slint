@@ -14,7 +14,7 @@ export enum LinkState { local, connected, connecting, down }
 // Why the "choose an engine" screen is shown.
 export enum SetupReason { none, busy, failed }
 
-export enum ToastKind { plain, error, login-ok, claimed, invalid, copied, backup, manifest, drop-claimed }
+export enum ToastKind { plain, error, login-ok, claimed, invalid, copied, backup, manifest, drop-claimed, api-off, unreachable, timeout }
 
 export struct AccountItem {
     id: string,
@@ -44,7 +44,17 @@ export struct NoticeItem {
     id: string,
     // info | warning | error
     level: string,
+    // English fallback, shown for a kind this interface does not know.
     message: string,
+    // update | duplicate | proxy_invalid | realtime_down (or another, newer kind)
+    kind: string,
+    // Parameters of the kind (empty when absent).
+    login: string,
+    peer: string,
+    version: string,
+    current: string,
+    url: string,
+    error: string,
 }
 
 export struct ToastItem {
@@ -263,7 +273,9 @@ export struct GameItem {
 }
 
 // Why nothing is watched, when watching is not allowed.
-export enum Idle { none, paused, outside-hours, standby }
+// disabled: the account is turned off; signed-out: it must sign in again;
+// not-running: starting or in error (`idle-detail`: the error).
+export enum Idle { none, paused, outside-hours, standby, disabled, signed-out, not-running }
 
 export global Bridge {
     // Connection to the engine
@@ -355,9 +367,12 @@ export global Bridge {
     in property <bool> local-engine;
     // API of the local engine: address it listens on (empty = off) and full token.
     in property <string> api-bind;
+    // Why the local engine runs without its API (address busy or not available yet).
+    in property <string> api-error;
     in property <string> api-token;
     in property <[LogItem]> logs;
-    in property <bool> logs-available;
+    // Why the engine's log could not be read (empty when it was).
+    in property <string> logs-error;
     in property <UpdateInfo> update-info;
     // Desktop: start with the session (when supported), closing hides to the tray.
     in property <bool> has-autostart;
@@ -374,6 +389,8 @@ export global Bridge {
 
     // View state (never engine state)
     in-out property <Screen> screen: Screen.home;
+    // Set before showing Settings to open its Advanced part (then reset by it).
+    in-out property <bool> open-advanced;
     // Selected account id; empty = the only / first account.
     in-out property <string> account;
     in-out property <bool> login-busy;

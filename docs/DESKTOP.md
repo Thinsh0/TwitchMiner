@@ -13,12 +13,17 @@ Au premier lancement, l'app démarre un moteur local (données dans le dossier d
 
 Si le dossier de données est déjà utilisé (daemon lancé sur ce PC), l'app propose de s'y connecter avec l'adresse et le jeton déjà remplis.
 
-**Accès à distance (API)** : dans Réglages › Avancé › Réseau, l'app peut servir l'API de son moteur local (par défaut `127.0.0.1:7878`, comme le daemon) pour un téléphone, un autre PC ou un agent IA. Mettre l'adresse locale ou Tailscale pour l'ouvrir aux autres appareils.
+Un moteur distant déjà choisi qui ne répond pas au démarrage est gardé : l'app réessaie seule, et un bandeau au-dessus de chaque écran dit qu'il est injoignable (avec « Changer… »). Pendant ce temps, les actions sont refusées tout de suite plutôt qu'exécutées au retour de la connexion.
+
+**Accès à distance (API)** : dans Réglages › Avancé › Réseau, l'app peut servir l'API de son moteur local (par défaut `127.0.0.1:7878`, comme le daemon) pour un téléphone, un autre PC ou un agent IA. Mettre l'adresse locale ou Tailscale pour l'ouvrir aux autres appareils. Si l'adresse est prise ou pas encore disponible (Tailscale pas encore connecté), le moteur démarre quand même, sans l'API, et le réglage dit pourquoi.
+
+Le **journal** (Réglages › Avancé) est celui du moteur, local ou distant.
 
 ## Bureau
 
 - **Barre système** : l'icône résume l'activité (chaînes regardées, drop en cours, pause, action requise). Clic gauche : ouvrir. Menu : ouvrir, pause / reprise, quitter.
 - **Fermer la fenêtre** la masque : le moteur continue. « Quitter » dans le menu de l'icône arrête tout proprement.
+- **Notifications système** quand la fenêtre est masquée : drop récupéré, compte à reconnecter, alertes des drops (campagne juste, manquée, compte de jeu à lier, nouvelle campagne).
 - **Lancer avec la session** (Réglages › Démarrage) : inscrit l'app au démarrage de la session de l'utilisateur (registre `Run` sous Windows, `~/.config/autostart` sous Linux), avec `--background` : elle démarre dans la barre système sans ouvrir de fenêtre.
 - **Une seule instance** par utilisateur et dossier de données : relancer l'app affiche la fenêtre déjà ouverte.
 

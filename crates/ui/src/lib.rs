@@ -16,6 +16,7 @@ mod demo;
 mod dev;
 mod forms;
 mod images;
+mod notifications;
 mod platform;
 mod prefs;
 mod present;
@@ -24,6 +25,7 @@ mod settings;
 
 use std::path::PathBuf;
 
+pub use notifications::Notification;
 pub use platform::{AppHandle, NoPlatform, Platform, Status};
 pub use session::Target;
 

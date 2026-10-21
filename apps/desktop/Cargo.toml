@@ -18,3 +18,5 @@ image.workspace = true
 # ksni: tray icon over D-Bus on Linux (pure Rust, no GTK).
 tray-icon = { version = "0.26", default-features = false, features = ["ksni"] }
 auto-launch = "0.6"
+# System notifications while the window is hidden (D-Bus on Linux, WinRT on Windows).
+notify-rust = "4"

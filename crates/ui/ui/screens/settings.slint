@@ -1,4 +1,4 @@
-import { AboutSlint } from "std-widgets.slint";
+import { AboutSlint, ListView } from "std-widgets.slint";
 import { Theme, ThemeMode } from "../theme.slint";
 import { Bridge, AccountItem, FieldItem, LinkState, Screen, HourWindow } from "../bridge.slint";
 import { Avatar, Button, ButtonKind, Card, Icon, IconButton, Icons, Muted, Page, Pill, Segmented, SegmentItem, TextField, Toggle, Tone } from "../widgets.slint";
@@ -409,7 +409,12 @@ component ApiAccess inherits VerticalLayout {
             clicked => { Bridge.set-api(true, root.bind); }
         }
     }
-    if Bridge.api-bind != "": SecretRow {
+    if Bridge.api-error != "": Text {
+        text: @tr("Not available: {}. The engine runs without it; change the address or turn it off.", Bridge.api-error);
+        color: Theme.danger;
+        wrap: word-wrap;
+    }
+    if Bridge.api-bind != "" && Bridge.api-error == "": SecretRow {
         label: @tr("API token");
         secret: Bridge.api-token;
     }
@@ -420,11 +425,11 @@ component LogView inherits VerticalLayout {
     HorizontalLayout {
         spacing: 8px;
         Muted {
-            text: Bridge.logs-available ? @tr("Most recent first.") : @tr("The log of a remote engine is on the machine running it.");
+            text: Bridge.logs-error != "" ? @tr("The engine's log could not be read: {}", Bridge.logs-error) : @tr("Most recent first.");
             vertical-alignment: center;
             horizontal-stretch: 1;
         }
-        if Bridge.logs-available: Button {
+        Button {
             compact: true;
             kind: ButtonKind.ghost;
             icon: Icons.refresh;
@@ -432,39 +437,39 @@ component LogView inherits VerticalLayout {
             clicked => { Bridge.logs-refresh(); }
         }
     }
-    if Bridge.logs-available: Rectangle {
+    if Bridge.logs-error == "": Rectangle {
         height: 260px;
         border-radius: Theme.radius-m;
         background: Theme.inset;
         clip: true;
-        Flickable {
-            content-height: lines.preferred-height;
-            lines := VerticalLayout {
-                padding: 10px;
-                spacing: 3px;
-                for l in Bridge.logs: HorizontalLayout {
-                    spacing: 8px;
-                    Text {
-                        text: l.time;
-                        font-family: "Consolas";
-                        font-size: Theme.font-xs;
-                        color: Theme.text-faint;
-                    }
-                    Text {
-                        text: l.level;
-                        width: 40px;
-                        font-family: "Consolas";
-                        font-size: Theme.font-xs;
-                        color: l.level == "error" ? Theme.danger : l.level == "warn" ? Theme.warning : Theme.text-faint;
-                    }
-                    Text {
-                        text: l.message;
-                        font-family: "Consolas";
-                        font-size: Theme.font-xs;
-                        color: Theme.text-muted;
-                        wrap: word-wrap;
-                        horizontal-stretch: 1;
-                    }
+        // Virtualised: only the visible lines exist.
+        ListView {
+            for l in Bridge.logs: HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                padding-top: 2px;
+                padding-bottom: 2px;
+                spacing: 8px;
+                Text {
+                    text: l.time;
+                    font-family: "Consolas";
+                    font-size: Theme.font-xs;
+                    color: Theme.text-faint;
+                }
+                Text {
+                    text: l.level;
+                    width: 40px;
+                    font-family: "Consolas";
+                    font-size: Theme.font-xs;
+                    color: l.level == "error" ? Theme.danger : l.level == "warn" ? Theme.warning : Theme.text-faint;
+                }
+                Text {
+                    text: l.message;
+                    font-family: "Consolas";
+                    font-size: Theme.font-xs;
+                    color: Theme.text-muted;
+                    wrap: word-wrap;
+                    horizontal-stretch: 1;
                 }
             }
         }
@@ -474,6 +479,12 @@ component LogView inherits VerticalLayout {
 export component SettingsScreen inherits Page {
     title: @tr("Settings");
     property <bool> advanced: Bridge.dev-expand;
+    init => {
+        if Bridge.open-advanced {
+            root.advanced = true;
+            Bridge.open-advanced = false;
+        }
+    }
 
     Card {
         SectionTitle {

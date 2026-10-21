@@ -5,6 +5,7 @@
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -33,6 +34,9 @@ thread_local! {
 /// Where the local engine serves its API when the option is on (same as the daemon).
 const DEFAULT_API_BIND: &str = "127.0.0.1:7878";
 
+/// Pause in the typing before asking Twitch for game names.
+const GAME_SEARCH_DELAY: Duration = Duration::from_millis(250);
+
 /// How long a toast stays on screen.
 const TOAST_TTL: Duration = Duration::from_secs(6);
 
@@ -47,8 +51,10 @@ struct Inner {
     session: tokio::sync::Mutex<Option<Session>>,
     watcher: Mutex<Option<JoinHandle<()>>>,
     prefs: Mutex<Prefs>,
-    /// Logs and tokens of the local engine (none with a remote one).
+    /// Tokens of the local engine (none with a remote one).
     local: Mutex<Option<LocalInfo>>,
+    /// Latest game search typed (older answers are dropped).
+    game_search: AtomicU64,
 }
 
 impl Controller {
@@ -62,6 +68,7 @@ impl Controller {
             watcher: Mutex::new(None),
             prefs: Mutex::new(prefs),
             local: Mutex::new(None),
+            game_search: AtomicU64::new(0),
         }))
     }
 
@@ -180,14 +187,15 @@ impl Controller {
                 let canonical = c.on_ui_value(|ui| {
                     let account = ui.global::<Bridge>().get_account().to_string();
                     LAST.with(|l| {
-                        l.borrow()
-                            .state
+                        let l = l.borrow();
+                        l.state
                             .account(&account)
                             .map(|a| present::game_matches(a, &value, &[], 50))
                             .unwrap_or_default()
+                            .into_iter()
+                            .chain(l.found_games.iter().cloned())
+                            .find(|n| n.eq_ignore_ascii_case(&value))
                     })
-                    .into_iter()
-                    .find(|n| n.eq_ignore_ascii_case(&value))
                 });
                 if let Some(name) = canonical {
                     value = name;
@@ -415,37 +423,17 @@ impl Controller {
                 );
             }
         });
-        let weak = ui.as_weak();
-        b.on_game_search(move |text| {
-            let Some(ui) = weak.upgrade() else { return };
-            let b = ui.global::<Bridge>();
-            let account = b.get_account().to_string();
-            let matches = LAST.with(|l| {
-                let l = l.borrow();
-                let taken: Vec<String> = ["games", "exclude_games"]
-                    .iter()
-                    .flat_map(|k| {
-                        present::string_list(present::module_setting(
-                            &l.state, &account, "drops", k,
-                        ))
-                    })
-                    .collect();
-                l.state
-                    .account(&account)
-                    .map(|a| present::game_matches(a, &text, &taken, 6))
-                    .unwrap_or_default()
-            });
-            b.set_game_matches(ModelRc::new(VecModel::from(
-                matches
-                    .into_iter()
-                    .map(SharedString::from)
-                    .collect::<Vec<_>>(),
-            )));
-        });
+        let c = self.clone();
+        b.on_game_search(move |text| c.game_search(text.to_string()));
         let c = self.clone();
         b.on_activity_changed(move || c.load_activity(false));
         let c = self.clone();
-        b.on_screen_shown(move || c.load_activity(false));
+        b.on_screen_shown(move || {
+            c.load_activity(false);
+            if c.on_ui_value(|ui| ui.global::<Bridge>().get_screen() == crate::Screen::Settings) {
+                c.refresh_logs();
+            }
+        });
         let c = self.clone();
         b.on_history_load_more(move || c.load_activity(true));
         let c = self.clone();
@@ -549,10 +537,14 @@ impl Controller {
                 .api
                 .as_deref()
                 .and_then(|a| a.parse().ok());
-            match Session::open(target.clone(), inner.data_dir.clone(), api).await {
+            match Session::open(target.clone(), inner.data_dir.clone(), api, !from_setup).await {
                 Ok(new) => {
                     let backend = new.backend.clone();
                     let local = new.local();
+                    let api_error = new.api_error.clone();
+                    if let Some(e) = &api_error {
+                        me.toast(ToastKind::ApiOff, Tone::Warning, e.clone());
+                    }
                     let (agent, full) = local
                         .as_ref()
                         .map(|l| (l.agent_token.clone(), l.api_token.clone()))
@@ -565,6 +557,7 @@ impl Controller {
                         b.set_agent_token(agent.into());
                         b.set_api_token(full.into());
                         b.set_api_bind(api_bind.into());
+                        b.set_api_error(api_error.unwrap_or_default().into());
                         b.set_local_engine(is_local);
                     });
                     let remote = match &target {
@@ -651,18 +644,32 @@ impl Controller {
             // A local engine's link never changes (its sender is gone): stop polling it.
             let mut link_open = true;
             let mut first = true;
+            // Latest state not rendered yet: changes arriving while the window is busy
+            // rendering replace it instead of queueing one render each.
+            let pending: Arc<Mutex<Option<present::Update>>> = Arc::default();
             loop {
                 let s = state.borrow_and_update().clone();
                 let l = link.borrow_and_update().clone();
                 let remote = remote_url.clone().map(|u| (u, l));
-                me.on_ui(move |ui| {
-                    LAST.with(|last| {
-                        let mut last = last.borrow_mut();
-                        last.state = s;
-                        last.remote = remote;
+                let queued = pending
+                    .lock()
+                    .expect("pending lock")
+                    .replace((s, remote))
+                    .is_some();
+                if !queued {
+                    let pending = pending.clone();
+                    me.on_ui(move |ui| {
+                        let Some((s, remote)) = pending.lock().expect("pending lock").take() else {
+                            return;
+                        };
+                        LAST.with(|last| {
+                            let mut last = last.borrow_mut();
+                            last.state = s;
+                            last.remote = remote;
+                        });
+                        render(ui);
                     });
-                    render(ui);
-                });
+                }
                 if first {
                     first = false;
                     me.refresh_today();
@@ -693,6 +700,27 @@ impl Controller {
     }
 
     fn on_event(&self, event: &Event) {
+        // Window hidden (tray): the news worth it as a system notification.
+        let notable = matches!(
+            event,
+            Event::DropClaimed { .. }
+                | Event::DropAlert { .. }
+                | Event::AccountStatusChanged { .. }
+        );
+        let e = event.clone();
+        self.on_ui(move |ui| {
+            if !notable {
+                return;
+            }
+            if ui.window().is_visible() {
+                return;
+            }
+            let fr = ui.global::<Bridge>().get_language() != 1;
+            let n = LAST.with(|l| crate::notifications::compose(&e, &l.borrow().state, fr));
+            if let Some(n) = n {
+                crate::platform::with(|p| p.notify(&n));
+            }
+        });
         if let Event::DropClaimed { drop_name, .. } = event {
             self.toast(ToastKind::DropClaimed, Tone::Success, drop_name.clone());
         }
@@ -822,36 +850,56 @@ impl Controller {
         });
     }
 
-    /// Recent lines of the local engine's log (not available for a remote engine).
-    fn refresh_logs(&self) {
-        let logs = self
-            .0
-            .local
-            .lock()
-            .expect("local lock")
-            .as_ref()
-            .map(|l| l.logs.clone());
-        self.on_ui(move |ui| {
-            let b = ui.global::<Bridge>();
-            b.set_logs_available(logs.is_some());
-            let lines: Vec<LogItem> = logs
-                .map(|l| l.recent(300))
-                .unwrap_or_default()
+    /// Game name suggestions: known names at once, then Twitch's search after a
+    /// short pause in the typing (the latest typing wins).
+    fn game_search(&self, text: String) {
+        let seq = self.0.game_search.fetch_add(1, AtomicOrdering::Relaxed) + 1;
+        self.on_ui_value(|ui| show_game_matches(ui, &text, &[]));
+        let query = text.trim().to_string();
+        if query.chars().count() < 2 {
+            return;
+        }
+        let Some(backend) = self.0.backend.lock().expect("backend lock").clone() else {
+            return;
+        };
+        let me = self.clone();
+        self.0.rt.spawn(async move {
+            tokio::time::sleep(GAME_SEARCH_DELAY).await;
+            if me.0.game_search.load(AtomicOrdering::Relaxed) != seq {
+                return;
+            }
+            let cmd = Command::GamesSearch {
+                query,
+                limit: Some(10),
+            };
+            // Silent on failure: the known names are already shown.
+            let Ok(found) = backend.execute(cmd).await else {
+                return;
+            };
+            let names: Vec<String> = found
+                .as_array()
                 .into_iter()
-                .rev()
-                .map(|l| LogItem {
-                    time: l
-                        .ts
-                        .with_timezone(&chrono::Local)
-                        .format("%d/%m %H:%M:%S")
-                        .to_string()
-                        .into(),
-                    level: l.level.to_lowercase().into(),
-                    target: l.target.into(),
-                    message: l.message.into(),
-                })
+                .flatten()
+                .filter_map(|g| g["name"].as_str().map(str::to_string))
                 .collect();
-            b.set_logs(ModelRc::new(VecModel::from(lines)));
+            let latest = me.clone();
+            me.on_ui(move |ui| {
+                if latest.0.game_search.load(AtomicOrdering::Relaxed) == seq {
+                    show_game_matches(ui, &text, &names);
+                }
+            });
+        });
+    }
+
+    /// Recent lines of the engine's log, local or remote.
+    fn refresh_logs(&self) {
+        let Some(backend) = self.0.backend.lock().expect("backend lock").clone() else {
+            return;
+        };
+        let me = self.clone();
+        self.0.rt.spawn(async move {
+            let r = backend.logs(300).await;
+            me.on_ui(move |ui| show_logs(ui, r));
         });
     }
 
@@ -1075,7 +1123,14 @@ impl Controller {
         self.0.rt.spawn(async move {
             let r = backend.execute(cmd).await;
             if let Err(e) = &r {
-                me.toast(ToastKind::Error, Tone::Danger, e.message.clone());
+                // The link's own failures have a translated text; others carry the
+                // engine's explanation.
+                let kind = match e.code.as_str() {
+                    "unavailable" => ToastKind::Unreachable,
+                    "timeout" => ToastKind::Timeout,
+                    _ => ToastKind::Error,
+                };
+                me.toast(kind, Tone::Danger, e.message.clone());
             }
             done(&r);
         });
@@ -1104,6 +1159,79 @@ impl Controller {
             s.close().await;
         }
     }
+}
+
+/// Suggestions for the game being typed: names already known (campaigns, live
+/// channels), then `found` by Twitch's search; games already listed are left out.
+fn show_game_matches(ui: &MainWindow, text: &str, found: &[String]) {
+    let b = ui.global::<Bridge>();
+    let account = b.get_account().to_string();
+    let matches = LAST.with(|l| {
+        let mut l = l.borrow_mut();
+        // Names from Twitch keep their spelling for the next additions.
+        for n in found {
+            if !l.found_games.iter().any(|g| g.eq_ignore_ascii_case(n)) {
+                l.found_games.push(n.clone());
+            }
+        }
+        let taken: Vec<String> = ["games", "exclude_games"]
+            .iter()
+            .flat_map(|k| {
+                present::string_list(present::module_setting(&l.state, &account, "drops", k))
+            })
+            .collect();
+        let mut out = l
+            .state
+            .account(&account)
+            .map(|a| present::game_matches(a, text, &taken, 6))
+            .unwrap_or_default();
+        for n in found {
+            if out.len() < 6
+                && !out.iter().any(|o| o.eq_ignore_ascii_case(n))
+                && !taken.iter().any(|t| t.eq_ignore_ascii_case(n))
+            {
+                out.push(n.clone());
+            }
+        }
+        out
+    });
+    b.set_game_matches(ModelRc::new(VecModel::from(
+        matches
+            .into_iter()
+            .map(SharedString::from)
+            .collect::<Vec<_>>(),
+    )));
+}
+
+/// Shows log lines (most recent first), or why they could not be read.
+fn show_logs(ui: &MainWindow, r: Result<Vec<tm_core::logging::LogLine>, tm_core::ApiError>) {
+    let b = ui.global::<Bridge>();
+    let lines = match r {
+        Ok(lines) => {
+            b.set_logs_error(SharedString::default());
+            lines
+        }
+        Err(e) => {
+            b.set_logs_error(e.message.into());
+            Vec::new()
+        }
+    };
+    let lines: Vec<LogItem> = lines
+        .into_iter()
+        .rev()
+        .map(|l| LogItem {
+            time: l
+                .ts
+                .with_timezone(&chrono::Local)
+                .format("%d/%m %H:%M:%S")
+                .to_string()
+                .into(),
+            level: l.level.to_lowercase().into(),
+            target: l.target.into(),
+            message: l.message.into(),
+        })
+        .collect();
+    b.set_logs(ModelRc::new(VecModel::from(lines)));
 }
 
 /// The summary shown outside the window (tray), all accounts together.

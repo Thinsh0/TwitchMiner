@@ -1,7 +1,7 @@
 // The "À faire" zone: every action the user has to take, in one place.
 
 import { Theme } from "../theme.slint";
-import { Bridge, LoginItem, NoticeItem, AccountItem, PlanTodo } from "../bridge.slint";
+import { Bridge, LoginItem, NoticeItem, AccountItem, PlanTodo, Screen } from "../bridge.slint";
 import { Fmt } from "../fmt.slint";
 import { Button, ButtonKind, Card, Icon, Icons, IconButton, Muted, Tone, Tones } from "../widgets.slint";
 
@@ -147,13 +147,36 @@ export component AuthCard inherits ActionCard {
     }
 }
 
+// An engine notice: text and action built from its kind, English message otherwise.
 export component NoticeCard inherits ActionCard {
     in property <NoticeItem> notice;
     icon: notice.level == "info" ? Icons.info : Icons.alert;
     tone: notice.level == "error" ? Tone.danger : notice.level == "warning" ? Tone.warning : Tone.info;
-    title: notice.message;
+    title: notice.kind == "update" ? @tr("TwitchMiner {} is available", notice.version)
+        : notice.kind == "duplicate" ? @tr("{} is mined twice", notice.login)
+        : notice.kind == "proxy_invalid" ? @tr("The proxy cannot be used")
+        : notice.kind == "realtime_down" ? @tr("Real-time updates are down for {}", notice.login)
+        : notice.message;
+    body: notice.kind == "update" ? @tr("You have version {}.", notice.current)
+        : notice.kind == "duplicate" ? @tr("{} mines it too. Set one of the two engines to secondary (Settings › Advanced › Several devices): it will leave the account to the other.", notice.peer)
+        : notice.kind == "proxy_invalid" ? @tr("Nothing goes through it until it is fixed: {}", notice.error)
+        : notice.kind == "realtime_down" ? @tr("Twitch PubSub has been unreachable for 10 minutes. Drops and points keep progressing; raids, moments and predictions wait for the connection.")
+        : "";
     closable: true;
     close => { Bridge.dismiss-notice(root.notice.id); }
+    if root.notice.kind == "update" && root.notice.url != "": Button {
+        kind: ButtonKind.primary;
+        icon: Icons.external;
+        text: @tr("Download");
+        clicked => { Bridge.open-url(root.notice.url); }
+    }
+    if root.notice.kind == "duplicate" || root.notice.kind == "proxy_invalid": Button {
+        text: @tr("Open settings");
+        clicked => {
+            Bridge.open-advanced = true;
+            Bridge.screen = Screen.settings;
+        }
+    }
 }
 
 // A plan entry that needs the user: link the game account, or decide to do it first.

@@ -60,8 +60,47 @@ impl Backend for Demo {
             // Schemas as published by the engine (snapshot, development only).
             Some("modules_list") => schemas()["modules"].clone(),
             Some("settings_get") if q["scope"] == "engine" => schemas()["engine"].clone(),
+            Some("games_search") => json!([
+                {"id": "1", "name": "Marvel Rivals"},
+                {"id": "2", "name": "Marvel Snap"},
+                {"id": "3", "name": "Marvel's Spider-Man 2"}
+            ]),
             _ => Value::Null,
         })
+    }
+    async fn logs(&self, n: usize) -> Result<Vec<tm_core::logging::LogLine>, tm_core::ApiError> {
+        let now = Utc::now();
+        let lines = [
+            ("INFO", "tm_core::engine", "engine started"),
+            (
+                "INFO",
+                "tm_modules::drops",
+                "drops campaigns refreshed campaigns=12",
+            ),
+            (
+                "INFO",
+                "tm_core::scheduler",
+                "watching channel=rustgod reason=drops: Rust",
+            ),
+            ("WARN", "tm_twitch::gql", "GQL retry: service timeout"),
+            (
+                "INFO",
+                "tm_modules::points",
+                "bonus claimed channel=zerator points=50",
+            ),
+        ];
+        Ok(lines
+            .iter()
+            .cycle()
+            .take(n.min(40))
+            .enumerate()
+            .map(|(i, (level, target, message))| tm_core::logging::LogLine {
+                ts: now - Duration::seconds(37 * (40 - i as i64)),
+                level: level.to_string(),
+                target: target.to_string(),
+                message: message.to_string(),
+            })
+            .collect())
     }
 }
 
@@ -216,8 +255,12 @@ fn fixture(now: DateTime<Utc>) -> Value {
             "wanted_rewards": ["Garage Door"]
         }},
         "notices": {
-            "update": {"id": "update", "level": "info",
-                "message": "TwitchMiner 0.2.0 is available.", "at": m(-30)}
+            "update": {"id": "update", "level": "info", "kind": "update",
+                "params": {"version": "v0.2.0", "current": "0.1.0", "url": "https://github.com/thinsh0/twitchminer/releases"},
+                "message": "TwitchMiner v0.2.0 is available.", "at": m(-30)},
+            "realtime_down:1001": {"id": "realtime_down:1001", "level": "warning", "kind": "realtime_down",
+                "params": {"account": "1001", "login": "thinsho"},
+                "message": "Real-time updates for thinsho are down", "at": m(-12)}
         },
         "logins": {},
         "accounts": {

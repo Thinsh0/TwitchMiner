@@ -243,8 +243,6 @@ msgstr "Minage en cours"
 msgid "No drop in progress. The Drops screen shows what is planned."
 msgstr "Aucun drop en cours. L'écran Drops montre ce qui est prévu."
 
-msgid "None of the followed channels is live right now."
-msgstr "Aucune des chaînes suivies n'est en direct pour l'instant."
 
 msgid "Nothing is watched. Bonuses are still collected."
 msgstr "Rien n'est regardé. Les bonus sont toujours récupérés."
@@ -951,8 +949,6 @@ msgstr "Je"
 msgid "The agent token of a remote engine is shown on its machine: twitchminer api-token --agent"
 msgstr "Le jeton agent d'un moteur distant s'affiche sur sa machine : twitchminer api-token --agent"
 
-msgid "The log of a remote engine is on the machine running it."
-msgstr "Le journal d'un moteur distant est sur la machine qui le fait tourner."
 
 msgid "Threshold of channel-limited campaigns"
 msgstr "Seuil des campagnes à chaînes limitées"
@@ -1169,3 +1165,63 @@ msgstr "Activé : toutes les chaînes que tu suis sur Twitch sont dans la liste
 
 msgid "Off: only the channels you add here are mined."
 msgstr "Désactivé : seules les chaînes que tu ajoutes ici sont minées."
+
+msgid "TwitchMiner {} is available"
+msgstr "TwitchMiner {} est disponible"
+
+msgid "{} is mined twice"
+msgstr "{} est miné deux fois"
+
+msgid "The proxy cannot be used"
+msgstr "Le proxy ne fonctionne pas"
+
+msgid "Real-time updates are down for {}"
+msgstr "Temps réel coupé pour {}"
+
+msgid "You have version {}."
+msgstr "Tu as la version {}."
+
+msgid "{} mines it too. Set one of the two engines to secondary (Settings › Advanced › Several devices): it will leave the account to the other."
+msgstr "{} le mine aussi. Passe l'un des deux moteurs en secondaire (Réglages › Avancé › Plusieurs appareils) : il laissera le compte à l'autre."
+
+msgid "Nothing goes through it until it is fixed: {}"
+msgstr "Rien ne passe par lui tant qu'il n'est pas corrigé : {}"
+
+msgid "Twitch PubSub has been unreachable for 10 minutes. Drops and points keep progressing; raids, moments and predictions wait for the connection."
+msgstr "Twitch PubSub est injoignable depuis 10 minutes. Les drops et les points continuent d'avancer ; raids, moments et prédictions attendent la connexion."
+
+msgid "Open settings"
+msgstr "Ouvrir les réglages"
+
+msgid "The engine's log could not be read: {}"
+msgstr "Impossible de lire le journal du moteur : {}"
+
+msgid "Remote access is off: {}"
+msgstr "Accès à distance coupé : {}"
+
+msgid "Not available: {}. The engine runs without it; change the address or turn it off."
+msgstr "Indisponible : {}. Le moteur tourne sans ; change l'adresse ou désactive-le."
+
+msgid "The remote engine cannot be reached: what is shown may be out of date and actions are unavailable until it is back."
+msgstr "Le moteur distant est injoignable : ce qui est affiché peut être périmé et les actions sont indisponibles jusqu'à son retour."
+
+msgid "The engine cannot be reached: nothing was done."
+msgstr "Le moteur est injoignable : rien n'a été fait."
+
+msgid "The engine did not answer in time."
+msgstr "Le moteur n'a pas répondu à temps."
+
+msgid "This account is turned off (Settings › Accounts): nothing is mined for it."
+msgstr "Ce compte est désactivé (Réglages › Comptes) : rien n'est miné pour lui."
+
+msgid "This account must sign in again before anything is watched."
+msgstr "Ce compte doit se reconnecter avant que quoi que ce soit soit regardé."
+
+msgid "Starting…"
+msgstr "Démarrage…"
+
+msgid "This account cannot run: {}"
+msgstr "Ce compte ne peut pas tourner : {}"
+
+msgid "None of your channels is live and no drops campaign can be watched right now."
+msgstr "Aucune de tes chaînes n'est en direct et aucune campagne de drops ne peut être regardée pour l'instant."

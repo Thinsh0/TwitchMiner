@@ -21,10 +21,10 @@ Points trouvés côté moteur pendant le développement de l'interface Slint (`c
 |---|---|---|
 | 6 | Descriptions des réglages en anglais seulement | Tous les modules sont intégrés et l'interface a déjà leurs libellés français. Un futur module arrivera avec ses traductions dans l'interface. À revoir si des modules tiers apparaissent. |
 
-## À reprendre côté interface
+## Repris côté interface
 
-- **Notices** : construire le texte et le bouton depuis `kind` + `params` (garder `message` pour un `kind` inconnu).
-- **Journaux** : lire `backend.logs(n)` (en local comme en distant) au lieu du `LogBuffer` de l'`App`. `session.rs` passe déjà `with_logs(app.logs.clone())`.
-- **Statistiques** : déjà adapté (`present::today_key` en jour local, `tz_offset_minutes` envoyé par l'accueil et l'écran Activité).
-- **Recherche de jeux** : brancher l'autocomplétion de la liste de jeux sur `games_search` (au fil de la frappe, avec un petit délai).
-- **Chaînes suivies** : l'interrupteur « Miner aussi les chaînes que je suis » est maintenant désactivé par défaut.
+- **Notices** : texte et bouton construits depuis `kind` + `params` (`update` → « Télécharger », `duplicate` et `proxy_invalid` → « Ouvrir les réglages », `realtime_down`) ; `message` reste affiché pour un `kind` inconnu.
+- **Journaux** : lus par `backend.logs(300)`, donc aussi pour un moteur distant.
+- **Statistiques** : « Aujourd'hui » en jour local, `tz_offset_minutes` envoyé par l'accueil et l'écran Activité.
+- **Recherche de jeux** : l'autocomplétion de la liste de jeux ajoute les résultats de `games_search` (250 ms après la dernière frappe) aux noms déjà connus.
+- **Chaînes suivies** : l'interrupteur « Miner aussi les chaînes que je suis » suit le défaut du moteur (désactivé).

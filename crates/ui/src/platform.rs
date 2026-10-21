@@ -7,6 +7,7 @@ use slint::ComponentHandle;
 
 use crate::MainWindow;
 use crate::controller::Controller;
+use crate::notifications::Notification;
 
 /// Integration with the host platform, provided by the launcher. Every method runs
 /// on the UI thread.
@@ -15,6 +16,8 @@ pub trait Platform {
     fn init(&mut self, _app: AppHandle) {}
     /// Called when the summary shown outside the window changes (tray tooltip, menu).
     fn status(&mut self, _status: &Status) {}
+    /// Shows a system notification (only sent while the window is hidden).
+    fn notify(&mut self, _notification: &Notification) {}
     /// Start with the session: `None` when not supported here.
     fn autostart(&self) -> Option<bool> {
         None

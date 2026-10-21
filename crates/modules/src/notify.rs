@@ -94,10 +94,37 @@ impl Module for Notify {
         tm_core::module::validate_as::<NotifySettings>(v)
     }
 
+    /// Keeps running while the account waits for a new login, to report it.
+    fn needs_login(&self) -> bool {
+        false
+    }
+
     async fn run(&self, ctx: ModuleContext) -> anyhow::Result<()> {
         let mut rx = ctx.events();
         let mut settings: NotifySettings = ctx.settings()?;
         let http = ctx.gql().net().http.clone();
+        // An account whose token was rejected at start-up is already marked before
+        // this module subscribes: report it once now.
+        let (seq, auth_required) = ctx.store().read(|s| {
+            let status = s
+                .accounts
+                .get(ctx.account_id())
+                .and_then(|a| a.status.as_ref());
+            (s.seq, status == Some(&AccountStatus::AuthRequired))
+        });
+        if auth_required && !settings.targets.is_empty() {
+            let env = Envelope {
+                seq,
+                ts: chrono::Utc::now(),
+                event: Event::AccountStatusChanged {
+                    account: ctx.account_id().to_string(),
+                    status: AccountStatus::AuthRequired,
+                },
+            };
+            if let Some(text) = format_event(&ctx, &settings, &env) {
+                send_all(&http, &settings.targets, &text, &json!(env)).await;
+            }
+        }
         loop {
             let env = tokio::select! {
                 _ = ctx.cancelled() => return Ok(()),
@@ -134,15 +161,21 @@ impl Module for Notify {
     }
 }
 
-/// Engine-wide events are sent by the first account only, to avoid duplicates.
+/// Engine-wide events are sent by one account only, to avoid duplicates: the first
+/// one whose notifications run (running, or waiting for a new login).
 fn concerns_me(ctx: &ModuleContext, env: &Envelope) -> bool {
     match env.event.account() {
         Some(a) => a == ctx.account_id(),
         None => ctx.store().read(|s| {
             s.accounts
-                .keys()
-                .next()
-                .is_some_and(|k| k == ctx.account_id())
+                .iter()
+                .find(|(_, a)| {
+                    matches!(
+                        a.status,
+                        Some(AccountStatus::Running | AccountStatus::AuthRequired)
+                    )
+                })
+                .is_some_and(|(k, _)| k == ctx.account_id())
         }),
     }
 }
@@ -371,9 +404,34 @@ async fn send(http: &reqwest::Client, t: &Target, text: &str, event: &Value) -> 
             r
         }
     };
+    // Errors without their URL: webhook and bot URLs carry the target's secret.
     req.timeout(Duration::from_secs(15))
         .send()
-        .await?
-        .error_for_status()?;
+        .await
+        .map_err(reqwest::Error::without_url)?
+        .error_for_status()
+        .map_err(reqwest::Error::without_url)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn errors_never_show_the_target_url() {
+        tm_twitch::tls::install_crypto_provider();
+        // Nothing listens on port 9: the request fails at once.
+        let targets = [Target::Telegram {
+            bot_token: "123:SECRET".into(),
+            chat_id: "1".into(),
+        }];
+        let http = reqwest::Client::builder()
+            .proxy(reqwest::Proxy::all("http://127.0.0.1:9").unwrap())
+            .build()
+            .unwrap();
+        let errors = send_all(&http, &targets, "hi", &json!({})).await;
+        assert_eq!(errors.len(), 1);
+        assert!(!errors[0].contains("SECRET"), "{}", errors[0]);
+    }
 }

@@ -237,9 +237,10 @@ async fn get_state(
 /// Executes a command with access control; agents get secrets masked in the answer.
 pub async fn run_command(engine: &Engine, access: Access, cmd: Command) -> ApiResult {
     access::authorize(access, &cmd)?;
-    let scope = match &cmd {
-        Command::SettingsGet { scope, .. } => Some(scope.clone()),
-        _ => None,
+    let (get_scope, set_scope) = match &cmd {
+        Command::SettingsGet { scope, .. } => (Some(scope.clone()), None),
+        Command::SettingsSet { scope, .. } => (None, Some(scope.clone())),
+        _ => (None, None),
     };
     let is_snapshot = matches!(cmd, Command::Snapshot);
     let mut out = engine.execute(cmd).await?;
@@ -247,10 +248,14 @@ pub async fn run_command(engine: &Engine, access: Access, cmd: Command) -> ApiRe
         if is_snapshot {
             access::redact_state(&mut out);
         }
-        if let Some(scope) = scope {
+        if let Some(scope) = get_scope {
             for k in ["raw", "effective"] {
                 access::redact_settings(&scope, &mut out[k]);
             }
+        }
+        // `settings_set` answers with the whole merged document.
+        if let Some(scope) = set_scope {
+            access::redact_settings(&scope, &mut out);
         }
     }
     Ok(out)

@@ -331,7 +331,7 @@
         "claim_moments": true,
         "enabled": true,
         "exclude": [],
-        "follows": true,
+        "follows": false,
         "join_raids": true,
         "order_by": "config",
         "refresh_minutes": 5,
@@ -398,7 +398,7 @@
             "type": "array"
           },
           "follows": {
-            "default": true,
+            "default": false,
             "description": "Also farm followed channels (after `channels`).",
             "type": "boolean"
           },

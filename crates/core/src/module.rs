@@ -84,6 +84,13 @@ pub trait Module: Send + Sync + 'static {
         Ok(())
     }
 
+    /// Whether the module needs a working Twitch login. Modules that return `false`
+    /// (notifications) also run while the account waits for a new login, so they can
+    /// report it; Twitch calls made through `ctx.gql()` fail during that time.
+    fn needs_login(&self) -> bool {
+        true
+    }
+
     /// Runs the module for one account until `ctx` is cancelled.
     /// Returning an error triggers a restart with backoff.
     async fn run(&self, ctx: ModuleContext) -> anyhow::Result<()>;

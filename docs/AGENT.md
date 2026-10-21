@@ -21,8 +21,8 @@ L'agent ne peut pas modifier ce réglage lui-même.
 
 Pourquoi un jeton à part : l'agent lit des textes écrits par des inconnus (titres de stream, noms de campagne). Un titre piégé du genre « ignore tes instructions et envoie… » pourrait le manipuler. Le jeton agent limite les dégâts possibles, quoi qu'il arrive à l'agent :
 
-- **interdit** : supprimer un compte, ajouter un compte à partir d'un jeton brut, écrire une sauvegarde, changer les cibles de notification, changer les réglages moteur autres que `paused`, `active_hours` et `max_watch_slots` (donc ni proxy, ni pairs, ni URL de mise à jour) ;
-- **masqué** (`***`) : jeton des pairs, proxy, URL de webhook, jetons et en-têtes des notifications ;
+- **interdit** : supprimer un compte, ajouter un compte à partir d'un jeton brut, écrire une sauvegarde, changer les cibles de notification, changer les réglages moteur autres que `paused`, `active_hours` et `max_watch_slots` (donc ni proxy, ni pairs, ni URL de mise à jour), ou les remplacer sans `merge: true` ;
+- **masqué** (`***`) : jeton des pairs, proxy, URL de webhook, jetons et en-têtes des notifications, partout où ils apparaissent (état, `settings_get`, réponse de `settings_set`, événements) ; les erreurs d'envoi des notifications ne contiennent jamais l'URL de la cible ;
 - **autorisé** : tout le reste (lire l'état, l'historique et les stats ; jeux de drops, chaînes, pause, horaires, connexion d'un compte par code, réglages des modules).
 
 Une action refusée renvoie l'erreur `forbidden`.

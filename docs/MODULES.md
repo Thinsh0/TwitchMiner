@@ -62,6 +62,7 @@ impl Module for Greeter {
 
 - `run` doit rendre la main quand `ctx.cancelled()` se déclenche, en moins de 10 s.
 - Retourner une erreur, ou paniquer, redémarre le module avec backoff. Pas besoin de tout rattraper soi-même.
+- Un module tourne seulement quand le compte est connecté. Pour tourner aussi quand le jeton est refusé (le compte attend une nouvelle connexion), répondre `false` à `needs_login()` : c'est le cas des notifications, qui préviennent ainsi qu'il faut se reconnecter. Les appels Twitch échouent pendant ce temps.
 - Ne jamais garder d'état « vrai » ailleurs que dans le `State` s'il doit être vu par une interface : publiez-le avec `emit` ou `set_data`.
 - Les événements sans effet sont ignorés par le store : on peut émettre de façon idempotente.
 - Un module qui a besoin d'un nouvel appel Twitch l'ajoute dans `tm-twitch` (`api.rs`) et son hash dans `manifest/twitch.json`.

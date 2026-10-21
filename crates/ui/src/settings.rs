@@ -253,7 +253,8 @@ fn hour_window(w: &Value) -> HourWindow {
 }
 
 /// `active_hours` after toggling ISO day `day` (1-7) of window `i`. A window with
-/// every day selected is written with `days: []` (= every day).
+/// every day selected is written with `days: []` (= every day); its last day cannot
+/// be unticked (that would mean every day too).
 pub fn toggle_day(hours: &mut [Value], i: usize, day: u64) {
     let Some(w) = hours.get_mut(i) else { return };
     let mut days: Vec<u64> = w["days"]
@@ -264,6 +265,9 @@ pub fn toggle_day(hours: &mut [Value], i: usize, day: u64) {
         days = (1..=7).collect();
     }
     if let Some(pos) = days.iter().position(|d| *d == day) {
+        if days.len() == 1 {
+            return;
+        }
         days.remove(pos);
     } else {
         days.push(day);
@@ -293,5 +297,12 @@ mod tests {
         assert_eq!(hours[0]["days"], json!([1, 2, 3, 4, 5, 6]));
         toggle_day(&mut hours, 0, 7);
         assert_eq!(hours[0]["days"], json!([]));
+    }
+
+    #[test]
+    fn last_day_stays_ticked() {
+        let mut hours = vec![json!({"start": "08:00", "end": "12:00", "days": [3]})];
+        toggle_day(&mut hours, 0, 3);
+        assert_eq!(hours[0]["days"], json!([3]));
     }
 }

@@ -16,3 +16,7 @@ serde_json.workspace = true
 chrono.workspace = true
 tracing.workspace = true
 rand.workspace = true
+
+[dev-dependencies]
+tm-twitch.workspace = true
+uuid.workspace = true

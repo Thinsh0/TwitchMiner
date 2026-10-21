@@ -5732,8 +5732,10 @@ dependencies = [
  "serde",
  "serde_json",
  "tm-core",
+ "tm-twitch",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -5773,6 +5775,7 @@ dependencies = [
  "image",
  "open",
  "reqwest",
+ "schemars",
  "serde",
  "serde_json",
  "slint",
@@ -5780,6 +5783,7 @@ dependencies = [
  "tm-app",
  "tm-client",
  "tm-core",
+ "tm-modules",
  "tokio",
  "tracing",
 ]

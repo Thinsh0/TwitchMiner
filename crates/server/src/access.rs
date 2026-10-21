@@ -33,11 +33,21 @@ pub fn authorize(access: Access, cmd: &Command) -> Result<(), ApiError> {
         Command::AccountRemove { .. } => Err(denied("remove accounts")),
         Command::LoginWithToken { .. } => Err(denied("add accounts from raw tokens")),
         Command::Backup { .. } => Err(denied("write backups")),
-        Command::SettingsSet { scope, value, .. } => {
+        Command::SettingsSet {
+            scope,
+            value,
+            merge,
+        } => {
             if is_notify_scope(scope) {
                 return Err(denied("change notification targets"));
             }
             if scope == tm_core::settings::ENGINE_SCOPE {
+                // Without `merge` the document is replaced: proxy, peers… would be erased.
+                if !merge {
+                    return Err(denied(
+                        "replace the engine settings (send them with `merge: true`)",
+                    ));
+                }
                 let ok = value
                     .as_object()
                     .is_some_and(|o| o.keys().all(|k| AGENT_ENGINE_KEYS.contains(&k.as_str())));
@@ -130,6 +140,12 @@ mod tests {
         assert!(authorize(a, &set("engine", json!({"proxy": "http://evil"}))).is_err());
         assert!(authorize(a, &set("engine", json!({"paused": true, "peers": []}))).is_err());
         assert!(authorize(a, &set("engine", Value::Null)).is_err());
+        let replace = Command::SettingsSet {
+            scope: "engine".into(),
+            value: json!({"paused": true}),
+            merge: false,
+        };
+        assert!(authorize(a, &replace).is_err());
         assert!(authorize(a, &set("module:drops", json!({"games": ["Rust"]}))).is_ok());
         assert!(authorize(a, &set("account:1/module:notify", json!({"targets": []}))).is_err());
         assert!(

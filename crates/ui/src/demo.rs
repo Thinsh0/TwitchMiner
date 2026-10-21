@@ -336,3 +336,35 @@ fn fixture(now: DateTime<Utc>) -> Value {
         }
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Value, json};
+
+    /// The demo must show the real defaults and schemas. Run with
+    /// `TM_UPDATE_DEMO=1` to rewrite `demo_schemas.json` from the built-in modules.
+    #[test]
+    fn demo_schemas_match_the_engine() {
+        let mut demo = super::schemas();
+        let modules = Value::Array(
+            tm_modules::builtin()
+                .iter()
+                .map(|m| json!(m.info()))
+                .collect(),
+        );
+        let defaults = json!(tm_core::settings::EngineSettings::default());
+        let schema = json!(schemars::schema_for!(tm_core::settings::EngineSettings));
+        if std::env::var_os("TM_UPDATE_DEMO").is_some() {
+            demo["modules"] = modules.clone();
+            demo["engine"]["defaults"] = defaults.clone();
+            demo["engine"]["schema"] = schema.clone();
+            let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/demo_schemas.json");
+            let text = serde_json::to_string_pretty(&demo).unwrap() + "\n";
+            std::fs::write(path, text).unwrap();
+        }
+        let hint = "run `TM_UPDATE_DEMO=1 cargo test -p tm-ui demo_schemas`";
+        assert_eq!(demo["modules"], modules, "{hint}");
+        assert_eq!(demo["engine"]["defaults"], defaults, "{hint}");
+        assert_eq!(demo["engine"]["schema"], schema, "{hint}");
+    }
+}

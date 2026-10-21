@@ -431,7 +431,11 @@ fn channels(bridge: &Bridge, state: &State, id: &str, account: Option<&Account>)
     let setting = |key| module_setting(state, id, "points", key);
     let configured = string_list(setting("channels"));
     let excluded = string_list(setting("exclude"));
-    bridge.set_follows(setting("follows").and_then(|v| v.as_bool()).unwrap_or(true));
+    bridge.set_follows(
+        setting("follows")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+    );
     bridge.set_points_enabled(setting("enabled").and_then(|v| v.as_bool()).unwrap_or(true));
     bridge.set_points_order(match setting("order_by").and_then(|v| v.as_str()) {
         Some("multiplier") => 1,

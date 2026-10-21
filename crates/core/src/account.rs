@@ -106,15 +106,15 @@ async fn run(
     set_status(&shared, &id, AccountStatus::Starting);
 
     // 1. Make sure the token works (retrying network failures forever).
+    //    `None` = rejected: the user must log in again.
     let mut backoff =
         tm_twitch::net::Backoff::new(Duration::from_secs(5), Duration::from_secs(300));
-    let (creds, mut expires_in) = loop {
+    let validated = loop {
         match ensure_valid(&shared, &account.credentials).await {
-            Ok(Some(c)) => break c,
+            Ok(Some(c)) => break Some(c),
             Ok(None) => {
                 tracing::warn!(login = %account.login, "token rejected, login required");
-                set_status(&shared, &id, AccountStatus::AuthRequired);
-                return;
+                break None;
             }
             Err(e) => {
                 let delay = backoff.next_delay();
@@ -132,7 +132,11 @@ async fn run(
             }
         }
     };
-    if creds != account.credentials {
+    let (creds, mut expires_in) = match &validated {
+        Some((c, exp)) => (c.clone(), *exp),
+        None => (account.credentials.clone(), 0),
+    };
+    if validated.is_some() && creds != account.credentials {
         account.credentials = creds.clone();
         if let Err(e) = shared.store.db().upsert_account(account.clone()).await {
             tracing::error!(error = %e, "failed to save refreshed token");
@@ -141,9 +145,13 @@ async fn run(
 
     let creds = Arc::new(ArcSwap::from_pointee(creds));
     let gql = Gql::new(shared.net(), shared.manifest.clone(), creds.clone());
+    // Everything that needs the login stops with `session` when the token is
+    // rejected; modules that work without it (notifications) run until `cancel`.
+    let session = cancel.child_token();
 
     // 2. Refresh profile info shown in the UI.
-    if let Ok(mut users) = gql.users_by_id(std::slice::from_ref(&id)).await
+    if validated.is_some()
+        && let Ok(mut users) = gql.users_by_id(std::slice::from_ref(&id)).await
         && let Some(Some(u)) = users.pop()
     {
         account.login = u.login.clone();
@@ -162,18 +170,20 @@ async fn run(
     }
 
     // 3. Shared services.
-    let pubsub = PubSub::new(shared.net(), creds.clone(), cancel.clone());
+    let pubsub = PubSub::new(shared.net(), creds.clone(), session.clone());
     let watch_handle = WatchHandle::default();
     let (gen_tx, gen_rx) = watch::channel(0u64);
     spawn_settings_watcher(&shared, &id, gen_tx, cancel.clone());
-    tokio::spawn(scheduler::run(
-        id.clone(),
-        gql.clone(),
-        shared.store.clone(),
-        watch_handle.clone(),
-        gen_rx.clone(),
-        cancel.clone(),
-    ));
+    if validated.is_some() {
+        tokio::spawn(scheduler::run(
+            id.clone(),
+            gql.clone(),
+            shared.store.clone(),
+            watch_handle.clone(),
+            gen_rx.clone(),
+            session.clone(),
+        ));
+    }
 
     let services = AccountServices {
         account_id: id.clone(),
@@ -184,14 +194,29 @@ async fn run(
         watch: watch_handle,
         settings_gen: gen_rx,
     };
-    for module in &shared.modules {
-        tokio::spawn(supervise(
-            module.clone(),
-            services.clone(),
-            calls.clone(),
-            cancel.clone(),
-        ));
+    let start_modules = |needs_login: bool, token: &CancellationToken| {
+        for module in shared
+            .modules
+            .iter()
+            .filter(|m| m.needs_login() == needs_login)
+        {
+            tokio::spawn(supervise(
+                module.clone(),
+                services.clone(),
+                calls.clone(),
+                token.clone(),
+            ));
+        }
+    };
+    if validated.is_none() {
+        // Status first: modules started now find it in the state.
+        set_status(&shared, &id, AccountStatus::AuthRequired);
+        start_modules(false, &cancel);
+        cancel.cancelled().await;
+        return;
     }
+    start_modules(false, &cancel);
+    start_modules(true, &session);
     set_status(&shared, &id, AccountStatus::Running);
 
     // 4. Token health: periodic validation + PubSub auth errors.
@@ -247,8 +272,9 @@ async fn run(
             }
             Ok(None) => {
                 tracing::warn!(login = %account.login, "token revoked");
-                cancel.cancel();
+                session.cancel();
                 set_status(&shared, &id, AccountStatus::AuthRequired);
+                cancel.cancelled().await;
                 return;
             }
             Err(e) => tracing::debug!(error = %e, "token check failed (network), will retry"),

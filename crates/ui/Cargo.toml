@@ -25,6 +25,8 @@ arboard = { version = "3", default-features = false }
 reqwest.workspace = true
 
 [dev-dependencies]
+tm-modules.workspace = true
+schemars.workspace = true
 i-slint-backend-testing = "=1.18.1"
 
 [build-dependencies]

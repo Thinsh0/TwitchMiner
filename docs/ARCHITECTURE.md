@@ -72,7 +72,7 @@ Tables (`crates/core/src/db.rs`, migrations versionnées par `PRAGMA user_versio
 
 Chaque compte activé a un `AccountRuntime` (`crates/core/src/account.rs`) :
 
-1. **Validation du token** au démarrage, rafraîchissement automatique si un `refresh_token` existe, statut `auth_required` si le token est révoqué. Les erreurs réseau sont réessayées indéfiniment avec backoff.
+1. **Validation du token** au démarrage, rafraîchissement automatique si un `refresh_token` existe, statut `auth_required` si le token est révoqué. Dans ce cas, seuls les modules qui n'ont pas besoin de connexion (les notifications) continuent de tourner, pour prévenir qu'il faut se reconnecter. Les erreurs réseau sont réessayées indéfiniment avec backoff.
 2. **PubSub** : un pool de WebSockets (50 topics par connexion) qui se reconnecte seul, avec ping/pong et ré-abonnement. Les topics sont comptés par référence entre modules.
 3. **Ordonnanceur** de visionnage (`scheduler.rs`) : chaque module déclare des `WatchRequest { channel, priority, reason }`. L'ordonnanceur garde les N meilleures chaînes (N = `engine.max_watch_slots`, 2 par défaut : la limite que Twitch crédite) et lance un *watcher* par chaîne.
 4. **Supervision des modules** : un module en erreur ou qui panique redémarre avec backoff (5 s → 5 min). Un module est démarré ou arrêté à chaud quand son réglage `enabled` change.
@@ -105,7 +105,7 @@ Le schéma est validé (hashes de 64 caractères hexadécimaux, profil par défa
 - **Sans PubSub** (si Twitch le coupait) : le minage continue grâce aux interrogations périodiques.
   - En ligne / hors ligne : toutes les 5 min.
   - Solde et coffres bonus des chaînes regardées : toutes les 4 min.
-  - Progression des drops : toutes les 90 s.
+  - Progression des drops : toutes les 90 s. Un drop terminé y est aussi récupéré.
   - Inventaire : toutes les heures.
 
   Seuls les raids, moments et prédictions (purement temps réel) seraient perdus, jusqu'à un passage à Hermes, le successeur de PubSub, déjà joignable (`hermes.twitch.tv`).

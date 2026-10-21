@@ -112,6 +112,8 @@ const KNOWN_KEY: &str = "known_campaigns";
 const PROGRESS_POLL: Duration = Duration::from_secs(90);
 /// How often a better campaign (e.g. an esports channel going live) is looked for.
 const RECHECK: Duration = Duration::from_secs(5 * 60);
+/// Open campaigns tried per pick (each costs a directory lookup).
+const DIRECTORY_LOOKUPS: usize = 10;
 
 #[derive(Debug, Clone)]
 struct Target {
@@ -119,7 +121,8 @@ struct Target {
     channel: UserInfo,
     started: Instant,
     last_progress: Instant,
-    last_minutes: Option<u32>,
+    /// Last progress seen: drop id and its minutes (the next drop restarts at 0).
+    last_minutes: Option<(String, u32)>,
 }
 
 struct Runtime {
@@ -256,9 +259,9 @@ impl Module for Drops {
                 _ = sleep_until_utc(next_trigger) => need_refresh = true,
                 _ = tokio::time::sleep(Duration::from_secs(60 * settings.refresh_minutes)) => need_refresh = true,
                 _ = progress_poll.tick() => {
-                    if rt.poll_progress(&ctx).await {
-                        need_pick = true;
-                    }
+                    let (refresh, pick) = rt.poll_progress(&ctx, &settings).await;
+                    need_refresh |= refresh;
+                    need_pick |= pick;
                 }
                 _ = recheck.tick() => need_pick |= rt.better_may_exist(),
                 ev = ps.recv() => match ev {
@@ -613,14 +616,24 @@ impl Runtime {
             .as_ref()
             .filter(|t| !self.banned_channels.contains_key(&t.channel.id))
             .map(|t| t.campaign_id.clone());
+        // Restricted campaigns are checked from one batched lookup, so they never use
+        // up the directory lookups the open campaigns below them need.
+        let acl_live = self.acl_live(ctx, &candidates).await;
+        let mut lookups = 0;
         let mut chosen: Option<(Campaign, UserInfo)> = None;
-        for c in candidates.iter().take(10) {
+        for c in &candidates {
             if current.as_ref() == Some(&c.id) {
                 self.publish_plan(ctx, s).await;
                 self.publish(ctx);
                 return;
             }
-            match self.find_channel(ctx, c).await {
+            if c.allowed_channels.is_none() {
+                if lookups == DIRECTORY_LOOKUPS {
+                    continue;
+                }
+                lookups += 1;
+            }
+            match self.find_channel(ctx, c, acl_live.as_ref()).await {
                 Ok(Some(ch)) => {
                     chosen = Some((c.clone(), ch));
                     break;
@@ -747,10 +760,44 @@ impl Runtime {
         }
     }
 
+    /// Channels of every restricted candidate, by id, from one batched lookup.
+    /// `None` if it failed: `find_channel` then looks them up campaign by campaign.
+    async fn acl_live(
+        &self,
+        ctx: &ModuleContext,
+        candidates: &[Campaign],
+    ) -> Option<HashMap<String, UserInfo>> {
+        let ids: Vec<String> = candidates
+            .iter()
+            .filter_map(|c| c.allowed_channels.as_ref())
+            .flatten()
+            .map(|a| a.id.clone())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        if ids.is_empty() {
+            return Some(HashMap::new());
+        }
+        match ctx.gql().users_by_id(&ids).await {
+            Ok(users) => Some(
+                users
+                    .into_iter()
+                    .flatten()
+                    .map(|u| (u.id.clone(), u))
+                    .collect(),
+            ),
+            Err(e) => {
+                tracing::debug!(error = %e, "restricted channels lookup failed");
+                None
+            }
+        }
+    }
+
     async fn find_channel(
         &self,
         ctx: &ModuleContext,
         c: &Campaign,
+        acl_live: Option<&HashMap<String, UserInfo>>,
     ) -> anyhow::Result<Option<UserInfo>> {
         let gql = ctx.gql();
         let special = gql.manifest().load().special_game_ids.contains(&c.game.id);
@@ -763,14 +810,17 @@ impl Runtime {
         };
         let ok = |u: &UserInfo| !self.banned_channels.contains_key(&u.id);
         if let Some(acl) = &c.allowed_channels {
-            let ids: Vec<String> = acl.iter().map(|a| a.id.clone()).collect();
-            let mut users: Vec<UserInfo> = gql
-                .users_by_id(&ids)
-                .await?
-                .into_iter()
-                .flatten()
-                .filter(|u| plays_game(u) && ok(u))
-                .collect();
+            let mut users: Vec<UserInfo> = match acl_live {
+                Some(live) => acl
+                    .iter()
+                    .filter_map(|a| live.get(&a.id).cloned())
+                    .collect(),
+                None => {
+                    let ids: Vec<String> = acl.iter().map(|a| a.id.clone()).collect();
+                    gql.users_by_id(&ids).await?.into_iter().flatten().collect()
+                }
+            };
+            users.retain(|u| plays_game(u) && ok(u));
             users.sort_by_key(|u| {
                 std::cmp::Reverse(u.stream.as_ref().map(|s| s.viewers).unwrap_or(0))
             });
@@ -865,10 +915,11 @@ impl Runtime {
         }
     }
 
-    /// Polls the current drop session. Returns `true` when a new pick is needed.
-    async fn poll_progress(&mut self, ctx: &ModuleContext) -> bool {
+    /// Polls the current drop session (works without PubSub, claims included).
+    /// Returns `(refresh, pick)` like `on_pubsub`.
+    async fn poll_progress(&mut self, ctx: &ModuleContext, s: &DropsSettings) -> (bool, bool) {
         let Some(t) = &mut self.target else {
-            return false;
+            return (false, false);
         };
         let watching = ctx.store().read(|s| {
             s.accounts
@@ -877,7 +928,7 @@ impl Runtime {
         });
         if !watching {
             t.last_progress = Instant::now();
-            return false;
+            return (false, false);
         }
         // Still live and still on the campaign's game?
         if let Some(c) = self.campaigns.get(&t.campaign_id) {
@@ -906,17 +957,24 @@ impl Runtime {
                         Instant::now() + Duration::from_secs(10 * 60),
                     );
                     self.target = None;
-                    return true;
+                    return (false, true);
                 }
             }
         }
         let Some(t) = &mut self.target else {
-            return false;
+            return (false, false);
         };
+        let mut completed = false;
         match ctx.gql().current_drop(&t.channel.id).await {
             Ok(Some(cur)) => {
-                if t.last_minutes.is_none_or(|m| cur.current_minutes > m) {
-                    t.last_minutes = Some(cur.current_minutes);
+                let progressed = t
+                    .last_minutes
+                    .as_ref()
+                    .is_none_or(|(id, m)| *id != cur.drop_id || cur.current_minutes > *m);
+                // A finished drop waiting for its claim is not a stall.
+                completed = cur.required_minutes > 0 && cur.current_minutes >= cur.required_minutes;
+                if progressed || completed {
+                    t.last_minutes = Some((cur.drop_id.clone(), cur.current_minutes));
                     t.last_progress = Instant::now();
                 }
                 let campaign_id = self
@@ -944,7 +1002,13 @@ impl Runtime {
             Ok(None) => {}
             Err(e) => tracing::debug!(error = %e, "current drop poll failed"),
         }
-        let Some(t) = &self.target else { return false };
+        // PubSub may have missed `drop-claim`: claim here, then load the next drop.
+        if completed && s.auto_claim && !self.claim_all(ctx).await.is_empty() {
+            return (true, true);
+        }
+        let Some(t) = &self.target else {
+            return (false, false);
+        };
         if t.last_progress.elapsed() > STALL_AFTER && t.started.elapsed() > STALL_AFTER {
             let stalls = self.stalls.entry(t.campaign_id.clone()).or_insert(0);
             *stalls += 1;
@@ -960,9 +1024,9 @@ impl Runtime {
             }
             self.target = None;
             self.save_bans(ctx).await;
-            return true;
+            return (false, true);
         }
-        false
+        (false, false)
     }
 
     /// Returns `(refresh, pick)`.
@@ -1001,7 +1065,7 @@ impl Runtime {
                 }
                 if let Some(t) = &mut self.target {
                     t.last_progress = Instant::now();
-                    t.last_minutes = Some(cur);
+                    t.last_minutes = Some((drop_id.to_string(), cur));
                 }
                 self.stalls.remove(&c.id);
                 ctx.emit(Event::DropProgress {
@@ -1157,7 +1221,7 @@ impl Runtime {
             "target": self.target.as_ref().map(|t| json!({
                 "campaign_id": t.campaign_id,
                 "channel": t.channel.login,
-                "minutes": t.last_minutes,
+                "minutes": t.last_minutes.as_ref().map(|(_, m)| m),
                 "since_progress_s": t.last_progress.elapsed().as_secs(),
             })),
             "banned_channels": self.banned_channels.len(),

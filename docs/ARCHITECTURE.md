@@ -101,7 +101,8 @@ Le schéma est validé (hashes de 64 caractères hexadécimaux, profil par défa
 - **GQL** : lots de 30 requêtes, 6 requêtes concurrentes au maximum par compte, retry avec backoff sur les erreurs transitoires (`service timeout`…). Les erreurs partielles sont tolérées (champ à `null`). `PersistedQueryNotFound` est une erreur distincte, qui signale un manifeste périmé.
 - **Réseau** : un seul pool HTTP. TLS par rustls/ring avec les racines Mozilla + les racines du système (fonctionne derrière un proxy d'entreprise). Proxy HTTP configurable, y compris pour les WebSockets (tunnel `CONNECT`).
 - **Drops** : si la progression ne bouge pas pendant 8 min, la chaîne est écartée 30 min. Après 2 blocages sur la même campagne, la campagne est écartée 2 h (cas typique : compte de jeu non lié). Un rafraîchissement des campagnes qui échoue est réessayé après 30 s, puis jusqu'à 15 min.
-- **Persistance** : SQLite en WAL, toutes les écritures sur un thread dédié, donc dans l'ordre des événements. Checkpoint à l'arrêt, sauvegarde à chaud (`backup`).
+- **Persistance** : SQLite en WAL, toutes les écritures sur un thread dédié, donc dans l'ordre des événements. Checkpoint à l'arrêt, sauvegarde à chaud (`backup`). Sous Unix, le dossier de données est réservé à son propriétaire (`0700`) : la base contient les jetons.
+- **Notifications** : envoyées à part, dans l'ordre, sans retenir le moteur. Une limite de débit (429) attend le délai demandé par le service (au plus 1 min), une erreur réseau ou serveur est réessayée ; 3 essais par cible.
 - **Sans PubSub** (si Twitch le coupait) : le minage continue grâce aux interrogations périodiques.
   - En ligne / hors ligne : toutes les 5 min.
   - Solde et coffres bonus des chaînes regardées : toutes les 4 min.

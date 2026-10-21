@@ -22,6 +22,9 @@ pub struct State {
     pub instance_id: String,
     pub started_at: Option<DateTime<Utc>>,
     pub manifest_revision: u32,
+    /// Watching allowed now, in the engine's time zone (`None`: older engine).
+    #[serde(default)]
+    pub watching_allowed: Option<bool>,
     /// Raw settings documents by scope (`engine`, `module:<id>`, `account:<id>/module:<id>`).
     pub settings: BTreeMap<String, Value>,
     pub notices: BTreeMap<String, Notice>,
@@ -251,6 +254,7 @@ pub fn apply(state: &mut State, event: &Event, now: DateTime<Utc>) -> bool {
             set_if_changed(state.settings.entry(scope.clone()).or_default(), value)
         }
         ManifestUpdated { revision } => set_if_changed(&mut state.manifest_revision, revision),
+        WatchingAllowed { allowed } => set_if_changed(&mut state.watching_allowed, &Some(*allowed)),
         NoticeRaised { notice } => {
             if state.notices.get(&notice.id).is_some_and(|n| {
                 n.level == notice.level

@@ -10,7 +10,7 @@ use tm_core::event::Event;
 use tm_core::module::validate_as;
 use tm_core::state::ChannelMeta;
 use tm_core::{Module, ModuleContext, ModuleInfo, WatchRequest, priority};
-use tm_twitch::models::{StreamInfo, UserInfo};
+use tm_twitch::models::{ChannelRef, StreamInfo, UserInfo};
 use tm_twitch::pubsub::topics;
 use tm_twitch::{PubSubEvent, PubSubMessage};
 use tokio::time::Instant;
@@ -144,7 +144,7 @@ impl Module for Points {
         let mut ps = ctx.pubsub().subscribe();
         let mut events = ctx.events();
         let mut settings: PointsSettings = ctx.settings()?;
-        let mut follows: Vec<String> = Vec::new();
+        let mut follows: Vec<ChannelRef> = Vec::new();
         let mut follows_at: Option<Instant> = None;
         let mut resolve = true;
         let mut resolve_retry: Option<Instant> = None;
@@ -158,7 +158,7 @@ impl Module for Points {
                 if settings.follows && follows_at.is_none_or(|t| t.elapsed() > FOLLOWS_REFRESH) {
                     match ctx.gql().follows().await {
                         Ok(f) => {
-                            follows = f.into_iter().map(|c| c.id).collect();
+                            follows = f;
                             follows_at = Some(Instant::now());
                         }
                         Err(e) => tracing::warn!(error = %e, "could not load follows"),
@@ -354,7 +354,7 @@ async fn set_account_settings(
 async fn resolve_channels(
     ctx: &ModuleContext,
     s: &PointsSettings,
-    follows: &[String],
+    follows: &[ChannelRef],
 ) -> anyhow::Result<Vec<UserInfo>> {
     let exclude: HashSet<String> = s.exclude.iter().map(|l| l.to_lowercase()).collect();
     let logins: Vec<String> = s
@@ -376,12 +376,18 @@ async fn resolve_channels(
         }
     }
     if s.follows && !follows.is_empty() {
-        let missing: Vec<String> = follows
+        let missing: Vec<(String, Option<String>)> = follows
             .iter()
-            .filter(|id| !out.iter().any(|o| &o.id == *id))
-            .cloned()
+            .filter(|f| !out.iter().any(|o| o.id == f.id))
+            .map(|f| (f.id.clone(), f.login.clone()))
             .collect();
-        for u in ctx.gql().users_by_id(&missing).await?.into_iter().flatten() {
+        for u in ctx
+            .gql()
+            .users_by_ref(&missing)
+            .await?
+            .into_iter()
+            .flatten()
+        {
             if !exclude.contains(&u.login) {
                 out.push(u);
             }
@@ -480,7 +486,14 @@ impl Runtime {
         if ids.is_empty() {
             return;
         }
-        match ctx.gql().users_by_id(ids).await {
+        let refs: Vec<(String, Option<String>)> = ids
+            .iter()
+            .map(|id| {
+                let login = self.channels.get(id).map(|c| c.meta.login.clone());
+                (id.clone(), login)
+            })
+            .collect();
+        match ctx.gql().users_by_ref(&refs).await {
             Ok(users) => {
                 for (id, u) in ids.iter().zip(users) {
                     if let Some(ch) = self.channels.get_mut(id) {

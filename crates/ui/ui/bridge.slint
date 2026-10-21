@@ -395,6 +395,8 @@ export global Bridge {
     in property <string> api-error;
     in property <string> api-token;
     in property <[LogItem]> logs;
+    // Why the settings forms could not be loaded yet (retried; empty once loaded).
+    in property <string> schemas-error;
     // Why the engine's log could not be read (empty when it was).
     in property <string> logs-error;
     in property <UpdateInfo> update-info;

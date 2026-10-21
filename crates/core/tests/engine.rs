@@ -157,8 +157,11 @@ async fn subscribers_see_every_event_in_order() {
             .await
             .unwrap();
     }
+    // Every event, in order, until the mirror caught up (the engine emits some of its
+    // own, e.g. `watching_allowed` at start).
     let mut mirror = snap;
-    for _ in 0..5 {
+    let target = engine.store().snapshot().seq;
+    while mirror.seq < target {
         let env = rx.recv().await.unwrap();
         assert_eq!(env.seq, mirror.seq + 1);
         tm_core::state::apply_envelope(&mut mirror, &env);
@@ -202,6 +205,37 @@ async fn concurrent_settings_merges_are_all_kept() {
         engine.store().snapshot().settings["module:dummy"],
         json!(expected)
     );
+    engine.shutdown().await;
+    let _ = std::fs::remove_dir_all(&paths.root);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_engine_says_whether_watching_is_allowed() {
+    tm_twitch::tls::install_crypto_provider();
+    let paths = temp_paths();
+    let engine = start(&paths).await;
+    let wait_for = |want: bool| {
+        let engine = engine.clone();
+        async move {
+            for _ in 0..50 {
+                if engine.store().snapshot().watching_allowed == Some(want) {
+                    return;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+            panic!("watching_allowed never became {want}");
+        }
+    };
+    wait_for(true).await;
+    engine
+        .execute(Command::SettingsSet {
+            scope: "engine".into(),
+            value: json!({"paused": true}),
+            merge: true,
+        })
+        .await
+        .unwrap();
+    wait_for(false).await;
     engine.shutdown().await;
     let _ = std::fs::remove_dir_all(&paths.root);
 }

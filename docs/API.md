@@ -160,6 +160,7 @@ Chaque portée a un **JSON Schema** (`settings_get(...).schema`, ou `modules_lis
  "language": "fr"}                                                       // fr | en
 // targets: {"kind":"discord","webhook_url"} | {"kind":"ntfy","url","token?"} | {"kind":"telegram","bot_token","chat_id"} | {"kind":"webhook","url","token?","headers?"}
 // webhook : POST {"text", "event"} ; token → "Authorization: Bearer …" ; headers = en-têtes en plus (réveil d'un agent IA)
+// 3 essais par cible ; un 429 attend son Retry-After (ou le retry_after de Discord / Telegram), au plus 1 min
 ```
 </details>
 
@@ -199,6 +200,7 @@ Seuls les jeux de `games` (tous si la liste est vide) apparaissent dans le plan.
   "instance_id": "uuid",            // identifiant stable de cette instance
   "started_at": "…",
   "manifest_revision": 1,
+  "watching_allowed": true,         // jugé par le moteur dans son fuseau (absent : moteur plus ancien)
   "settings": { "<scope>": { … } },
   "notices": { "<id>": {"id", "level": "info|warning|error", "message", "at", "kind?", "params?"} },
   // kind (+ params), pour un texte traduit et le bon bouton :
@@ -251,6 +253,7 @@ Chaque événement arrive enveloppé : `{seq, ts, type, …champs}`. Ceux marqu�
 | `engine_started` | `version`, `instance_id` |
 | `settings_changed` | `scope`, `value` (`null` = supprimé) |
 | `manifest_updated` | `revision` |
+| `watching_allowed` | `allowed` : le moteur peut regarder en ce moment (pas en pause, dans les plages horaires, jugées dans **son** fuseau horaire) |
 | `notice_raised` 📜 / `notice_cleared` | `notice` / `id` |
 | `login_started` / `login_finished` 📜 | `flow` / `flow_id`, `account?`, `error?` |
 | `account_upserted` / `account_removed` | `info` / `account` |

@@ -24,6 +24,31 @@ impl Gql {
         self.users(ids, "ids").await
     }
 
+    /// Looks channels up by id, through their login when the profile does not allow
+    /// lookups by id (`android_app`): pass the login whenever it is known. A login
+    /// that now belongs to another channel counts as unknown.
+    pub async fn users_by_ref(
+        &self,
+        refs: &[(String, Option<String>)],
+    ) -> Result<Vec<Option<UserInfo>>> {
+        if self.raw_queries_allowed() {
+            let ids: Vec<String> = refs.iter().map(|(id, _)| id.clone()).collect();
+            return self.users_by_id(&ids).await;
+        }
+        let known: Vec<(usize, String)> = refs
+            .iter()
+            .enumerate()
+            .filter_map(|(i, (_, login))| Some((i, login.clone()?)))
+            .collect();
+        let logins: Vec<String> = known.iter().map(|(_, l)| l.clone()).collect();
+        let found = self.users_by_login(&logins).await?;
+        let mut out = vec![None; refs.len()];
+        for ((i, _), user) in known.into_iter().zip(found) {
+            out[i] = user.filter(|u| u.id == refs[i].0);
+        }
+        Ok(out)
+    }
+
     async fn users(&self, keys: &[String], field: &str) -> Result<Vec<Option<UserInfo>>> {
         let mut out = Vec::with_capacity(keys.len());
         if self.raw_queries_allowed() {

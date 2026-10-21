@@ -1258,3 +1258,9 @@ msgstr "Ne jamais miser plus que le plus gros pari déjà placé sur la réponse
 
 msgid "{} bets: {} won, {} lost, {} refunded"
 msgstr "{} paris : {} gagnés, {} perdus, {} remboursés"
+
+msgid "The engine's settings could not be loaded yet ({}). Trying again…"
+msgstr "Les réglages du moteur n'ont pas encore pu être chargés ({}). Nouvel essai…"
+
+msgid "Remote engine: the times are those of the machine running it."
+msgstr "Moteur distant : les heures sont celles de la machine qui le fait tourner."

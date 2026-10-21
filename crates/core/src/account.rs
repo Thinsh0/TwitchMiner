@@ -43,9 +43,16 @@ impl AccountRuntime {
         }
     }
 
-    pub async fn stop(self) {
+    pub async fn stop(mut self) {
         self.cancel.cancel();
-        let _ = tokio::time::timeout(Duration::from_secs(10), self.task).await;
+        // A runtime still busy after that is aborted: it must not report a status
+        // over the one that replaces it.
+        if tokio::time::timeout(Duration::from_secs(10), &mut self.task)
+            .await
+            .is_err()
+        {
+            self.task.abort();
+        }
     }
 }
 
@@ -114,7 +121,12 @@ async fn run(
     let mut backoff =
         tm_twitch::net::Backoff::new(Duration::from_secs(5), Duration::from_secs(300));
     let validated = loop {
-        match ensure_valid(&shared, &account.credentials).await {
+        // Cancelled while Twitch is slow to answer: stop without reporting anything.
+        let checked = tokio::select! {
+            _ = cancel.cancelled() => return,
+            r = ensure_valid(&shared, &account.credentials) => r,
+        };
+        match checked {
             Ok(Some(c)) => break Some(c),
             Ok(None) => {
                 tracing::warn!(login = %account.login, "token rejected, login required");
@@ -155,7 +167,9 @@ async fn run(
 
     // 2. Refresh profile info shown in the UI.
     if validated.is_some()
-        && let Ok(mut users) = gql.users_by_id(std::slice::from_ref(&id)).await
+        && let Ok(mut users) = gql
+            .users_by_ref(&[(id.clone(), Some(account.login.clone()))])
+            .await
         && let Some(Some(u)) = users.pop()
     {
         account.login = u.login.clone();
@@ -198,6 +212,9 @@ async fn run(
         watch: watch_handle,
         settings_gen: gen_rx,
     };
+    if cancel.is_cancelled() {
+        return;
+    }
     let start_modules = |needs_login: bool, token: &CancellationToken| {
         for module in shared
             .modules

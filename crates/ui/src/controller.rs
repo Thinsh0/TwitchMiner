@@ -29,6 +29,39 @@ use crate::{
 thread_local! {
     /// Last state seen, on the UI thread (re-rendered by the timer).
     static LAST: RefCell<Last> = RefCell::new(Last::default());
+    /// Settings sent but not seen in the state yet, by `account|section.path`: a quick
+    /// next edit (a second drag, a remote engine) builds on them, not on the older state.
+    static PENDING: RefCell<std::collections::HashMap<String, (Value, std::time::Instant)>> =
+        RefCell::new(std::collections::HashMap::new());
+}
+
+/// A sent setting the state has not caught up with after this long is forgotten.
+const PENDING_TTL: Duration = Duration::from_secs(15);
+
+fn pending_key(account: &str, section: &str, path: &str) -> String {
+    format!("{account}|{section}.{path}")
+}
+
+/// The value an edit starts from: the last one sent, until the state shows it.
+fn pending_or(key: &str, current: Value) -> Value {
+    PENDING.with(|p| {
+        let mut p = p.borrow_mut();
+        match p.get(key) {
+            Some((sent, at)) if at.elapsed() < PENDING_TTL && *sent != current => sent.clone(),
+            Some(_) => {
+                p.remove(key);
+                current
+            }
+            None => current,
+        }
+    })
+}
+
+fn remember_sent(key: &str, value: &Value) {
+    PENDING.with(|p| {
+        p.borrow_mut()
+            .insert(key.to_string(), (value.clone(), std::time::Instant::now()))
+    });
 }
 
 /// Where the local engine serves its API when the option is on (same as the daemon).
@@ -55,6 +88,8 @@ struct Inner {
     local: Mutex<Option<LocalInfo>>,
     /// Latest game search typed (older answers are dropped).
     game_search: AtomicU64,
+    /// Latest Activity reload (answers to older ones are dropped).
+    activity: AtomicU64,
 }
 
 impl Controller {
@@ -69,6 +104,7 @@ impl Controller {
             prefs: Mutex::new(prefs),
             local: Mutex::new(None),
             game_search: AtomicU64::new(0),
+            activity: AtomicU64::new(0),
         }))
     }
 
@@ -807,11 +843,9 @@ impl Controller {
             let account = ui.global::<Bridge>().get_account().to_string();
             let scope =
                 LAST.with(|l| settings::scope_for(&l.borrow().state, &account, &section, &path));
-            me.command(Command::SettingsSet {
-                scope,
-                value: forms::patch(&path, value),
-                merge: true,
-            });
+            let key = pending_key(&account, &section, &path);
+            remember_sent(&key, &value);
+            me.send_setting(scope, forms::patch(&path, value), key);
         });
     }
 
@@ -821,31 +855,54 @@ impl Controller {
         let (section, path) = (section.to_string(), path.to_string());
         self.on_ui(move |ui| {
             let account = ui.global::<Bridge>().get_account().to_string();
-            let mut value = LAST.with(|l| {
+            let current = LAST.with(|l| {
                 let eff = settings::effective(&l.borrow().state, &account, &section);
                 forms::get(&eff, &path).clone()
             });
+            let mut value = pending_or(&pending_key(&account, &section, &path), current);
             f(&mut value);
             me.write_setting(&section, &path, value);
         });
     }
 
-    /// Loads the settings schemas (once per session).
+    /// Loads the settings schemas (once per session), retrying while it fails: the
+    /// Settings forms are built from them.
     fn load_schemas(&self, backend: Arc<dyn Backend>) {
-        let ui = self.0.ui.clone();
+        let me = self.clone();
         self.0.rt.spawn(async move {
-            let modules = backend.execute(Command::ModulesList).await;
-            let engine = backend
-                .execute(Command::SettingsGet {
-                    scope: "engine".into(),
-                    account: None,
-                })
-                .await;
-            if let (Ok(modules), Ok(engine)) = (modules, engine) {
-                let _ = ui.upgrade_in_event_loop(move |ui| {
-                    settings::set_schemas(&modules, &engine);
-                    render(&ui);
-                });
+            let mut wait = Duration::from_secs(2);
+            loop {
+                let modules = backend.execute(Command::ModulesList).await;
+                let engine = backend
+                    .execute(Command::SettingsGet {
+                        scope: "engine".into(),
+                        account: None,
+                    })
+                    .await;
+                match (modules, engine) {
+                    (Ok(modules), Ok(engine)) => {
+                        me.on_ui(move |ui| {
+                            ui.global::<Bridge>()
+                                .set_schemas_error(SharedString::default());
+                            settings::set_schemas(&modules, &engine);
+                            render(ui);
+                        });
+                        return;
+                    }
+                    (Err(e), _) | (_, Err(e)) => {
+                        let message = e.message;
+                        me.on_ui(move |ui| {
+                            ui.global::<Bridge>().set_schemas_error(message.into());
+                        });
+                    }
+                }
+                tokio::time::sleep(wait).await;
+                wait = (wait * 2).min(Duration::from_secs(30));
+                // Another engine was opened meanwhile: its own load takes over.
+                let current = me.0.backend.lock().expect("backend lock").clone();
+                if !current.is_some_and(|c| Arc::ptr_eq(&c, &backend)) {
+                    return;
+                }
             }
         });
     }
@@ -933,11 +990,19 @@ impl Controller {
                 return;
             }
             b.set_history_loading(true);
+            // A reload supersedes whatever is still on its way; "load more" belongs
+            // to the current one.
+            let seq = if more {
+                me.0.activity.load(AtomicOrdering::Relaxed)
+            } else {
+                me.0.activity.fetch_add(1, AtomicOrdering::Relaxed) + 1
+            };
             let now = chrono::Utc::now();
             let stats_cmd = serde_json::from_value::<Command>(activity::stats_query(&choice, now));
             let history_cmd =
                 serde_json::from_value::<Command>(activity::history_query(&choice, before));
             let ui = me.0.ui.clone();
+            let latest = me.clone();
             me.0.rt.spawn(async move {
                 let stats = match (more, stats_cmd) {
                     (false, Ok(cmd)) => backend.execute(cmd).await.ok(),
@@ -948,6 +1013,9 @@ impl Controller {
                     Err(_) => None,
                 };
                 let _ = ui.upgrade_in_event_loop(move |ui| {
+                    if latest.0.activity.load(AtomicOrdering::Relaxed) != seq {
+                        return;
+                    }
                     ACTIVITY.with(|a| {
                         let mut a = a.borrow_mut();
                         if !more {
@@ -1013,7 +1081,7 @@ impl Controller {
         let (module, key) = (module.to_string(), key.to_string());
         self.on_ui(move |ui| {
             let account = ui.global::<Bridge>().get_account().to_string();
-            let mut list = LAST.with(|l| {
+            let current = LAST.with(|l| {
                 present::string_list(present::module_setting(
                     &l.borrow().state,
                     &account,
@@ -1021,6 +1089,11 @@ impl Controller {
                     &key,
                 ))
             });
+            let base = pending_or(
+                &pending_key(&account, &module, &key),
+                serde_json::json!(current),
+            );
+            let mut list: Vec<String> = serde_json::from_value(base).unwrap_or_default();
             f(&mut list);
             me.set_module_setting(&module, &key, serde_json::json!(list));
         });
@@ -1036,11 +1109,28 @@ impl Controller {
             let scope = LAST.with(|l| {
                 present::module_setting_scope(&l.borrow().state, &account, &module, &key)
             });
-            me.command(Command::SettingsSet {
-                scope,
-                value: serde_json::json!({ key: value }),
-                merge: true,
-            });
+            let pending = pending_key(&account, &module, &key);
+            remember_sent(&pending, &value);
+            me.send_setting(scope, serde_json::json!({ key: value }), pending);
+        });
+    }
+
+    /// Merges `patch` into `scope`; a refused change is forgotten (`pending`).
+    fn send_setting(&self, scope: String, patch: Value, pending: String) {
+        let me = self.clone();
+        let cmd = Command::SettingsSet {
+            scope,
+            value: patch,
+            merge: true,
+        };
+        self.run(cmd, move |r| {
+            if r.is_err() {
+                me.on_ui(move |_| {
+                    PENDING.with(|p| {
+                        p.borrow_mut().remove(&pending);
+                    })
+                });
+            }
         });
     }
 

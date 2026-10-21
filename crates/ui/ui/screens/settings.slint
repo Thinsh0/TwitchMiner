@@ -486,6 +486,14 @@ export component SettingsScreen inherits Page {
         }
     }
 
+    if Bridge.schemas-error != "": Card {
+        Text {
+            text: @tr("The engine's settings could not be loaded yet ({}). Trying again…", Bridge.schemas-error);
+            color: Theme.warning;
+            wrap: word-wrap;
+        }
+    }
+
     Card {
         SectionTitle {
             text: @tr("Appearance");
@@ -585,6 +593,9 @@ export component SettingsScreen inherits Page {
         Muted {
             text: Bridge.active-hours.length == 0 ? @tr("No time slot: watching at any time. Add one to watch only at certain times (local time; an end before the start goes past midnight).")
                 : @tr("Watching only inside these slots (local time; an end before the start goes past midnight). Enter the times as HH:MM.");
+        }
+        if Bridge.link != LinkState.local: Muted {
+            text: @tr("Remote engine: the times are those of the machine running it.");
         }
         HoursEditor { }
     }

@@ -366,6 +366,34 @@ impl Engine {
     }
 
     fn spawn_background_tasks(&self) {
+        // Whether watching is allowed now (pause, watching hours in this machine's
+        // time zone), for interfaces that may run elsewhere.
+        let me = self.clone();
+        tokio::spawn(async move {
+            let mut rx = me.shared.store.subscribe();
+            let mut tick = tokio::time::interval(Duration::from_secs(20));
+            loop {
+                let allowed = me
+                    .shared
+                    .store
+                    .read(EngineSettings::from_state)
+                    .watching_allowed(chrono::Local::now());
+                me.shared.store.emit(Event::WatchingAllowed { allowed });
+                // Next check: on the tick, or at once when the engine settings change.
+                loop {
+                    tokio::select! {
+                        _ = me.shared.cancel.cancelled() => return,
+                        _ = tick.tick() => break,
+                        ev = rx.recv() => match ev {
+                            Ok(env) if matches!(&env.event, Event::SettingsChanged { scope, .. } if scope == ENGINE_SCOPE) => break,
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                            _ => {}
+                        },
+                    }
+                }
+            }
+        });
+
         // Peer coordination (one account mined once across instances).
         let me = self.clone();
         tokio::spawn(async move {

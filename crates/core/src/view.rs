@@ -59,7 +59,10 @@ pub struct DropSummary {
 pub fn summary(state: &State, now: DateTime<Utc>) -> Summary {
     let engine = crate::settings::EngineSettings::from_state(state);
     let mut out = Summary {
-        watching_allowed: engine.watching_allowed(now.with_timezone(&chrono::Local)),
+        // The engine's own answer (its time zone); computed here only for older engines.
+        watching_allowed: state
+            .watching_allowed
+            .unwrap_or_else(|| engine.watching_allowed(now.with_timezone(&chrono::Local))),
         paused: engine.paused,
         ..Summary::default()
     };

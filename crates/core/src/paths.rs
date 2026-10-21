@@ -12,6 +12,21 @@
 
 use std::path::{Path, PathBuf};
 
+/// The database holds Twitch and API tokens: on Unix, only the owner may enter the
+/// data directory (`0700`), which covers every file in it. Best effort: a directory
+/// owned by someone else is left as it is.
+fn restrict(root: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(e) = std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700)) {
+            tracing::warn!(dir = %root.display(), error = %e, "could not restrict the data directory");
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = root;
+}
+
 #[derive(Debug, Clone)]
 pub struct Paths {
     pub root: PathBuf,
@@ -33,6 +48,7 @@ impl Paths {
     pub fn at(root: impl AsRef<Path>) -> std::io::Result<Self> {
         let root = root.as_ref().to_path_buf();
         std::fs::create_dir_all(root.join("logs"))?;
+        restrict(&root);
         Ok(Self { root })
     }
 
@@ -109,6 +125,17 @@ mod tests {
         assert!(matches!(paths.lock(), Err(LockError::Busy { .. })));
         drop(first);
         assert!(paths.lock().is_ok(), "released on drop");
+        let _ = std::fs::remove_dir_all(&paths.root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn only_the_owner_enters_the_data_dir() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("tm-perm-{}", std::process::id()));
+        let paths = Paths::at(&dir).unwrap();
+        let mode = std::fs::metadata(&paths.root).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700);
         let _ = std::fs::remove_dir_all(&paths.root);
     }
 }

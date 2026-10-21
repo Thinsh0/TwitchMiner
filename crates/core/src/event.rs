@@ -41,6 +41,11 @@ pub enum Event {
     ManifestUpdated {
         revision: u32,
     },
+    /// Watching is allowed right now (not paused, inside the watching hours), judged
+    /// by the engine in its own time zone.
+    WatchingAllowed {
+        allowed: bool,
+    },
     NoticeRaised {
         notice: Notice,
     },
@@ -202,6 +207,7 @@ impl Event {
             Event::EngineStarted { .. } => "engine_started",
             Event::SettingsChanged { .. } => "settings_changed",
             Event::ManifestUpdated { .. } => "manifest_updated",
+            Event::WatchingAllowed { .. } => "watching_allowed",
             Event::NoticeRaised { .. } => "notice_raised",
             Event::NoticeCleared { .. } => "notice_cleared",
             Event::LoginStarted { .. } => "login_started",

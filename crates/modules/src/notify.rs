@@ -103,6 +103,25 @@ impl Module for Notify {
         let mut rx = ctx.events();
         let mut settings: NotifySettings = ctx.settings()?;
         let http = ctx.gql().net().http.clone();
+        // Sending happens apart, in order: a slow or rate-limited service never holds
+        // up the events (the queue ends when this module stops).
+        let (queue, mut pending) = tokio::sync::mpsc::channel::<Outgoing>(QUEUE);
+        let sender_http = http.clone();
+        tokio::spawn(async move {
+            while let Some(o) = pending.recv().await {
+                send_all(&sender_http, &o.targets, &o.text, &o.event).await;
+            }
+        });
+        let enqueue = |targets: &[Target], text: String, event: Value| {
+            let o = Outgoing {
+                targets: targets.to_vec(),
+                text,
+                event,
+            };
+            if queue.try_send(o).is_err() {
+                tracing::warn!("notification dropped: too many waiting");
+            }
+        };
         // An account whose token was rejected at start-up is already marked before
         // this module subscribes: report it once now.
         let (seq, auth_required) = ctx.store().read(|s| {
@@ -122,7 +141,7 @@ impl Module for Notify {
                 },
             };
             if let Some(text) = format_event(&ctx, &settings, &env) {
-                send_all(&http, &settings.targets, &text, &json!(env)).await;
+                enqueue(&settings.targets, text, json!(env));
             }
         }
         loop {
@@ -156,9 +175,53 @@ impl Module for Notify {
             let Some(text) = format_event(&ctx, &settings, &env) else {
                 continue;
             };
-            send_all(&http, &settings.targets, &text, &json!(env.as_ref())).await;
+            enqueue(&settings.targets, text, json!(env.as_ref()));
         }
     }
+}
+
+/// Notifications waiting to be sent, at most.
+const QUEUE: usize = 200;
+/// Attempts per target and notification.
+const ATTEMPTS: u32 = 3;
+/// Longest wait a rate limit may impose before a retry.
+const MAX_RETRY_WAIT: Duration = Duration::from_secs(60);
+
+struct Outgoing {
+    targets: Vec<Target>,
+    text: String,
+    event: Value,
+}
+
+/// A failed send, and when it is worth trying again (`None`: it is not).
+struct SendError {
+    error: anyhow::Error,
+    retry_after: Option<Duration>,
+}
+
+impl SendError {
+    fn fatal(error: impl Into<anyhow::Error>) -> Self {
+        Self {
+            error: error.into(),
+            retry_after: None,
+        }
+    }
+}
+
+/// How long a rate-limited service asks to wait: `Retry-After` (seconds), or the
+/// `retry_after` of Discord's and Telegram's answers. Five seconds when unsaid.
+fn retry_wait(headers: &reqwest::header::HeaderMap, body: &str) -> Duration {
+    let from_header = headers
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.trim().parse::<f64>().ok());
+    let from_body = serde_json::from_str::<Value>(body).ok().and_then(|v| {
+        v["retry_after"]
+            .as_f64()
+            .or_else(|| v["parameters"]["retry_after"].as_f64())
+    });
+    let secs = from_header.or(from_body).unwrap_or(5.0).max(0.0);
+    Duration::from_secs_f64(secs).min(MAX_RETRY_WAIT)
 }
 
 /// Engine-wide events are sent by one account only, to avoid duplicates: the first
@@ -360,7 +423,7 @@ async fn send_all(
 ) -> Vec<String> {
     let mut errors = Vec::new();
     for t in targets {
-        if let Err(e) = send(http, t, text, event).await {
+        if let Err(e) = send_retrying(http, t, text, event).await {
             let msg = format!("{e:#}");
             tracing::warn!(error = %msg, "notification failed");
             errors.push(msg);
@@ -369,7 +432,36 @@ async fn send_all(
     errors
 }
 
-async fn send(http: &reqwest::Client, t: &Target, text: &str, event: &Value) -> anyhow::Result<()> {
+/// Sends to one target: a rate limit (429) waits what the service asks, a network or
+/// server error waits a little; `ATTEMPTS` tries in all.
+async fn send_retrying(
+    http: &reqwest::Client,
+    t: &Target,
+    text: &str,
+    event: &Value,
+) -> anyhow::Result<()> {
+    let mut attempt = 1;
+    loop {
+        match send(http, t, text, event).await {
+            Ok(()) => return Ok(()),
+            Err(SendError {
+                retry_after: Some(wait),
+                ..
+            }) if attempt < ATTEMPTS => {
+                tokio::time::sleep(wait).await;
+                attempt += 1;
+            }
+            Err(e) => return Err(e.error),
+        }
+    }
+}
+
+async fn send(
+    http: &reqwest::Client,
+    t: &Target,
+    text: &str,
+    event: &Value,
+) -> Result<(), SendError> {
     let req = match t {
         Target::Discord { webhook_url } => http.post(webhook_url).json(&json!({ "content": text })),
         Target::Ntfy { url, token } => {
@@ -405,18 +497,83 @@ async fn send(http: &reqwest::Client, t: &Target, text: &str, event: &Value) -> 
         }
     };
     // Errors without their URL: webhook and bot URLs carry the target's secret.
-    req.timeout(Duration::from_secs(15))
+    let resp = req
+        .timeout(Duration::from_secs(15))
         .send()
         .await
-        .map_err(reqwest::Error::without_url)?
-        .error_for_status()
-        .map_err(reqwest::Error::without_url)?;
-    Ok(())
+        .map_err(|e| SendError {
+            error: e.without_url().into(),
+            retry_after: Some(Duration::from_secs(3)),
+        })?;
+    let status = resp.status();
+    if status.is_success() {
+        return Ok(());
+    }
+    let retry_after = if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        let headers = resp.headers().clone();
+        let body = resp.text().await.unwrap_or_default();
+        Some(retry_wait(&headers, &body))
+    } else if status.is_server_error() {
+        Some(Duration::from_secs(3))
+    } else {
+        return Err(SendError::fatal(anyhow::anyhow!("HTTP {status}")));
+    };
+    Err(SendError {
+        error: anyhow::anyhow!("HTTP {status}"),
+        retry_after,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn rate_limit_waits_follow_the_service() {
+        let mut h = reqwest::header::HeaderMap::new();
+        assert_eq!(retry_wait(&h, ""), Duration::from_secs(5));
+        assert_eq!(
+            retry_wait(&h, r#"{"retry_after": 1.5}"#),
+            Duration::from_millis(1500)
+        );
+        assert_eq!(
+            retry_wait(&h, r#"{"parameters": {"retry_after": 2}}"#),
+            Duration::from_secs(2)
+        );
+        h.insert(reqwest::header::RETRY_AFTER, "7".parse().unwrap());
+        assert_eq!(retry_wait(&h, ""), Duration::from_secs(7));
+        h.insert(reqwest::header::RETRY_AFTER, "3600".parse().unwrap());
+        assert_eq!(retry_wait(&h, ""), MAX_RETRY_WAIT);
+    }
+
+    #[tokio::test]
+    async fn a_rate_limited_send_is_retried() {
+        tm_twitch::tls::install_crypto_provider();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/hook", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let answers = [
+                "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 0\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            ];
+            for a in answers {
+                let (mut sock, _) = listener.accept().await.unwrap();
+                let mut buf = [0u8; 4096];
+                let _ = sock.read(&mut buf).await;
+                sock.write_all(a.as_bytes()).await.unwrap();
+            }
+        });
+        let targets = [Target::Webhook {
+            url,
+            token: None,
+            headers: BTreeMap::new(),
+        }];
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let errors = send_all(&http, &targets, "hi", &json!({})).await;
+        assert!(errors.is_empty(), "{errors:?}");
+        server.await.unwrap();
+    }
 
     #[tokio::test]
     async fn errors_never_show_the_target_url() {

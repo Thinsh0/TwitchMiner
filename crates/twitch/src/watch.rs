@@ -87,10 +87,11 @@ impl Watcher {
     /// Returns `Ok(None)` when the channel is offline.
     async fn cycle(&mut self) -> Result<Option<WatchReport>> {
         if self.info_at.is_none_or(|t| t.elapsed() >= INFO_REFRESH) {
-            let user = self
-                .gql
-                .users_by_id(std::slice::from_ref(&self.target.channel_id))
-                .await?;
+            let target = (
+                self.target.channel_id.clone(),
+                Some(self.target.login.clone()),
+            );
+            let user = self.gql.users_by_ref(&[target]).await?;
             match user.into_iter().next().flatten().and_then(|u| u.stream) {
                 Some(stream) => {
                     if self.info.as_ref().is_some_and(|i| i.id != stream.id) {

@@ -230,6 +230,7 @@ impl Module for Drops {
         recheck.tick().await;
         let mut need_refresh = true;
         let mut need_pick = true;
+        let mut active_hours = ctx.store().read(EngineSettings::from_state).active_hours;
         // After a failed refresh, the next one waits (Twitch outage: no hammering).
         let mut retry =
             tm_twitch::net::Backoff::new(Duration::from_secs(30), Duration::from_secs(15 * 60));
@@ -270,6 +271,12 @@ impl Module for Drops {
             tokio::select! {
                 _ = ctx.cancelled() => break,
                 _ = ctx.settings_changed() => {
+                    // The watching hours change how much time the plan has.
+                    let hours = ctx.store().read(EngineSettings::from_state).active_hours;
+                    if hours != active_hours {
+                        active_hours = hours;
+                        need_pick = true;
+                    }
                     let next: DropsSettings = ctx.settings()?;
                     if next != settings {
                         // Game lists drive discovery: rebuild the campaign list.
@@ -824,18 +831,18 @@ impl Runtime {
         ctx: &ModuleContext,
         candidates: &[Campaign],
     ) -> Option<HashMap<String, UserInfo>> {
-        let ids: Vec<String> = candidates
+        let mut seen = HashSet::new();
+        let refs: Vec<(String, Option<String>)> = candidates
             .iter()
             .filter_map(|c| c.allowed_channels.as_ref())
             .flatten()
-            .map(|a| a.id.clone())
-            .collect::<HashSet<_>>()
-            .into_iter()
+            .filter(|a| seen.insert(a.id.clone()))
+            .map(|a| (a.id.clone(), a.login.clone()))
             .collect();
-        if ids.is_empty() {
+        if refs.is_empty() {
             return Some(HashMap::new());
         }
-        match ctx.gql().users_by_id(&ids).await {
+        match ctx.gql().users_by_ref(&refs).await {
             Ok(users) => Some(
                 users
                     .into_iter()
@@ -873,8 +880,15 @@ impl Runtime {
                     .filter_map(|a| live.get(&a.id).cloned())
                     .collect(),
                 None => {
-                    let ids: Vec<String> = acl.iter().map(|a| a.id.clone()).collect();
-                    gql.users_by_id(&ids).await?.into_iter().flatten().collect()
+                    let refs: Vec<(String, Option<String>)> = acl
+                        .iter()
+                        .map(|a| (a.id.clone(), a.login.clone()))
+                        .collect();
+                    gql.users_by_ref(&refs)
+                        .await?
+                        .into_iter()
+                        .flatten()
+                        .collect()
                 }
             };
             users.retain(|u| plays_game(u) && ok(u));
@@ -997,7 +1011,7 @@ impl Runtime {
                 .contains(&c.game.id);
             if let Ok(mut users) = ctx
                 .gql()
-                .users_by_id(std::slice::from_ref(&t.channel.id))
+                .users_by_ref(&[(t.channel.id.clone(), Some(t.channel.login.clone()))])
                 .await
             {
                 let stream = users.pop().flatten().and_then(|u| u.stream);

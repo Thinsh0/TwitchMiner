@@ -1,10 +1,12 @@
 //! Simulated viewing of one live channel.
 //!
-//! Every ~20 s the watcher fetches the lowest-quality HLS media playlist and sends a
-//! `HEAD` for the newest segment (what Twitch uses to credit drops), and once a
-//! minute it posts a `minute-watched` event to spade (what credits channel points
-//! and watch streaks). No video data is downloaded.
+//! Every ~10 s the watcher fetches the lowest-quality HLS media playlist and sends a
+//! `HEAD` for every segment it has not requested yet: since October 2026 Twitch only
+//! credits drop minutes while each segment of the stream is requested, like a player
+//! does. Once a minute it posts a `minute-watched` event to spade (what credits channel
+//! points and watch streaks). No video data is downloaded.
 
+use std::collections::{HashSet, VecDeque};
 use std::time::Duration;
 
 use base64::Engine;
@@ -17,7 +19,12 @@ use crate::error::{Error, Result};
 use crate::gql::Gql;
 use crate::models::StreamInfo;
 
-const TICK: Duration = Duration::from_secs(20);
+const TICK: Duration = Duration::from_secs(10);
+/// Segments remembered per broadcast (a playlist lists far fewer).
+const SEEN_SEGMENTS: usize = 256;
+/// At most this many segments per cycle, newest first (after a pause, older ones have
+/// left Twitch's window anyway).
+const SEGMENTS_PER_TICK: usize = 16;
 const SPADE_EVERY: Duration = Duration::from_secs(60);
 const INFO_REFRESH: Duration = Duration::from_secs(10 * 60);
 
@@ -50,6 +57,7 @@ pub async fn run(
         info: None,
         info_at: None,
         last_spade: None,
+        seen: Seen::default(),
     };
     let mut next = Instant::now();
     loop {
@@ -69,7 +77,7 @@ pub async fn run(
         if reports.send(report).await.is_err() {
             return;
         }
-        let jitter = Duration::from_millis(rand::random::<u64>() % 2000);
+        let jitter = Duration::from_millis(rand::random::<u64>() % 1000);
         next = started + TICK + jitter;
     }
 }
@@ -81,6 +89,36 @@ struct Watcher {
     info: Option<StreamInfo>,
     info_at: Option<Instant>,
     last_spade: Option<Instant>,
+    seen: Seen,
+}
+
+/// Segment URLs already requested, oldest first.
+#[derive(Default)]
+struct Seen {
+    order: VecDeque<String>,
+    set: HashSet<String>,
+}
+
+impl Seen {
+    fn contains(&self, url: &str) -> bool {
+        self.set.contains(url)
+    }
+
+    fn insert(&mut self, url: String) {
+        if self.set.insert(url.clone()) {
+            self.order.push_back(url);
+        }
+        while self.order.len() > SEEN_SEGMENTS {
+            if let Some(old) = self.order.pop_front() {
+                self.set.remove(&old);
+            }
+        }
+    }
+
+    fn clear(&mut self) {
+        self.order.clear();
+        self.set.clear();
+    }
 }
 
 impl Watcher {
@@ -95,7 +133,9 @@ impl Watcher {
             match user.into_iter().next().flatten().and_then(|u| u.stream) {
                 Some(stream) => {
                     if self.info.as_ref().is_some_and(|i| i.id != stream.id) {
-                        self.media_url = None; // new broadcast
+                        // New broadcast.
+                        self.media_url = None;
+                        self.seen.clear();
                     }
                     self.info = Some(stream);
                     self.info_at = Some(Instant::now());
@@ -146,16 +186,22 @@ impl Watcher {
             });
         }
         let body = resp.text().await?;
-        let Some(segment) = body
-            .lines()
-            .rev()
-            .map(str::trim)
-            .find(|l| l.starts_with("http"))
-        else {
-            return Ok(false);
-        };
-        let head = http.head(segment).header("User-Agent", &ua).send().await?;
-        Ok(head.status().is_success())
+        let segments = new_segments(&body, &url, &self.seen);
+        if segments.is_empty() {
+            // Nothing new since the last cycle: fine as long as the playlist lists some.
+            return Ok(body
+                .lines()
+                .any(|l| !l.trim().starts_with('#') && !l.trim().is_empty()));
+        }
+        let mut ok = true;
+        for segment in segments {
+            match http.head(&segment).header("User-Agent", &ua).send().await {
+                Ok(r) if r.status().is_success() => self.seen.insert(segment),
+                // Retried next cycle while it is still listed.
+                Ok(_) | Err(_) => ok = false,
+            }
+        }
+        Ok(ok)
     }
 
     async fn resolve_media_url(&self) -> Result<String> {
@@ -233,6 +279,29 @@ impl Watcher {
     }
 }
 
+/// Segment URLs of a media playlist not requested yet, oldest first, at most
+/// [`SEGMENTS_PER_TICK`] (the newest). Relative URLs are resolved against `base`.
+fn new_segments(playlist: &str, base: &str, seen: &Seen) -> Vec<String> {
+    let base = url::Url::parse(base).ok();
+    let mut out: Vec<String> = playlist
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .filter_map(|l| {
+            if l.starts_with("http") {
+                Some(l.to_string())
+            } else {
+                base.as_ref()?.join(l).ok().map(String::from)
+            }
+        })
+        .filter(|u| !seen.contains(u))
+        .collect();
+    out.dedup();
+    let skip = out.len().saturating_sub(SEGMENTS_PER_TICK);
+    out.drain(..skip);
+    out
+}
+
 /// Picks the variant with the lowest `BANDWIDTH` from an HLS master playlist.
 pub fn lowest_variant(master: &str) -> Option<String> {
     let mut best: Option<(u64, String)> = None;
@@ -264,5 +333,45 @@ mod tests {
                  #EXT-X-STREAM-INF:BANDWIDTH=160000,RESOLUTION=284x160\nhttps://a/160\n\
                  #EXT-X-STREAM-INF:BANDWIDTH=3400000,RESOLUTION=1280x720\nhttps://a/720\n";
         assert_eq!(lowest_variant(m).as_deref(), Some("https://a/160"));
+    }
+
+    #[test]
+    fn every_new_segment_is_requested_once() {
+        let p1 = "#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-TWITCH-PREFETCH:https://v/p.ts\n\
+                  #EXTINF:2.000,live\nhttps://v/1.ts\n#EXTINF:2.000,live\nhttps://v/2.ts\n\
+                  #EXTINF:2.000,live\nseg/3.ts\n";
+        let mut seen = Seen::default();
+        let first = new_segments(p1, "https://v/index.m3u8", &seen);
+        assert_eq!(
+            first,
+            ["https://v/1.ts", "https://v/2.ts", "https://v/seg/3.ts"]
+        );
+        seen.insert(first[0].clone());
+        seen.insert(first[1].clone());
+        // 3 failed: still listed, so retried; 4 is new.
+        let p2 = format!("{p1}#EXTINF:2.000,live\nhttps://v/4.ts\n");
+        assert_eq!(
+            new_segments(&p2, "https://v/index.m3u8", &seen),
+            ["https://v/seg/3.ts", "https://v/4.ts"]
+        );
+    }
+
+    #[test]
+    fn a_long_backlog_keeps_the_newest_segments() {
+        let p: String = (0..40).map(|i| format!("https://v/{i}.ts\n")).collect();
+        let got = new_segments(&p, "https://v/i.m3u8", &Seen::default());
+        assert_eq!(got.len(), SEGMENTS_PER_TICK);
+        assert_eq!(got.last().map(String::as_str), Some("https://v/39.ts"));
+    }
+
+    #[test]
+    fn seen_is_bounded() {
+        let mut seen = Seen::default();
+        for i in 0..SEEN_SEGMENTS + 10 {
+            seen.insert(format!("s{i}"));
+        }
+        assert_eq!(seen.set.len(), SEEN_SEGMENTS);
+        assert!(!seen.contains("s0"));
+        assert!(seen.contains(&format!("s{}", SEEN_SEGMENTS + 9)));
     }
 }

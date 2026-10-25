@@ -102,7 +102,8 @@ struct Active {
     errors: u32,
 }
 
-const MAX_CONSECUTIVE_ERRORS: u32 = 6;
+/// About two minutes of failed cycles (one every ~10 s).
+const MAX_CONSECUTIVE_ERRORS: u32 = 12;
 const OFFLINE_COOLDOWN: Duration = Duration::from_secs(3 * 60);
 const ERROR_COOLDOWN: Duration = Duration::from_secs(5 * 60);
 

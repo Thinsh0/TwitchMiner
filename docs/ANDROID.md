@@ -23,7 +23,7 @@ APK
    - Permissions : `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE`, `POST_NOTIFICATIONS`, `INTERNET`, `WAKE_LOCK`.
 2. **Exemption d'optimisation batterie** : `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`.
 3. **OneUI** : en plus, guider l'utilisateur vers *Paramètres → Batterie → Limites d'utilisation en arrière-plan → Applications jamais en veille*. Sans ça, OneUI met l'app en veille malgré tout. Deep link possible : `Intent("com.samsung.android.sm.ACTION_BATTERY")`, avec repli sur les réglages de l'app.
-4. Wake lock partiel uniquement pendant le minage. Le moteur est très peu actif : un cycle réseau toutes les ~20 s par chaîne regardée.
+4. Wake lock partiel uniquement pendant le minage. Le moteur est très peu actif : un cycle réseau toutes les ~10 s par chaîne regardée (quelques requêtes `HEAD` légères).
 
 ## Notification : la Now Bar de OneUI
 

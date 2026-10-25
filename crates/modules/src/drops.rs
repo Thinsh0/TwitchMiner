@@ -645,6 +645,11 @@ impl Runtime {
                 entry.status
             ));
         }
+        // An explicit choice overrides an automatic set-aside.
+        if self.banned_campaigns.remove(&entry.campaign_id).is_some() {
+            self.stalls.remove(&entry.campaign_id);
+            self.save_bans(ctx).await;
+        }
         self.save_focus(
             ctx,
             Some(Focus {
@@ -910,11 +915,11 @@ impl Runtime {
             .into_iter()
             .filter(ok)
             .collect();
-        // Make sure the channel really participates in this campaign.
-        let sample: Vec<UserInfo> = channels.iter().take(6).cloned().collect();
-        let ids: Vec<String> = sample.iter().map(|u| u.id.clone()).collect();
+        // Make sure the channel really participates in this campaign: Twitch lists it on
+        // few of the game's channels, so check them all.
+        let ids: Vec<String> = channels.iter().map(|u| u.id.clone()).collect();
         if let Ok(lists) = gql.available_drops(&ids).await {
-            for (u, list) in sample.iter().zip(lists) {
+            for (u, list) in channels.iter().zip(lists) {
                 if list.iter().any(|x| x.id == c.id) {
                     return Ok(Some(u.clone()));
                 }

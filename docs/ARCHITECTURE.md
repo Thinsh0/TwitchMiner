@@ -83,7 +83,7 @@ Priorités standard (`tm_core::priority`) : `MANUAL 1000 > DROPS 500 > STREAK 30
 ## Le watcher (simulation de visionnage)
 
 `crates/twitch/src/watch.rs`, par chaîne :
-- toutes les ~20 s : récupère la playlist HLS de **plus basse qualité** (variante à la plus petite `BANDWIDTH`) et envoie un `HEAD` sur le dernier segment. C'est ce qui fait avancer les drops. Aucune vidéo n'est téléchargée.
+- toutes les ~10 s : récupère la playlist HLS de **plus basse qualité** (variante à la plus petite `BANDWIDTH`) et envoie un `HEAD` sur **chaque segment pas encore demandé** (au plus 16 par cycle, mémoire de 256 segments par diffusion). Depuis octobre 2026, Twitch ne crédite les minutes de drop que si chaque segment est demandé, comme le ferait un lecteur. Aucune vidéo n'est téléchargée.
 - toutes les 60 s : envoie l'événement spade `minute-watched`, ce qui crédite les points de chaîne et les séries de visionnage.
 - toutes les 10 min : revérifie que le stream est toujours en ligne.
 

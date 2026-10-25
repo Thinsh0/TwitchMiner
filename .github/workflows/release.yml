@@ -1,14 +1,50 @@
 name: Release
 
+# Either push a `v*` tag, or run it by hand (Actions › Release › Run workflow) with the
+# version: the workflow then creates the tag on the chosen commit itself.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag to create, e.g. v0.1.1 (must match the Cargo version)"
+        required: true
 
 permissions:
   contents: write
 
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
 jobs:
+  # One job creates the release, so the build jobs never race to create it.
+  create:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: check the version
+        shell: bash
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::tag $TAG does not match the Cargo version v$version (the update notice compares them)"
+            exit 1
+          fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: TwitchMiner ${{ env.TAG }}
+          generate_release_notes: true
+          body: |
+            **Windows** : télécharger `TwitchMiner-${{ env.TAG }}-windows.exe`, le placer dans un dossier où il restera (par exemple `C:\Programmes\TwitchMiner\`) et le lancer. Il s'ajoute au menu Démarrer et aux applications installées. Pour mettre à jour : quitter l'app (icône de la barre système › Quitter) et remplacer l'exe.
+            L'archive `.zip` contient aussi le daemon en ligne de commande (`twitchminer.exe`).
+
+            **Linux** : archive `x86_64-unknown-linux-gnu` (app de bureau + daemon) ou `musl` (daemon statique). **Android** : voir `docs/ANDROID.md`.
+
   build:
+    needs: create
     strategy:
       fail-fast: false
       matrix:
@@ -33,7 +69,7 @@ jobs:
       - name: package
         shell: bash
         run: |
-          name=twitchminer-${GITHUB_REF_NAME}-${{ matrix.target }}
+          name=twitchminer-${TAG}-${{ matrix.target }}
           dir=target/${{ matrix.target }}/release
           mkdir "$name"
           cp README.md "$name/"
@@ -41,7 +77,7 @@ jobs:
             cp $dir/twitchminer.exe $dir/twitchminer-desktop.exe "$name/"
             7z a "$name.zip" "$name"
             # The desktop application alone: the simplest download on Windows.
-            cp $dir/twitchminer-desktop.exe "TwitchMiner-${GITHUB_REF_NAME}-windows.exe"
+            cp $dir/twitchminer-desktop.exe "TwitchMiner-${TAG}-windows.exe"
           else
             cp $dir/twitchminer "$name/"
             if [ -f $dir/twitchminer-desktop ]; then cp $dir/twitchminer-desktop "$name/"; fi
@@ -49,18 +85,14 @@ jobs:
           fi
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.TAG }}
           files: |
             twitchminer-*.zip
             twitchminer-*.tar.gz
             TwitchMiner-*.exe
-          generate_release_notes: true
-          body: |
-            **Windows** : télécharger `TwitchMiner-${{ github.ref_name }}-windows.exe`, le placer dans un dossier où il restera (par exemple `C:\Programmes\TwitchMiner\`) et le lancer. Il s'ajoute au menu Démarrer et aux applications installées.
-            L'archive `.zip` contient aussi le daemon en ligne de commande (`twitchminer.exe`).
-
-            **Linux** : archive `x86_64-unknown-linux-gnu` (app de bureau + daemon) ou `musl` (daemon statique). **Android** : voir `docs/ANDROID.md`.
 
   android:
+    needs: create
     runs-on: ubuntu-22.04
     strategy:
       matrix:
@@ -80,10 +112,11 @@ jobs:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
       - name: package
         run: |
-          name=twitchminer-${GITHUB_REF_NAME}-${{ matrix.target }}
+          name=twitchminer-${TAG}-${{ matrix.target }}
           mkdir "$name"
           cp target/${{ matrix.target }}/release/twitchminer target/${{ matrix.target }}/release/libtwitchminer_jni.so crates/android/kotlin/Native.kt docs/ANDROID.md "$name/"
           tar czf "$name.tar.gz" "$name"
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.TAG }}
           files: twitchminer-*.tar.gz

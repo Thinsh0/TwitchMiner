@@ -30,6 +30,8 @@ Avant de valider un changement : `rustup update stable`, puis fmt, clippy et tes
 
 Android : `cargo ndk --target aarch64-linux-android --platform 26 build -p tm-app`.
 
+Publier une version : passer `version` du workspace (`Cargo.toml`) à la nouvelle valeur, `cargo update -w`, valider et pousser sur `main`, puis lancer le workflow **Release** à la main (`workflow_dispatch`, entrée `tag` = `v` + la version). Il vérifie que le tag correspond à la version (l'avis de mise à jour compare les deux), crée le tag et la release, et y joint les binaires.
+
 ## Style
 
 - Commentaires en anglais, sobres ; docs utilisateur (`docs/`, `README.md`) en français.

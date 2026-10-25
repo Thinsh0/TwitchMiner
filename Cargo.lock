@@ -5707,7 +5707,7 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tm-android"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "jni 0.21.1",
  "serde_json",
@@ -5718,7 +5718,7 @@ dependencies = [
 
 [[package]]
 name = "tm-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -5732,7 +5732,7 @@ dependencies = [
 
 [[package]]
 name = "tm-client"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "futures-util",
@@ -5750,7 +5750,7 @@ dependencies = [
 
 [[package]]
 name = "tm-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -5776,7 +5776,7 @@ dependencies = [
 
 [[package]]
 name = "tm-modules"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5793,7 +5793,7 @@ dependencies = [
 
 [[package]]
 name = "tm-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "chrono",
@@ -5810,7 +5810,7 @@ dependencies = [
 
 [[package]]
 name = "tm-twitch"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arc-swap",
  "base64 0.23.1",
@@ -5835,7 +5835,7 @@ dependencies = [
 
 [[package]]
 name = "tm-ui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6166,7 +6166,7 @@ dependencies = [
 
 [[package]]
 name = "twitchminer"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -6182,7 +6182,7 @@ dependencies = [
 
 [[package]]
 name = "twitchminer-desktop"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "auto-launch",

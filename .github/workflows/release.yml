@@ -25,22 +25,40 @@ jobs:
       - if: matrix.musl
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: cargo build --release --locked --target ${{ matrix.target }} -p twitchminer
+      # Desktop application (not for the static musl build).
+      - if: "!matrix.musl && runner.os == 'Linux'"
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev
+      - if: "!matrix.musl"
+        run: cargo build --release --locked --target ${{ matrix.target }} -p twitchminer-desktop
       - name: package
         shell: bash
         run: |
           name=twitchminer-${GITHUB_REF_NAME}-${{ matrix.target }}
+          dir=target/${{ matrix.target }}/release
           mkdir "$name"
           cp README.md "$name/"
           if [ "${{ matrix.archive }}" = zip ]; then
-            cp target/${{ matrix.target }}/release/twitchminer.exe "$name/"
+            cp $dir/twitchminer.exe $dir/twitchminer-desktop.exe "$name/"
             7z a "$name.zip" "$name"
+            # The desktop application alone: the simplest download on Windows.
+            cp $dir/twitchminer-desktop.exe "TwitchMiner-${GITHUB_REF_NAME}-windows.exe"
           else
-            cp target/${{ matrix.target }}/release/twitchminer "$name/"
+            cp $dir/twitchminer "$name/"
+            if [ -f $dir/twitchminer-desktop ]; then cp $dir/twitchminer-desktop "$name/"; fi
             tar czf "$name.tar.gz" "$name"
           fi
       - uses: softprops/action-gh-release@v2
         with:
-          files: twitchminer-*.*
+          files: |
+            twitchminer-*.zip
+            twitchminer-*.tar.gz
+            TwitchMiner-*.exe
+          generate_release_notes: true
+          body: |
+            **Windows** : télécharger `TwitchMiner-${{ github.ref_name }}-windows.exe`, le placer dans un dossier où il restera (par exemple `C:\Programmes\TwitchMiner\`) et le lancer. Il s'ajoute au menu Démarrer et aux applications installées.
+            L'archive `.zip` contient aussi le daemon en ligne de commande (`twitchminer.exe`).
+
+            **Linux** : archive `x86_64-unknown-linux-gnu` (app de bureau + daemon) ou `musl` (daemon statique). **Android** : voir `docs/ANDROID.md`.
 
   android:
     runs-on: ubuntu-22.04

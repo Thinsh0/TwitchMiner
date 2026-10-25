@@ -48,9 +48,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      # Shared with the Release workflow (same key and environment): a release
+      # starts from the dependencies built here on main.
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          shared-key: build-${{ matrix.target }}
       - if: matrix.musl
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - if: runner.os == 'Windows'
@@ -86,7 +88,7 @@ jobs:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          shared-key: android-${{ matrix.target }}
       - uses: nttld/setup-ndk@v1
         id: ndk
         with:

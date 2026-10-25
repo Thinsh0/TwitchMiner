@@ -16,6 +16,9 @@ permissions:
 
 env:
   TAG: ${{ inputs.tag || github.ref_name }}
+  # Same as the CI: part of the cache key (see the rust-cache steps).
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
 
 jobs:
   # One job creates the release, so the build jobs never race to create it.
@@ -58,6 +61,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      # The dependencies the CI built on main (same shared key): only the workspace
+      # crates and the final link are left to build.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: build-${{ matrix.target }}
+          save-if: false
       - if: matrix.musl
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: cargo build --release --locked --target ${{ matrix.target }} -p twitchminer
@@ -102,6 +111,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: android-${{ matrix.target }}
+          save-if: false
       - uses: nttld/setup-ndk@v1
         id: ndk
         with:

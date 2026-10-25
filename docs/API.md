@@ -166,7 +166,7 @@ Chaque portée a un **JSON Schema** (`settings_get(...).schema`, ou `modules_lis
 
 ### Plan des drops
 
-Le module `drops` ne se contente pas de trier : il **planifie** (`module_data.drops.plan`, recalculé à chaque choix de cible).
+Le module `drops` ne se contente pas de trier : il **planifie** (`module_data.drops.plan`, recalculé à chaque choix de cible et à chaque minute de progression d'un drop : temps restant et avancement suivent le visionnage). Twitch ne signale que le drop en cours, alors qu'il compte en même temps tous les drops débloqués d'une campagne : le module avance les autres d'autant (événements `drop_progress` estimés), et la prochaine actualisation remet les vraies valeurs.
 
 1. **Focus** (`module_call drops focus`) : en premier, jusqu'à son objectif.
 2. **Campagnes à chaînes définies** (moins de `restricted_max_channels` chaînes autorisées, ex. esport) : priorité maximale dès qu'une de leurs chaînes est en direct sur le jeu. Leur temps n'est pas prévisible, elles ne sont pas planifiées.

@@ -144,7 +144,7 @@ component PlanRowCard inherits Rectangle {
                     if root.entry.has-progress && root.entry.status != "done": VerticalLayout {
                         alignment: center;
                         Text {
-                            text: @tr("{} left", Fmt.duration(root.entry.remaining-minutes));
+                            text: @tr("{}% · {} left", Math.floor(root.entry.progress * 100), Fmt.duration(root.entry.remaining-minutes));
                             font-size: Theme.font-xs;
                             color: Theme.text-faint;
                         }

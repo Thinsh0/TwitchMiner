@@ -189,7 +189,7 @@ component DropCard inherits Card {
             HorizontalLayout {
                 spacing: 8px;
                 Text {
-                    text: Fmt.duration(Bridge.drop.current) + " / " + Fmt.duration(Bridge.drop.required);
+                    text: Fmt.duration(Bridge.drop.current) + " / " + Fmt.duration(Bridge.drop.required) + " · " + @tr("{}%", Math.floor(Bridge.drop.progress * 100));
                     font-size: Theme.font-s;
                     color: Theme.text;
                     font-weight: 600;

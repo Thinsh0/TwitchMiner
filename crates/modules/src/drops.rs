@@ -146,6 +146,8 @@ struct Runtime {
     alerted: HashMap<String, DateTime<Utc>>,
     /// Campaign ids already seen (`None` until loaded: the first refresh only records).
     known: Option<HashMap<String, DateTime<Utc>>>,
+    /// Drop minutes moved since the plan was last published.
+    plan_stale: bool,
 }
 
 impl Runtime {
@@ -162,6 +164,7 @@ impl Runtime {
             tracked: HashSet::new(),
             last_refresh: None,
             plan: Plan::default(),
+            plan_stale: false,
             focus: None,
             alerted: HashMap::new(),
             known: None,
@@ -265,6 +268,9 @@ impl Module for Drops {
                     wanted.push(topics::playback(&t.channel.id));
                 }
                 topics.set(wanted);
+            } else if std::mem::take(&mut rt.plan_stale) {
+                // Remaining time and progress of the published plan follow the minutes.
+                rt.republish_plan(&ctx, &settings).await;
             }
 
             let next_trigger = rt.next_time_trigger();
@@ -660,6 +666,13 @@ impl Runtime {
         Ok(
             json!({"campaign_id": entry.campaign_id, "campaign": entry.campaign, "game": entry.game}),
         )
+    }
+
+    /// Recomputes and publishes the plan without choosing again (progress moved).
+    async fn republish_plan(&mut self, ctx: &ModuleContext, s: &DropsSettings) {
+        let engine = ctx.store().read(EngineSettings::from_state);
+        self.replan(s, &engine, Utc::now());
+        self.publish_plan(ctx, s).await;
     }
 
     /// Chooses the campaign and channel to watch and publishes the watch request.
@@ -1066,12 +1079,10 @@ impl Runtime {
                         current_minutes: cur.current_minutes,
                         required_minutes: cur.required_minutes,
                     });
-                    if let Some(d) = self
-                        .campaigns
-                        .get_mut(&campaign_id)
-                        .and_then(|c| c.drops.iter_mut().find(|d| d.id == cur.drop_id))
-                    {
-                        d.current_minutes = cur.current_minutes;
+                    if let Some(c) = self.campaigns.get_mut(&campaign_id) {
+                        let moved = advance(c, &cur.drop_id, cur.current_minutes, Utc::now());
+                        self.plan_stale |= !moved.is_empty();
+                        emit_estimates(ctx, c, &moved, &cur.drop_id);
                     }
                 }
             }
@@ -1136,9 +1147,9 @@ impl Runtime {
                 else {
                     return (true, false);
                 };
-                if let Some(d) = c.drops.iter_mut().find(|d| d.id == drop_id) {
-                    d.current_minutes = cur;
-                }
+                let moved = advance(c, drop_id, cur, Utc::now());
+                self.plan_stale |= !moved.is_empty();
+                emit_estimates(ctx, c, &moved, drop_id);
                 if let Some(t) = &mut self.target {
                     t.last_progress = Instant::now();
                     t.last_minutes = Some((drop_id.to_string(), cur));
@@ -1326,6 +1337,66 @@ fn next_drop(c: &Campaign, now: DateTime<Utc>) -> Option<&TimedDrop> {
         .min_by_key(|d| d.required_minutes - d.current_minutes)
 }
 
+/// Sets the minutes Twitch reported for `drop_id` and moves the campaign's other running
+/// drops by as much: Twitch counts every unlocked drop of a campaign at once but only
+/// reports one. The next refresh replaces these estimates with the real values.
+/// Returns the ids of the drops whose minutes changed.
+fn advance(c: &mut Campaign, drop_id: &str, minutes: u32, now: DateTime<Utc>) -> Vec<String> {
+    let Some(d) = c.drops.iter_mut().find(|d| d.id == drop_id) else {
+        return Vec::new();
+    };
+    if d.current_minutes == minutes {
+        return Vec::new();
+    }
+    // A lower value (new drop, reset) is taken as is, without moving the others.
+    let delta = minutes.saturating_sub(d.current_minutes);
+    d.current_minutes = minutes;
+    let mut moved = vec![drop_id.to_string()];
+    if delta == 0 {
+        return moved;
+    }
+    let claimed: HashSet<String> = c
+        .drops
+        .iter()
+        .filter(|d| d.claimed)
+        .map(|d| d.id.clone())
+        .collect();
+    let ids: HashSet<String> = c.drops.iter().map(|d| d.id.clone()).collect();
+    for o in c.drops.iter_mut().filter(|o| o.id != drop_id) {
+        let running = !o.claimed
+            && o.required_minutes > 0
+            && o.current_minutes < o.required_minutes
+            && o.starts_at <= now
+            && now < o.ends_at
+            && o.preconditions
+                .iter()
+                .all(|p| claimed.contains(p) || !ids.contains(p));
+        if running {
+            o.current_minutes = (o.current_minutes + delta).min(o.required_minutes);
+            moved.push(o.id.clone());
+        }
+    }
+    moved
+}
+
+/// Publishes the estimated minutes of the drops [`advance`] moved (the reported drop has
+/// its own event).
+fn emit_estimates(ctx: &ModuleContext, c: &Campaign, moved: &[String], reported: &str) {
+    for d in c
+        .drops
+        .iter()
+        .filter(|d| d.id != reported && moved.contains(&d.id))
+    {
+        ctx.emit(Event::DropProgress {
+            account: ctx.account_id().to_string(),
+            campaign_id: c.id.clone(),
+            drop_id: d.id.clone(),
+            current_minutes: d.current_minutes,
+            required_minutes: d.required_minutes,
+        });
+    }
+}
+
 /// Marks drops as claimed when all their benefits were awarded during the drop window
 /// (the inventory lists claimed benefits, not claimed drops).
 fn mark_claimed_from_benefits(c: &mut Campaign, claimed: &[ClaimedBenefit]) {
@@ -1443,5 +1514,28 @@ mod tests {
             }],
         );
         assert!(c.drops[0].claimed);
+    }
+
+    #[test]
+    fn reported_progress_moves_the_running_drops() {
+        let mut c = campaign(
+            "c",
+            "g",
+            vec![
+                drop("a", 60, 10, &[]),
+                drop("b", 120, 10, &[]),
+                drop("locked", 30, 0, &["a"]),
+                drop("full", 30, 30, &[]),
+            ],
+        );
+        let moved = advance(&mut c, "a", 15, Utc::now());
+        assert_eq!(moved, ["a", "b"]);
+        let minutes: Vec<u32> = c.drops.iter().map(|d| d.current_minutes).collect();
+        assert_eq!(minutes, [15, 15, 0, 30]);
+        // Same value again: nothing moves.
+        assert!(advance(&mut c, "a", 15, Utc::now()).is_empty());
+        // A lower value is taken as is, without touching the others.
+        assert_eq!(advance(&mut c, "a", 2, Utc::now()), ["a"]);
+        assert_eq!(c.drops[1].current_minutes, 15);
     }
 }

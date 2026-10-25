@@ -25,6 +25,7 @@ Le **journal** (Réglages › Avancé) est celui du moteur, local ou distant.
 - **Fermer la fenêtre** la masque : le moteur continue. « Quitter » dans le menu de l'icône arrête tout proprement.
 - **Notifications système** quand la fenêtre est masquée : drop récupéré, compte à reconnecter, alertes des drops (campagne juste, manquée, compte de jeu à lier, nouvelle campagne).
 - **Lancer avec la session** (Réglages › Démarrage) : inscrit l'app au démarrage de la session de l'utilisateur (registre `Run` sous Windows, `~/.config/autostart` sous Linux), avec `--background` : elle démarre dans la barre système sans ouvrir de fenêtre.
+- **Retour sur la fenêtre** (sortie de la barre système, Alt+Tab, clic) : l'app redemande les campagnes de drops (inventaire, progression de chaque drop) et les totaux du jour, au plus toutes les 2 minutes. Le reste (drop en cours, plan, chaînes) est déjà en direct.
 - **Une seule instance** par utilisateur et dossier de données : relancer l'app affiche la fenêtre déjà ouverte.
 
 Sous Linux, l'icône utilise le protocole StatusNotifierItem (KDE, et GNOME avec l'extension AppIndicator).

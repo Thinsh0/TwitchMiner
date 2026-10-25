@@ -69,6 +69,7 @@ impl AppHandle {
             use slint::winit_030::WinitWindowAccessor;
             ui.window().with_winit_window(|w| w.focus_window());
         });
+        self.ctrl.wake();
     }
 
     pub fn hide(&self) {

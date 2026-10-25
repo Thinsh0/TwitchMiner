@@ -502,8 +502,11 @@ msgstr "le {} à {}"
 msgid "{} campaigns"
 msgstr "{} campagnes"
 
-msgid "{} left"
-msgstr "reste {}"
+msgid "{}% · {} left"
+msgstr "{} % · reste {}"
+
+msgid "{}%"
+msgstr "{} %"
 
 msgid "+{} this session"
 msgstr "+{} cette session"

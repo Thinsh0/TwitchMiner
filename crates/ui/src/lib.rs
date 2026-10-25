@@ -97,6 +97,17 @@ pub fn run(
         })
     });
     ctrl.open(target.unwrap_or(Target::Local), false);
+    // Coming back to the window (Alt+Tab, click) refreshes what is not live.
+    {
+        use slint::winit_030::{EventResult, WinitWindowAccessor, winit::event::WindowEvent};
+        let ctrl = ctrl.clone();
+        ui.window().on_winit_window_event(move |_, event| {
+            if matches!(event, WindowEvent::Focused(true)) {
+                ctrl.wake();
+            }
+            EventResult::Propagate
+        });
+    }
     // Relative times ("in 12 min") move on even when the state does not.
     let tick = slint::Timer::default();
     tick.start(

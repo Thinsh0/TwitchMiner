@@ -73,6 +73,9 @@ const GAME_SEARCH_DELAY: Duration = Duration::from_millis(250);
 /// How long a toast stays on screen.
 const TOAST_TTL: Duration = Duration::from_secs(6);
 
+/// Coming back to the window refreshes the drops campaigns at most this often.
+const WAKE_REFRESH_MIN: Duration = Duration::from_secs(2 * 60);
+
 #[derive(Clone)]
 pub struct Controller(Arc<Inner>);
 
@@ -90,6 +93,8 @@ struct Inner {
     game_search: AtomicU64,
     /// Latest Activity reload (answers to older ones are dropped).
     activity: AtomicU64,
+    /// Last refresh caused by the window coming back (see `wake`).
+    woke: Mutex<Option<std::time::Instant>>,
 }
 
 impl Controller {
@@ -105,6 +110,8 @@ impl Controller {
             local: Mutex::new(None),
             game_search: AtomicU64::new(0),
             activity: AtomicU64::new(0),
+            // The engine refreshes by itself at start.
+            woke: Mutex::new(Some(std::time::Instant::now())),
         }))
     }
 
@@ -1132,6 +1139,21 @@ impl Controller {
                 });
             }
         });
+    }
+
+    /// The window is back (shown from the tray, or focused again): refreshes the drops
+    /// campaigns (inventory, progress of every drop) and the query-based views, at most
+    /// every [`WAKE_REFRESH_MIN`]. The engine state itself is always live.
+    pub fn wake(&self) {
+        {
+            let mut woke = self.0.woke.lock().expect("woke lock");
+            if woke.is_some_and(|t| t.elapsed() < WAKE_REFRESH_MIN) {
+                return;
+            }
+            *woke = Some(std::time::Instant::now());
+        }
+        self.module_call("drops", "refresh", Value::Null, |_| {});
+        self.tick();
     }
 
     /// Periodic refresh of query-based views; keeps extra history pages.

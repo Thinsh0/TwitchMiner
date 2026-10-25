@@ -1,9 +1,12 @@
 //! TwitchMiner desktop launcher: the shared Slint interface plus desktop integration
-//! (system tray, start with the session, one instance, closing to the tray).
+//! (system tray, start with the session, one instance, closing to the tray, Start menu
+//! and installed apps entry on Windows).
 
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// No console window on Windows, debug builds included (logs go to the data folder).
+#![windows_subsystem = "windows"]
 
 mod instance;
+mod shell;
 mod tray;
 
 use tm_ui::{AppHandle, Notification, Platform, Status};
@@ -73,6 +76,10 @@ fn autostart() -> anyhow::Result<auto_launch::AutoLaunch> {
 }
 
 fn main() -> anyhow::Result<()> {
+    if std::env::args().any(|a| a == shell::UNINSTALL) {
+        shell::uninstall();
+        return Ok(());
+    }
     let background = std::env::args().any(|a| a == BACKGROUND);
     // Automated screenshots (development) run off-screen: no tray, no single instance.
     let dev_snapshot = std::env::var_os("TM_UI_SNAPSHOT").is_some();
@@ -84,6 +91,10 @@ fn main() -> anyhow::Result<()> {
             instance::Instance::First(listener) => listener,
         }
     };
+    // Not for `cargo run` (development builds would replace the real entry).
+    if !dev_snapshot && std::env::var_os("CARGO").is_none() {
+        shell::register();
+    }
     let tray = if dev_snapshot {
         None
     } else {

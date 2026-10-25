@@ -29,6 +29,13 @@ Le **journal** (Réglages › Avancé) est celui du moteur, local ou distant.
 
 Sous Linux, l'icône utilise le protocole StatusNotifierItem (KDE, et GNOME avec l'extension AppIndicator).
 
+## Windows
+
+- **Pas de console** : l'exécutable est une application graphique, même compilé en mode debug. Les journaux restent dans `logs/` du dossier de données.
+- **Menu Démarrer et liste des applications** : à chaque démarrage, l'app crée ou met à jour son raccourci (`%APPDATA%\Microsoft\Windows\Start Menu\Programs\TwitchMiner.lnk`) et son entrée dans Paramètres › Applications › Applications installées (`HKCU\…\Uninstall\TwitchMiner`). Il n'y a pas d'installeur : il suffit de placer l'exe où on veut le garder et de le lancer une fois. S'il est déplacé, le prochain démarrage met les deux à jour. Rien n'est inscrit quand l'app est lancée par `cargo run`.
+- **Désinstaller** depuis la liste des applications lance `twitchminer-desktop.exe --uninstall` : après confirmation, il retire le raccourci, l'entrée et le lancement avec la session. Les données et l'exe restent ; le dossier est à supprimer soi-même.
+- L'icône et les informations de version sont intégrées à l'exe (`apps/desktop/build.rs`, compilateur de ressources du SDK Windows ou `windres`). Sans compilateur de ressources, la compilation continue sans icône (avertissement).
+
 ## Préférences de l'interface
 
 Thème (sombre, clair, OLED), langue (français, anglais) et dernier serveur distant sont gardés dans la base du dossier de données (`tm_app::read_ui_prefs` / `write_ui_prefs`), pas dans un fichier à part.

@@ -20,3 +20,13 @@ tray-icon = { version = "0.26", default-features = false, features = ["ksni"] }
 auto-launch = "0.6"
 # System notifications while the window is hidden (D-Bus on Linux, WinRT on Windows).
 notify-rust = "4"
+
+# Start menu shortcut and installed apps entry (see `shell.rs`).
+[target."cfg(windows)".dependencies]
+mslnk = "0.1"
+windows-registry = "0.6"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Globalization", "Win32_UI_WindowsAndMessaging"] }
+
+# Icon and version information embedded in the Windows executable.
+[build-dependencies]
+embed-resource = "3"

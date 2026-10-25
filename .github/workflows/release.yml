@@ -1,7 +1,8 @@
 name: Release
 
 # Either push a `v*` tag, or run it by hand (Actions › Release › Run workflow) with the
-# version: the workflow then creates the tag on the chosen commit itself.
+# version: the workflow then creates the tag on the chosen commit itself. Running it
+# again for an existing release rebuilds its tag and replaces the files.
 on:
   push:
     tags: ["v*"]
@@ -19,6 +20,8 @@ env:
   # Same as the CI: part of the cache key (see the rust-cache steps).
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
 
 jobs:
   # One job creates the release, so the build jobs never race to create it.
@@ -26,25 +29,25 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - name: check the version
+      - name: create the release (an existing one is kept)
         shell: bash
         run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG exists: its files are rebuilt from the tag and replaced"
+            exit 0
+          fi
           version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           if [ "$TAG" != "v$version" ]; then
             echo "::error::tag $TAG does not match the Cargo version v$version (the update notice compares them)"
             exit 1
           fi
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.TAG }}
-          target_commitish: ${{ github.sha }}
-          name: TwitchMiner ${{ env.TAG }}
-          generate_release_notes: true
-          body: |
-            **Windows** : télécharger `TwitchMiner-${{ env.TAG }}-windows.exe`, le placer dans un dossier où il restera (par exemple `C:\Programmes\TwitchMiner\`) et le lancer. Il s'ajoute au menu Démarrer et aux applications installées. Pour mettre à jour : quitter l'app (icône de la barre système › Quitter) et remplacer l'exe.
-            L'archive `.zip` contient aussi le daemon en ligne de commande (`twitchminer.exe`).
+          cat > notes.md <<EOF
+          **Windows** : télécharger \`TwitchMiner-$TAG-windows.exe\`, le placer dans un dossier où il restera (par exemple \`C:\\Programmes\\TwitchMiner\\\`) et le lancer. Il s'ajoute au menu Démarrer et aux applications installées. Pour mettre à jour : quitter l'app (icône de la barre système › Quitter) et remplacer l'exe.
+          L'archive \`.zip\` contient aussi le daemon en ligne de commande (\`twitchminer.exe\`).
 
-            **Linux** : archive `x86_64-unknown-linux-gnu` (app de bureau + daemon) ou `musl` (daemon statique). **Android** : voir `docs/ANDROID.md`.
+          **Linux** : archive \`x86_64-unknown-linux-gnu\` (app de bureau + daemon) ou \`musl\` (daemon statique). **Android** : voir \`docs/ANDROID.md\`.
+          EOF
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "TwitchMiner $TAG" --notes-file notes.md --generate-notes
 
   build:
     needs: create
@@ -57,7 +60,10 @@ jobs:
           - { os: windows-latest, target: x86_64-pc-windows-msvc, archive: zip }
     runs-on: ${{ matrix.os }}
     steps:
+      # The tagged commit, so the files always match the tag.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -92,13 +98,13 @@ jobs:
             if [ -f $dir/twitchminer-desktop ]; then cp $dir/twitchminer-desktop "$name/"; fi
             tar czf "$name.tar.gz" "$name"
           fi
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.TAG }}
-          files: |
-            twitchminer-*.zip
-            twitchminer-*.tar.gz
-            TwitchMiner-*.exe
+      # Only adds the files (never edits the release itself).
+      - name: upload
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(twitchminer-*.zip twitchminer-*.tar.gz TwitchMiner-*.exe)
+          gh release upload "$TAG" "${files[@]}" --clobber
 
   android:
     needs: create
@@ -108,6 +114,8 @@ jobs:
         target: [aarch64-linux-android, x86_64-linux-android]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -129,7 +137,5 @@ jobs:
           mkdir "$name"
           cp target/${{ matrix.target }}/release/twitchminer target/${{ matrix.target }}/release/libtwitchminer_jni.so crates/android/kotlin/Native.kt docs/ANDROID.md "$name/"
           tar czf "$name.tar.gz" "$name"
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.TAG }}
-          files: twitchminer-*.tar.gz
+      - name: upload
+        run: gh release upload "$TAG" twitchminer-*.tar.gz --clobber

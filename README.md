@@ -87,4 +87,4 @@ Puis connecte l'appli de bureau ou Android au serveur (« Serveur distant »). G
 | Appli Android (client d'un serveur) | 🆕 |
 | Moteur embarqué dans l'appli Android | 🔜 |
 
-Fait en Rust, interface en [Slint](https://slint.dev).
+Fait en Rust, interface en [Slint](https://slint.dev). Licence [MIT](LICENSE).

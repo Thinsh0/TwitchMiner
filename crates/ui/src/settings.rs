@@ -11,7 +11,8 @@ use tm_core::state::ModuleHealth;
 use crate::forms::{self, Field};
 use crate::present;
 use crate::{
-    Bridge, FieldItem, HealthItem, HourWindow, MainWindow, ModuleForm, NotifyEvent, NotifyTarget,
+    Bridge, FieldItem, GuestItem, HealthItem, HourWindow, MainWindow, ModuleForm, NotifyEvent,
+    NotifyTarget,
 };
 
 /// Settings shown on another screen (one main screen per piece of data), or with a
@@ -127,10 +128,14 @@ pub fn effective(state: &State, account: &str, section: &str) -> Value {
     tm_core::settings::module_effective(state, account, section, &defaults(section))
 }
 
-/// Scope to write a setting of `section` to (by its top-level key).
-pub fn scope_for(state: &State, account: &str, section: &str, path: &str) -> String {
+/// Scope to write a setting of `section` to (by its top-level key). A guest only
+/// writes to their account's own scope.
+pub fn scope_for(state: &State, account: &str, section: &str, path: &str, guest: bool) -> String {
     if section == "engine" {
         return "engine".into();
+    }
+    if guest {
+        return tm_core::settings::account_module_scope(account, section);
     }
     let top = path.split('.').next().unwrap_or(path);
     present::module_setting_scope(state, account, section, top)
@@ -247,6 +252,30 @@ pub fn render(ui: &MainWindow, state: &State) {
         })
         .collect();
     b.set_notify_events(ModelRc::new(VecModel::from(events)));
+
+    let guests: Vec<GuestItem> = tm_core::guests::all(state)
+        .into_iter()
+        .map(|(id, g)| {
+            let accounts: Vec<String> = g
+                .accounts
+                .iter()
+                .map(|a| {
+                    state
+                        .accounts
+                        .get(a)
+                        .and_then(|acc| acc.info.as_ref())
+                        .map(|i| i.display_name.clone())
+                        .unwrap_or_else(|| a.clone())
+                })
+                .collect();
+            GuestItem {
+                id: id.into(),
+                name: g.name.into(),
+                accounts: accounts.join(", ").into(),
+            }
+        })
+        .collect();
+    b.set_guests(ModelRc::new(VecModel::from(guests)));
 
     let hours: Vec<HourWindow> = engine["active_hours"]
         .as_array()

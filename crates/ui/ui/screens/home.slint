@@ -298,7 +298,8 @@ component PauseCard inherits Card {
                     : @tr("TwitchMiner watches in the background.");
             }
         }
-        VerticalLayout {
+        // The global pause is the owner's (a guest pauses their account in Settings).
+        if !Bridge.guest: VerticalLayout {
             alignment: center;
             Button {
                 kind: Bridge.paused ? ButtonKind.primary : ButtonKind.secondary;

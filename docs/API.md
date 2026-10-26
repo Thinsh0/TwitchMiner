@@ -56,6 +56,7 @@ Adresse par défaut : `127.0.0.1:7878` (`--bind`). Authentification par jeton :
 - en-tête `Authorization: Bearer <token>`, ou paramètre `?token=<token>` (pratique pour le WebSocket d'un navigateur) ;
 - le jeton est généré au premier lancement et stocké dans la base. Pour le lire : `twitchminer api-token`.
 - un second jeton, **agent** (`twitchminer api-token --agent`), donne un accès restreint pour les agents IA : certaines commandes sont refusées (`forbidden`) et les secrets sont masqués (`***`) dans l'état, les réglages et les événements. Détails : [AGENT.md](AGENT.md).
+- des jetons **invité** (`guest_invite`), un par personne : l'invité n'utilise le moteur que pour ses propres comptes Twitch (un ami sur ton serveur). Il ne reçoit que ce qui les concerne : l'état, les événements et les réponses sont filtrés par le serveur (comptes, connexions en cours, avis, réglages), pas seulement masqués par l'interface. Il peut ajouter des comptes (`login_start` : ils deviennent les siens), les configurer (`settings_set` sur `account:<le sien>/module:*` uniquement), les mettre en pause ou les retirer, lire leur historique et leurs statistiques. Tout le reste est refusé (`forbidden`) : autres comptes, réglages partagés et du moteur, invités, journal (`/logs` 403), sauvegardes, mises à jour, `/mcp`. Il lit les réglages partagés des modules (les valeurs par défaut de ses comptes), sauf les destinations de notifications, et ceux du moteur sans secrets. Un jeton révoqué (`guest_remove`) répond `unauthorized`.
 
 | Route | Description |
 |---|---|
@@ -70,7 +71,10 @@ Adresse par défaut : `127.0.0.1:7878` (`--bind`). Authentification par jeton :
 
 Du serveur vers le client :
 ```jsonc
-{"type": "snapshot", "api_version": 1, "state": { /* State */ }}  // à la connexion et après un retard
+{"type": "snapshot", "api_version": 1, "access": "full", "state": { /* State */ }}  // à la connexion et après un retard
+// access : full | agent | guest. Pour un invité, les `seq` des événements ont des trous (ceux des
+// autres comptes ne sont pas envoyés) : appliquer tout événement de seq supérieur ; un nouveau
+// snapshot arrive quand ses comptes changent.
 {"type": "event", "event": {"seq": 54, "ts": "…", "type": "points_earned", "account": "…", …}}
 {"type": "reply", "id": 7, "ok": true, "data": { … }}      // réponse à une commande
 {"type": "log", "line": {"ts", "level", "target", "message"}} // si ?logs=1
@@ -88,7 +92,7 @@ Les commandes s'exécutent en parallèle : utilisez `id` pour associer chaque r�
 | `snapshot` | — | `State` |
 | `summary` | — | vue dérivée compacte (comptes, chaînes regardées, drop en cours avec progression et ETA, totaux) pour icône de barre système, notifications et widgets. En Rust : `tm_core::view::summary(&state, now)` |
 | `modules_list` | — | `[{id, name, description, default_settings, settings_schema}]` |
-| `login_start` | `profile?` | `{flow_id, user_code, verification_uri, verification_uri_complete, expires_at}`. `verification_uri_complete` est la même page avec le code déjà rempli. La fin arrive en événement `login_finished` |
+| `login_start` | `profile?`, `guest?` (le compte ajouté appartiendra à cet invité ; imposé par le serveur pour un jeton invité) | `{flow_id, user_code, verification_uri, verification_uri_complete, expires_at}`. `verification_uri_complete` est la même page avec le code déjà rempli. La fin arrive en événement `login_finished` |
 | `login_cancel` | `flow_id` | `{cancelled}` |
 | `login_with_token` | `access_token`, `refresh_token?`, `profile?` | `{account}` |
 | `account_remove` | `account` | `{removed}` |
@@ -102,9 +106,11 @@ Les commandes s'exécutent en parallèle : utilisez `id` pour associer chaque r�
 | `manifest_refresh` | — | `{updated, revision}` |
 | `update_check` | — | `{current, latest, update_available, url}`. Une notice `update` est aussi levée si besoin |
 | `notice_dismiss` | `id` | `{}` |
+| `guest_invite` | `name` | `{id, name, token}`. Crée un invité ; le jeton n'est donné qu'ici (seule son empreinte SHA-256 est gardée). Jeton complet uniquement |
+| `guest_remove` | `id` | `{removed}`. Révoque le jeton ; les comptes de l'invité restent. Jeton complet uniquement |
 | `backup` | `path?` | `{path}`. Copie cohérente de la base, faisable à chaud. Par défaut dans `<data>/backups/`. Pour restaurer : arrêter, puis remplacer `twitchminer.db` |
 
-Codes d'erreur : `not_found`, `invalid`, `auth`, `module`, `unavailable`, `timeout`, `manifest`, `internal`, `bad_command`, `unauthorized`, `forbidden` (jeton agent).
+Codes d'erreur : `not_found`, `invalid`, `auth`, `module`, `unavailable`, `timeout`, `manifest`, `internal`, `bad_command`, `unauthorized`, `forbidden` (jeton agent ou invité).
 
 ### Actions des modules (`module_call`)
 
@@ -129,6 +135,7 @@ Portées :
   - **Pause globale** : `settings_set engine {"paused": true}`. Rien n'est regardé (`watch_stopped{cause:"paused"}`), mais les modules continuent de suivre et de récupérer les bonus.
   - **Plusieurs instances** : `role` (`primary` | `secondary`) et `peers: [{name?, url, token?}]`. Un secondaire passe en `standby` les comptes qu'un pair mine déjà, et les reprend si le pair disparaît. Voir [SERVER.md](SERVER.md).
   - **Plages horaires** : `{"active_hours": [{"days": [1,2,3,4,5], "start": "18:00", "end": "02:00"}]}`. Heure locale, `days` en ISO (1 = lundi), une fin avant le début passe minuit, `days` vide = tous les jours. Hors plage : `cause:"outside active hours"`.
+- `guests` : `{"<id>": {name, token_sha256, accounts: [ids], created_at}}`, écrite par `guest_invite`, `guest_remove`, la fin d'un `login_start` d'invité (le compte s'ajoute à `accounts`, et reçoit `account:<id>/module:notify` `{"targets": []}` pour ne pas hériter des destinations du propriétaire) et `account_remove`. Jamais envoyée aux agents ni aux invités.
 - `module:<id>` : réglages partagés par tous les comptes ;
 - `account:<account_id>/module:<id>` : surcharge pour un compte.
 
@@ -213,7 +220,7 @@ Seuls les jeux de `games` (tous si la liste est vide) apparaissent dans le plan.
   //   "realtime_down" {account, login}            → PubSub injoignable depuis 10 min : drops et points
   //                                                 continuent, raids, moments et prédictions attendent
   // message : texte anglais de secours
-  "logins":  { "<flow_id>": {"flow_id", "user_code", "verification_uri", "verification_uri_complete?", "expires_at"} },
+  "logins":  { "<flow_id>": {"flow_id", "user_code", "verification_uri", "verification_uri_complete?", "expires_at", "guest?"} },
   "accounts": {
     "<user_id>": {
       "info":   {"id", "login", "display_name", "avatar_url", "enabled"},

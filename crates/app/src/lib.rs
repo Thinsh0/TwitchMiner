@@ -3,7 +3,7 @@
 //! ```ignore
 //! let app = tm_app::App::start(tm_app::AppOptions::default()).await?;
 //! let (state, events) = app.engine.store().snapshot_and_subscribe();
-//! app.engine.execute(tm_core::Command::LoginStart { profile: None }).await?;
+//! app.engine.execute(tm_core::Command::LoginStart { profile: None, guest: None }).await?;
 //! // ...
 //! app.shutdown().await;
 //! ```

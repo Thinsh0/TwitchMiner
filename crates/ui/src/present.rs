@@ -57,7 +57,7 @@ pub fn apply(ui: &MainWindow, input: &Input) {
             .unwrap_or_default()
             .into(),
     );
-    let logins = logins(state);
+    let logins = logins(state, bridge.get_guest());
     // A local engine is this application: its own update card covers the notice.
     let notices = notices(state, input.remote.is_none());
     let app_update = bridge.get_update_info();
@@ -126,6 +126,7 @@ pub fn fault(url: &str, reason: &str) -> Fault {
 }
 
 fn accounts(state: &State) -> Vec<AccountItem> {
+    let guests = tm_core::guests::all(state);
     let mut out: Vec<AccountItem> = state
         .accounts
         .iter()
@@ -152,6 +153,12 @@ fn accounts(state: &State) -> Vec<AccountItem> {
                 status: status.into(),
                 detail: detail.into(),
                 enabled,
+                guest: guests
+                    .values()
+                    .find(|g| g.accounts.contains(id))
+                    .map(|g| g.name.as_str())
+                    .unwrap_or_default()
+                    .into(),
             }
         })
         .collect();
@@ -838,8 +845,14 @@ fn minutes_until(now: DateTime<Utc>, t: DateTime<Utc>) -> i32 {
     (t - now).num_minutes().clamp(0, i32::MAX as i64) as i32
 }
 
-fn logins(state: &State) -> Vec<LoginItem> {
-    let mut flows: Vec<_> = state.logins.values().collect();
+/// Login flows to show: the owner does not see a guest's (its account becomes the
+/// guest's); a guest only receives their own.
+fn logins(state: &State, guest: bool) -> Vec<LoginItem> {
+    let mut flows: Vec<_> = state
+        .logins
+        .values()
+        .filter(|f| guest || f.guest.is_none())
+        .collect();
     flows.sort_by_key(|f| f.expires_at);
     flows
         .into_iter()

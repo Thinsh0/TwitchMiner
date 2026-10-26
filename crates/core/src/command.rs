@@ -23,6 +23,10 @@ pub enum Command {
     LoginStart {
         #[serde(default)]
         profile: Option<String>,
+        /// The account will belong to this guest (`tm-server` sets it for a guest's
+        /// token; any value sent by a guest is replaced).
+        #[serde(default)]
+        guest: Option<String>,
     },
     LoginCancel {
         flow_id: String,
@@ -97,6 +101,16 @@ pub enum Command {
     /// Checks GitHub releases for a newer application version now.
     UpdateCheck,
     NoticeDismiss {
+        id: String,
+    },
+
+    /// Creates a guest: someone who uses this engine for their own Twitch accounts
+    /// only. Returns `{id, name, token}`; the token is shown this once.
+    GuestInvite {
+        name: String,
+    },
+    /// Revokes a guest's token. Their accounts stay (remove them with `account_remove`).
+    GuestRemove {
         id: String,
     },
 }

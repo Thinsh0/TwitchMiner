@@ -328,6 +328,36 @@ impl Controller {
             })
         });
         let c = self.clone();
+        b.on_guest_invite(move |name| {
+            let me = c.clone();
+            c.run(
+                Command::GuestInvite {
+                    name: name.to_string(),
+                },
+                move |r| {
+                    if let Ok(v) = r {
+                        let name = v["name"].as_str().unwrap_or_default().to_string();
+                        let token = v["token"].as_str().unwrap_or_default().to_string();
+                        me.on_ui(move |ui| {
+                            let b = ui.global::<Bridge>();
+                            b.set_invited_name(name.into());
+                            b.set_invited_token(token.into());
+                        });
+                    }
+                },
+            )
+        });
+        let c = self.clone();
+        b.on_guest_remove(move |id| c.run(Command::GuestRemove { id: id.to_string() }, |_| {}));
+        let c = self.clone();
+        b.on_guest_invited_done(move || {
+            c.on_ui(|ui| {
+                let b = ui.global::<Bridge>();
+                b.set_invited_name(SharedString::new());
+                b.set_invited_token(SharedString::new());
+            })
+        });
+        let c = self.clone();
         b.on_notify_add(move |kind, a, b| {
             let Some(target) = settings::notify_target(&kind, &a, &b) else {
                 c.toast(ToastKind::Invalid, Tone::Warning, String::new());
@@ -773,10 +803,12 @@ impl Controller {
                     .is_some();
                 if !queued {
                     let pending = pending.clone();
+                    let guest = backend.guest();
                     me.on_ui(move |ui| {
                         let Some((s, remote)) = pending.lock().expect("pending lock").take() else {
                             return;
                         };
+                        ui.global::<Bridge>().set_guest(guest);
                         LAST.with(|last| {
                             let mut last = last.borrow_mut();
                             last.state = s;
@@ -884,16 +916,22 @@ impl Controller {
     fn login_start(&self) {
         self.on_ui(|ui| ui.global::<Bridge>().set_login_busy(true));
         let me = self.clone();
-        self.run(Command::LoginStart { profile: None }, move |r| {
-            me.on_ui(|ui| ui.global::<Bridge>().set_login_busy(false));
-            if let Ok(v) = r
-                && let Some(url) = v["verification_uri_complete"]
-                    .as_str()
-                    .or_else(|| v["verification_uri"].as_str())
-            {
-                open_url(url);
-            }
-        });
+        self.run(
+            Command::LoginStart {
+                profile: None,
+                guest: None,
+            },
+            move |r| {
+                me.on_ui(|ui| ui.global::<Bridge>().set_login_busy(false));
+                if let Ok(v) = r
+                    && let Some(url) = v["verification_uri_complete"]
+                        .as_str()
+                        .or_else(|| v["verification_uri"].as_str())
+                {
+                    open_url(url);
+                }
+            },
+        );
     }
 
     /// Global pause of the engine.
@@ -929,8 +967,9 @@ impl Controller {
         let (section, path) = (section.to_string(), path.to_string());
         self.on_ui(move |ui| {
             let account = ui.global::<Bridge>().get_account().to_string();
-            let scope =
-                LAST.with(|l| settings::scope_for(&l.borrow().state, &account, &section, &path));
+            let guest = ui.global::<Bridge>().get_guest();
+            let scope = LAST
+                .with(|l| settings::scope_for(&l.borrow().state, &account, &section, &path, guest));
             let key = pending_key(&account, &section, &path);
             remember_sent(&key, &value);
             me.send_setting(scope, forms::patch(&path, value), key);
@@ -1188,15 +1227,20 @@ impl Controller {
     }
 
     /// Saves one top-level module setting where the module reads it for the selected
-    /// account (its override if it has one for this key, else the shared scope).
+    /// account (its override if it has one for this key, else the shared scope; a
+    /// guest's always goes to their account).
     fn set_module_setting(&self, module: &str, key: &str, value: Value) {
         let me = self.clone();
         let (module, key) = (module.to_string(), key.to_string());
         self.on_ui(move |ui| {
             let account = ui.global::<Bridge>().get_account().to_string();
-            let scope = LAST.with(|l| {
-                present::module_setting_scope(&l.borrow().state, &account, &module, &key)
-            });
+            let scope = if ui.global::<Bridge>().get_guest() {
+                tm_core::settings::account_module_scope(&account, &module)
+            } else {
+                LAST.with(|l| {
+                    present::module_setting_scope(&l.borrow().state, &account, &module, &key)
+                })
+            };
             let pending = pending_key(&account, &module, &key);
             remember_sent(&pending, &value);
             me.send_setting(scope, serde_json::json!({ key: value }), pending);

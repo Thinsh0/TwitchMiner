@@ -568,9 +568,16 @@ async fn call_tool(
             .await
             .map_err(api)
         }
-        "start_login" => exec(engine, access, Command::LoginStart { profile: None })
-            .await
-            .map_err(api),
+        "start_login" => exec(
+            engine,
+            access,
+            Command::LoginStart {
+                profile: None,
+                guest: None,
+            },
+        )
+        .await
+        .map_err(api),
         "get_settings" | "update_settings" => {
             let module = arg_str(args, "module").ok_or("missing `module`")?;
             let base = if module == "engine" {

@@ -67,7 +67,19 @@ En service : `packaging/systemd/twitchminer.service`, avec `Environment=TM_API_B
 - Adresse : toujours `http://` (le moteur ne parle pas HTTPS ; Tailscale chiffre déjà), par exemple `http://mini-pc:7878` avec MagicDNS.
 - **Agent IA** sur le mini PC ou ailleurs : serveur MCP avec un jeton restreint, voir [AGENT.md](AGENT.md).
 
-## 3. Optionnel : secours automatique sur un autre appareil
+## 3. Optionnel : miner pour un ami
+
+Le serveur peut miner aussi le compte Twitch d'un ami, sans qu'il voie les tiens :
+
+1. Dans l'app (jeton complet), **Réglages › Invités** : entrer son nom, **Inviter**. Un jeton s'affiche, une seule fois : le lui envoyer avec l'adresse du serveur.
+2. Il installe l'app (Windows ou Android), choisit « Serveur distant » et colle l'adresse et son jeton, puis **Connecter un compte Twitch** : le compte devient le sien.
+3. Il ne voit et ne règle que ses comptes (drops, chaînes, notifications à lui, pause de son compte). Les tiens, les réglages du moteur, le journal et les autres invités n'existent pas pour lui : le serveur ne les lui envoie jamais. Tu vois son compte (marqué « Invité : … ») et peux le supprimer ; **Révoquer** coupe son accès.
+
+Réseau : avec Tailscale, partager seulement la machine du serveur avec lui (console Tailscale › Machines › … › **Share**) : il l'atteint par son nom sans voir le reste de ton réseau. Ne jamais ouvrir le port 7878 sur Internet.
+
+Il lit les réglages partagés des modules (ta liste de jeux et de chaînes sert de valeur par défaut à son compte tant qu'il n'a pas la sienne), jamais tes destinations de notifications. Détails : [API.md](API.md).
+
+## 4. Optionnel : secours automatique sur un autre appareil
 
 Si tu veux que le téléphone (ou le PC) prenne le relais quand le mini PC est éteint, fais tourner un moteur dessus en **secondaire** :
 

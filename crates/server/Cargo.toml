@@ -20,3 +20,4 @@ rand.workspace = true
 [dev-dependencies]
 tm-twitch.workspace = true
 uuid.workspace = true
+reqwest.workspace = true

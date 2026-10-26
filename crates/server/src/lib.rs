@@ -11,9 +11,11 @@
 //! | `POST /api/v1/mcp`     | Model Context Protocol endpoint for AI agents          |
 //!
 //! Auth: `Authorization: Bearer <token>` or `?token=<token>` (for browsers' WebSocket).
-//! The full token can do everything; the agent token is restricted (see `access`).
+//! The full token can do everything; the agent token is restricted (see `access`); a
+//! guest token only sees and changes its holder's accounts (see `guest`).
 
 pub mod access;
+pub mod guest;
 mod mcp;
 
 pub use access::Access;
@@ -137,7 +139,10 @@ async fn auth(
     } else if st.agent_token.as_deref().is_some_and(matches) {
         Some(Access::Agent)
     } else {
-        None
+        st.engine
+            .store()
+            .read(|s| tm_core::guests::by_token(s, &given))
+            .map(|(id, _)| Access::Guest(id))
     };
     match access {
         Some(Access::Agent) if !agent_enabled(&st.engine) => (
@@ -231,16 +236,52 @@ async fn get_state(
     State(st): State<AppState>,
     Extension(access): Extension<Access>,
 ) -> Json<Value> {
-    let mut state = json!(st.engine.store().snapshot());
-    if access == Access::Agent {
-        access::redact_state(&mut state);
-    }
-    Json(state)
+    Json(state_for(&access, &st.engine.store().snapshot()))
 }
 
-/// Executes a command with access control; agents get secrets masked in the answer.
+/// The state as `access` may see it.
+fn state_for(access: &Access, state: &tm_core::State) -> Value {
+    match access {
+        Access::Full => json!(state),
+        Access::Agent => {
+            let mut s = json!(state);
+            access::redact_state(&mut s);
+            s
+        }
+        Access::Guest(id) => match guest::View::of(state, id) {
+            Some(view) => {
+                let mut s = state.clone();
+                view.filter_state(&mut s);
+                json!(s)
+            }
+            None => json!(tm_core::State::default()),
+        },
+    }
+}
+
+fn guest_removed() -> tm_core::ApiError {
+    tm_core::ApiError::new("unauthorized", "this guest access was revoked")
+}
+
+/// Executes a command with access control; agents get secrets masked in the answer,
+/// guests only what is theirs.
 pub async fn run_command(engine: &Engine, access: Access, cmd: Command) -> ApiResult {
-    access::authorize(access, &cmd)?;
+    access::authorize(&access, &cmd)?;
+    if let Access::Guest(id) = &access {
+        let (view, cmd) = engine
+            .store()
+            .read(|s| {
+                let view = guest::View::of(s, id)?;
+                let cmd = view.authorize(cmd, s);
+                Some((view, cmd))
+            })
+            .ok_or_else(guest_removed)?;
+        let cmd = cmd?;
+        let kind = guest::ReplyKind::of(&cmd);
+        let mut out = engine.execute(cmd).await?;
+        view.filter_reply(&kind, &mut out, &engine.store().snapshot());
+        return Ok(out);
+    }
     let (get_scope, set_scope) = match &cmd {
         Command::SettingsGet { scope, .. } => (Some(scope.clone()), None),
         Command::SettingsSet { scope, .. } => (None, Some(scope.clone())),
@@ -300,13 +341,25 @@ struct LogsQuery {
     n: Option<usize>,
 }
 
-async fn get_logs(State(st): State<AppState>, Query(q): Query<LogsQuery>) -> Json<Value> {
+async fn get_logs(
+    State(st): State<AppState>,
+    Extension(access): Extension<Access>,
+    Query(q): Query<LogsQuery>,
+) -> Response {
+    // The log names every account: not for guests.
+    if matches!(access, Access::Guest(_)) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"ok": false, "error": {"code": "forbidden", "message": "a guest token cannot read the log"}})),
+        )
+            .into_response();
+    }
     let lines = st
         .logs
         .as_ref()
         .map(|l| l.recent(q.n.unwrap_or(200).min(1000)))
         .unwrap_or_default();
-    Json(json!(lines))
+    Json(json!(lines)).into_response()
 }
 
 #[derive(Deserialize)]
@@ -321,7 +374,7 @@ async fn ws_upgrade(
     Query(q): Query<WsQuery>,
     ws: WebSocketUpgrade,
 ) -> Response {
-    let logs = q.logs.unwrap_or(0) == 1;
+    let logs = q.logs.unwrap_or(0) == 1 && !matches!(access, Access::Guest(_));
     ws.on_upgrade(move |socket| ws_session(st, access, socket, logs))
 }
 
@@ -331,7 +384,7 @@ async fn mcp_post(
     Extension(access): Extension<Access>,
     body: axum::body::Bytes,
 ) -> Response {
-    if !agent_enabled(&st.engine) {
+    if !agent_enabled(&st.engine) || matches!(access, Access::Guest(_)) {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({"ok": false, "error": {"code": "not_found", "message": AGENT_DISABLED}})),
@@ -349,7 +402,7 @@ async fn mcp_post(
         Value::Array(batch) => {
             let mut replies = Vec::new();
             for m in batch {
-                if let Some(r) = mcp::handle(&st.engine, access, m).await {
+                if let Some(r) = mcp::handle(&st.engine, access.clone(), m).await {
                     replies.push(r);
                 }
             }
@@ -368,12 +421,14 @@ async fn mcp_get() -> StatusCode {
     StatusCode::METHOD_NOT_ALLOWED
 }
 
-fn snapshot_msg(access: Access, state: &tm_core::State) -> String {
-    let mut s = json!(state);
-    if access == Access::Agent {
-        access::redact_state(&mut s);
-    }
-    json!({"type": "snapshot", "api_version": API_VERSION, "state": s}).to_string()
+/// `access`: what the token may do; a guest's event stream has gaps in `seq` (the
+/// events of other accounts are not sent).
+fn snapshot_msg(access: &Access, state: &tm_core::State) -> String {
+    json!({
+        "type": "snapshot", "api_version": API_VERSION, "access": access.name(),
+        "state": state_for(access, state),
+    })
+    .to_string()
 }
 
 /// Client → server: `{ "id": <any>, "cmd": { "cmd": "...", ... } }`.
@@ -389,12 +444,29 @@ async fn ws_session(st: AppState, access: Access, socket: WebSocket, with_logs: 
     let (snapshot, mut events) = st.engine.store().snapshot_and_subscribe();
     let mut last_seq = snapshot.seq;
     if tx
-        .send(Message::text(snapshot_msg(access, &snapshot)))
+        .send(Message::text(snapshot_msg(&access, &snapshot)))
         .await
         .is_err()
     {
         return;
     }
+    // A guest's view changes as they add accounts, and ends when they are removed.
+    let mut view = match &access {
+        Access::Guest(id) => match guest::View::of(&snapshot, id) {
+            Some(v) => Some(v),
+            None => return,
+        },
+        _ => None,
+    };
+    let mut flows: std::collections::HashSet<String> = snapshot
+        .logins
+        .values()
+        .filter(|f| {
+            view.as_ref()
+                .is_some_and(|v| f.guest.as_deref() == Some(v.id.as_str()))
+        })
+        .map(|f| f.flow_id.clone())
+        .collect();
     let mut logs = st
         .logs
         .as_ref()
@@ -416,8 +488,27 @@ async fn ws_session(st: AppState, access: Access, socket: WebSocket, with_logs: 
                     if env.seq <= last_seq { continue; }
                     last_seq = env.seq;
                     if access == Access::Agent && !agent_enabled(&st.engine) { return; }
+                    if let (Some(v), tm_core::Event::SettingsChanged { scope, .. }) = (&view, &env.event)
+                        && scope == tm_core::guests::GUESTS_SCOPE
+                    {
+                        let (now, fresh) = st.engine.store().read(|s| (s.clone(), guest::View::of(s, &v.id)));
+                        let Some(fresh) = fresh else { return };
+                        if fresh != *v {
+                            // An account was added or removed: start again from its state.
+                            view = Some(fresh);
+                            last_seq = now.seq;
+                            if tx.send(Message::text(snapshot_msg(&access, &now))).await.is_err() { return; }
+                        }
+                        continue;
+                    }
                     // `event` is an `Envelope`: {seq, ts, type, ...fields}.
-                    let mut event = json!(env.as_ref());
+                    let mut event = match &view {
+                        Some(v) => match v.filter_event(&env, &mut flows) {
+                            Some(e) => e,
+                            None => continue,
+                        },
+                        None => json!(env.as_ref()),
+                    };
                     if access == Access::Agent {
                         access::redact_envelope(&env.event, &mut event);
                     }
@@ -429,7 +520,7 @@ async fn ws_session(st: AppState, access: Access, socket: WebSocket, with_logs: 
                     let (s, rx2) = st.engine.store().snapshot_and_subscribe();
                     events = rx2;
                     last_seq = s.seq;
-                    if tx.send(Message::text(snapshot_msg(access, &s))).await.is_err() { return; }
+                    if tx.send(Message::text(snapshot_msg(&access, &s))).await.is_err() { return; }
                 }
                 Err(RecvError::Closed) => return,
             },
@@ -457,6 +548,7 @@ async fn ws_session(st: AppState, access: Access, socket: WebSocket, with_logs: 
                 // Commands run concurrently so a slow one doesn't block the event stream.
                 let engine = st.engine.clone();
                 let out = reply_tx.clone();
+                let access = access.clone();
                 tokio::spawn(async move {
                     let mut r = match serde_json::from_value::<Command>(req.cmd) {
                         Ok(cmd) => reply(run_command(&engine, access, cmd).await),

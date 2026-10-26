@@ -12,6 +12,7 @@ pub mod command;
 pub mod db;
 pub mod engine;
 pub mod event;
+pub mod guests;
 pub mod logging;
 pub mod module;
 pub mod paths;

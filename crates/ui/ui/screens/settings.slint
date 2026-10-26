@@ -149,6 +149,11 @@ component AccountRow inherits Rectangle {
                     text: Labels.account-status(root.account.status);
                     tone: Labels.account-tone(root.account.status);
                 }
+                if root.account.guest != "": Pill {
+                    text: @tr("Guest: {}", root.account.guest);
+                    tone: Tone.accent;
+                    icon: Icons.user;
+                }
             }
             Muted {
                 text: root.account.status == "standby" ? @tr("Mined by {}", root.account.detail)
@@ -388,6 +393,115 @@ component NotifyEditor inherits VerticalLayout {
             Toggle {
                 checked: e.on;
                 toggled(v) => { Bridge.notify-event(e.key, v); }
+            }
+        }
+    }
+}
+
+// The owner's guests: people who use this engine for their own Twitch accounts.
+component GuestsCard inherits Card {
+    property <string> name;
+    property <string> confirm;
+    SectionTitle {
+        text: @tr("Guests");
+    }
+    Muted {
+        text: @tr("Let a friend use this server for their own Twitch account: they only see and change their accounts, never yours nor the engine settings.");
+    }
+    for g in Bridge.guests: Rectangle {
+        border-radius: Theme.radius-m;
+        background: Theme.inset;
+        HorizontalLayout {
+            padding: 10px;
+            padding-left: 12px;
+            spacing: 10px;
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                horizontal-stretch: 1;
+                Text {
+                    text: g.name;
+                    font-weight: 600;
+                    color: Theme.text;
+                }
+                Muted {
+                    text: g.accounts == "" ? @tr("No account yet") : g.accounts;
+                }
+            }
+            if root.confirm != g.id: VerticalLayout {
+                alignment: center;
+                Button {
+                    compact: true;
+                    kind: ButtonKind.ghost;
+                    text: @tr("Revoke");
+                    clicked => { root.confirm = g.id; }
+                }
+            }
+            if root.confirm == g.id: VerticalLayout {
+                alignment: center;
+                Button {
+                    compact: true;
+                    kind: ButtonKind.danger;
+                    text: @tr("Revoke the access");
+                    clicked => {
+                        Bridge.guest-remove(g.id);
+                        root.confirm = "";
+                    }
+                }
+            }
+        }
+    }
+    if Bridge.invited-token == "": HorizontalLayout {
+        spacing: 6px;
+        TextField {
+            placeholder: @tr("Their name");
+            text <=> root.name;
+            accepted => {
+                Bridge.guest-invite(root.name);
+                root.name = "";
+            }
+        }
+        Button {
+            compact: true;
+            kind: ButtonKind.primary;
+            icon: Icons.plus;
+            text: @tr("Invite");
+            enabled: root.name != "";
+            clicked => {
+                Bridge.guest-invite(root.name);
+                root.name = "";
+            }
+        }
+    }
+    if Bridge.invited-token != "": Rectangle {
+        border-radius: Theme.radius-m;
+        border-width: 1px;
+        border-color: Theme.accent;
+        VerticalLayout {
+            padding: 12px;
+            spacing: 8px;
+            Text {
+                text: @tr("Access for {} created", Bridge.invited-name);
+                font-weight: 600;
+                color: Theme.text;
+            }
+            Muted {
+                text: @tr("Send them this token with the server's address. It will not be shown again (revoke and invite again if it is lost). In the app: “Remote server”, then they connect their Twitch account.");
+            }
+            if Bridge.link != LinkState.local: Muted {
+                text: @tr("Server address: {}", Bridge.link-detail);
+            }
+            SecretRow {
+                label: @tr("Token");
+                secret: Bridge.invited-token;
+            }
+            HorizontalLayout {
+                alignment: start;
+                Button {
+                    compact: true;
+                    text: @tr("Done");
+                    clicked => { Bridge.guest-invited-done(); }
+                }
             }
         }
     }
@@ -778,15 +892,28 @@ export component SettingsScreen inherits Page {
         }
     }
 
-    for m in Bridge.module-forms: ModuleCard {
-        id: m.id;
-        name: m.name;
-        description: m.description;
-        enabled: m.enabled;
-        fields: m.fields;
+    if !Bridge.guest: GuestsCard { }
+
+    // A guest's module settings apply to their accounts: nothing to set without one.
+    if Bridge.guest && Bridge.accounts.length == 0: Card {
+        Muted {
+            text: @tr("Connect your Twitch account: its drops, channel points and notifications are then set here.");
+        }
+    }
+    if !Bridge.guest || Bridge.accounts.length > 0: VerticalLayout {
+        spacing: Theme.compact ? 14px : 18px;
+        for m in Bridge.module-forms: ModuleCard {
+            id: m.id;
+            name: m.name;
+            description: m.description;
+            enabled: m.enabled;
+            fields: m.fields;
+        }
     }
 
-    Card {
+
+    // Engine settings: the owner's only.
+    if !Bridge.guest: Card {
         SectionTitle {
             text: @tr("Watching");
         }
@@ -854,7 +981,7 @@ export component SettingsScreen inherits Page {
         }
     }
 
-    if root.advanced: Card {
+    if root.advanced && !Bridge.guest: Card {
         SectionTitle {
             text: @tr("Network");
         }
@@ -864,7 +991,7 @@ export component SettingsScreen inherits Page {
         if Bridge.local-engine: ApiAccess { }
     }
 
-    if root.advanced: Card {
+    if root.advanced && !Bridge.guest: Card {
         SectionTitle {
             text: @tr("Several devices");
         }
@@ -876,7 +1003,7 @@ export component SettingsScreen inherits Page {
         }
     }
 
-    if root.advanced: Card {
+    if root.advanced && !Bridge.guest: Card {
         HorizontalLayout {
               spacing: 12px;
               VerticalLayout {
@@ -906,7 +1033,7 @@ export component SettingsScreen inherits Page {
         }
     }
 
-    if root.advanced: Card {
+    if root.advanced && !Bridge.guest: Card {
         SectionTitle {
             text: @tr("Maintenance");
         }
@@ -915,7 +1042,7 @@ export component SettingsScreen inherits Page {
         }
     }
 
-    if root.advanced: Card {
+    if root.advanced && !Bridge.guest: Card {
         SectionTitle {
             text: @tr("Log");
         }
@@ -959,12 +1086,12 @@ export component SettingsScreen inherits Page {
                   text: @tr("Download");
                   clicked => { Bridge.open-url(Bridge.update-info.url); }
               }
-              Button {
+              if !Bridge.guest: Button {
                   compact: true;
                   text: @tr("Update Twitch identifiers");
                   clicked => { Bridge.manifest-refresh(); }
               }
-              Button {
+              if !Bridge.guest: Button {
                   compact: true;
                   text: @tr("Back up the database");
                   clicked => { Bridge.backup(); }

@@ -396,7 +396,7 @@ fn spawn_settings_watcher(
             let relevant = match settings::parse_scope(scope) {
                 Some(Scope::Engine | Scope::Module(_)) => true,
                 Some(Scope::AccountModule { account: a, .. }) => a == account,
-                None => false,
+                Some(Scope::Guests) | None => false,
             };
             if relevant {
                 n += 1;

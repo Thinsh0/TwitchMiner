@@ -202,7 +202,10 @@ async fn run(
     if app.engine.store().read(|s| s.accounts.is_empty()) {
         let flow = app
             .engine
-            .execute(Command::LoginStart { profile: None })
+            .execute(Command::LoginStart {
+                profile: None,
+                guest: None,
+            })
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
         println!(

@@ -1,4 +1,5 @@
-//! Two access levels: `Full` (the owner, the apps) and `Agent` (AI agents).
+//! Three access levels: `Full` (the owner, the apps), `Agent` (AI agents) and `Guest`
+//! (someone using the engine for their own Twitch accounts only, see `guest`).
 //!
 //! An agent reads text written by strangers (stream titles, campaign names…) and can
 //! be manipulated by it. Its token therefore cannot delete accounts, redirect traffic
@@ -8,10 +9,23 @@
 use serde_json::Value;
 use tm_core::{ApiError, Command, Event};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Access {
     Full,
     Agent,
+    /// A guest, by id (`tm_core::guests`).
+    Guest(String),
+}
+
+impl Access {
+    /// Name sent to clients (`snapshot` message).
+    pub fn name(&self) -> &'static str {
+        match self {
+            Access::Full => "full",
+            Access::Agent => "agent",
+            Access::Guest(_) => "guest",
+        }
+    }
 }
 
 /// Engine settings an agent may change.
@@ -25,14 +39,22 @@ fn is_notify_scope(scope: &str) -> bool {
     scope == "module:notify" || scope.ends_with("/module:notify")
 }
 
-pub fn authorize(access: Access, cmd: &Command) -> Result<(), ApiError> {
-    if access == Access::Full {
+/// Agent restrictions (guests are checked by `guest::View::authorize`).
+pub fn authorize(access: &Access, cmd: &Command) -> Result<(), ApiError> {
+    if *access != Access::Agent {
         return Ok(());
     }
     match cmd {
         Command::AccountRemove { .. } => Err(denied("remove accounts")),
         Command::LoginWithToken { .. } => Err(denied("add accounts from raw tokens")),
         Command::Backup { .. } => Err(denied("write backups")),
+        Command::GuestInvite { .. } | Command::GuestRemove { .. } => Err(denied("manage guests")),
+        Command::SettingsGet { scope, .. } if scope == tm_core::guests::GUESTS_SCOPE => {
+            Err(denied("read the guests"))
+        }
+        Command::SettingsSet { scope, .. } if scope == tm_core::guests::GUESTS_SCOPE => {
+            Err(denied("change the guests"))
+        }
         Command::SettingsSet {
             scope,
             value,
@@ -104,9 +126,10 @@ pub fn redact_settings(scope: &str, doc: &mut Value) {
     }
 }
 
-/// Masks secrets in a serialized `State`.
+/// Masks secrets in a serialized `State` (the guests are removed: token hashes).
 pub fn redact_state(state: &mut Value) {
     if let Some(settings) = state.get_mut("settings").and_then(Value::as_object_mut) {
+        settings.remove(tm_core::guests::GUESTS_SCOPE);
         for (scope, doc) in settings.iter_mut() {
             redact_settings(scope, doc);
         }
@@ -116,6 +139,9 @@ pub fn redact_state(state: &mut Value) {
 /// Masks secrets in a serialized `Envelope` (only `settings_changed` carries any).
 pub fn redact_envelope(env: &Event, json: &mut Value) {
     if let Event::SettingsChanged { scope, .. } = env {
+        if scope == tm_core::guests::GUESTS_SCOPE {
+            json["value"] = Value::Null;
+        }
         redact_settings(scope, &mut json["value"]);
     }
 }
@@ -135,7 +161,7 @@ mod tests {
 
     #[test]
     fn agent_limits() {
-        let a = Access::Agent;
+        let a = &Access::Agent;
         assert!(authorize(a, &set("engine", json!({"paused": true}))).is_ok());
         assert!(authorize(a, &set("engine", json!({"proxy": "http://evil"}))).is_err());
         assert!(authorize(a, &set("engine", json!({"paused": true, "peers": []}))).is_err());
@@ -159,9 +185,11 @@ mod tests {
         );
         assert!(authorize(a, &Command::Snapshot).is_ok());
         assert!(authorize(a, &set("engine", json!({"agent_enabled": true}))).is_err());
+        assert!(authorize(a, &set("guests", json!({}))).is_err());
+        assert!(authorize(a, &Command::GuestInvite { name: "x".into() }).is_err());
         assert!(
             authorize(
-                Access::Full,
+                &Access::Full,
                 &Command::AccountRemove {
                     account: "1".into()
                 }
@@ -175,11 +203,13 @@ mod tests {
         let mut state = json!({"settings": {
             "engine": {"proxy": "http://u:p@h:1", "peers": [{"url": "http://x", "token": "s3cret"}], "paused": false},
             "module:notify": {"targets": [{"kind": "discord", "webhook_url": "https://discord/hook"}]},
-            "module:drops": {"games": ["Rust"]}
+            "module:drops": {"games": ["Rust"]},
+            "guests": {"g": {"token_sha256": "HASH"}}
         }});
         redact_state(&mut state);
         let s = state.to_string();
         assert!(!s.contains("s3cret") && !s.contains("discord/hook") && !s.contains("u:p@"));
+        assert!(!s.contains("HASH"));
         assert!(s.contains("Rust") && s.contains("http://x"));
     }
 }

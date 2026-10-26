@@ -27,6 +27,8 @@ arc-swap.workspace = true
 rusqlite.workspace = true
 directories.workspace = true
 rand.workspace = true
+# SHA-256 of guest tokens (already used by rustls).
+ring = "0.17"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

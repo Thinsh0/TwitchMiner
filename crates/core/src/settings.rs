@@ -3,6 +3,7 @@
 //! - `engine`: [`EngineSettings`]
 //! - `module:<id>`: module settings shared by all accounts
 //! - `account:<account>/module:<id>`: per-account overrides
+//! - `guests`: people allowed to use the engine for their own accounts (`guests`)
 //!
 //! A module's effective settings are `defaults ⊕ module scope ⊕ account scope`
 //! (deep merge), so overrides only need to contain what differs.
@@ -28,11 +29,15 @@ pub enum Scope<'a> {
     Engine,
     Module(&'a str),
     AccountModule { account: &'a str, module: &'a str },
+    Guests,
 }
 
 pub fn parse_scope(scope: &str) -> Option<Scope<'_>> {
     if scope == ENGINE_SCOPE {
         return Some(Scope::Engine);
+    }
+    if scope == crate::guests::GUESTS_SCOPE {
+        return Some(Scope::Guests);
     }
     if let Some(m) = scope.strip_prefix("module:") {
         return (!m.is_empty()).then_some(Scope::Module(m));

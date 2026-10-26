@@ -30,6 +30,16 @@ export struct AccountItem {
     // Peer name (standby) or error message.
     detail: string,
     enabled: bool,
+    // Name of the guest it belongs to (owner's view), empty otherwise.
+    guest: string,
+}
+
+// Someone allowed to use the engine for their own accounts (owner's view).
+export struct GuestItem {
+    id: string,
+    name: string,
+    // Their accounts' names, comma-separated.
+    accounts: string,
 }
 
 export struct LoginItem {
@@ -427,6 +437,15 @@ export global Bridge {
     in property <bool> remote-only;
     // Running on a phone (Android).
     in property <bool> on-phone;
+    // Connected with a guest token: only one's own accounts, no engine settings.
+    in property <bool> guest;
+    // Guests of this engine (owner), and the token of the one just invited (shown once).
+    in property <[GuestItem]> guests;
+    in property <string> invited-name;
+    in property <string> invited-token;
+    callback guest-invite(string);
+    callback guest-remove(string);
+    callback guest-invited-done();
     // API of the local engine: address it listens on (empty = off) and full token.
     in property <string> api-bind;
     // Why the local engine runs without its API (address busy or not available yet).

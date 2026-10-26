@@ -17,6 +17,7 @@ use crate::account::AccountRuntime;
 use crate::command::{ApiError, ApiResult, Command};
 use crate::db::{Db, StoredAccount};
 use crate::event::Event;
+use crate::guests;
 use crate::module::{Module, ModuleCall};
 use crate::paths::{DataLock, LockError, Paths};
 use crate::peers::{self, Action, Local};
@@ -626,7 +627,7 @@ impl Engine {
                     .collect(),
             )),
 
-            Command::LoginStart { profile } => self.login_start(profile).await,
+            Command::LoginStart { profile, guest } => self.login_start(profile, guest).await,
             Command::LoginCancel { flow_id } => {
                 let token = self.shared.logins.lock().remove(&flow_id);
                 match token {
@@ -665,6 +666,15 @@ impl Engine {
                 db.delete_account(account.clone())
                     .await
                     .map_err(ApiError::internal)?;
+                if store.read(|s| guests::owner_of(s, &account)).is_some() {
+                    self.update_guests(|all| {
+                        for g in all.values_mut() {
+                            g.accounts.retain(|a| *a != account);
+                        }
+                        Ok(())
+                    })
+                    .await?;
+                }
                 store.emit(Event::AccountRemoved { account });
                 Ok(json!({ "removed": true }))
             }
@@ -691,6 +701,37 @@ impl Engine {
                     });
                 }
                 Ok(json!({ "enabled": enabled }))
+            }
+
+            Command::GuestInvite { name } => {
+                let name = name.trim().to_string();
+                if name.is_empty() || name.chars().count() > 40 {
+                    return Err(ApiError::invalid("a name of 1 to 40 characters"));
+                }
+                let id = uuid::Uuid::new_v4().simple().to_string()[..12].to_string();
+                let token = guests::new_token();
+                let guest = guests::Guest {
+                    name: name.clone(),
+                    token_sha256: guests::hash(&token),
+                    accounts: Vec::new(),
+                    created_at: Utc::now(),
+                };
+                let gid = id.clone();
+                self.update_guests(move |all| {
+                    all.insert(gid, guest);
+                    Ok(())
+                })
+                .await?;
+                Ok(json!({ "id": id, "name": name, "token": token }))
+            }
+            Command::GuestRemove { id } => {
+                self.update_guests(|all| {
+                    all.remove(&id)
+                        .map(drop)
+                        .ok_or_else(|| ApiError::not_found("guest"))
+                })
+                .await?;
+                Ok(json!({ "removed": true }))
             }
 
             Command::SettingsGet { scope, account } => {
@@ -723,6 +764,7 @@ impl Engine {
                             store.read(|s| settings::module_effective(s, account, module, &d));
                         (d, eff, info.settings_schema)
                     }
+                    Some(Scope::Guests) => (json!({}), raw.clone(), Value::Null),
                     None => return Err(ApiError::invalid("unknown scope")),
                 };
                 Ok(json!({
@@ -861,6 +903,12 @@ impl Engine {
                 merge_json(&mut eff, &next);
                 m.validate_settings(&eff).map_err(ApiError::invalid)?;
             }
+            Scope::Guests => {
+                serde_json::from_value::<std::collections::BTreeMap<String, guests::Guest>>(
+                    next.clone(),
+                )
+                .map_err(|e| ApiError::invalid(e.to_string()))?;
+            }
         }
 
         store
@@ -875,7 +923,56 @@ impl Engine {
         Ok(next)
     }
 
-    async fn login_start(&self, profile: Option<String>) -> ApiResult {
+    /// Changes the `guests` document (read, edit, write under the settings lock).
+    async fn update_guests(
+        &self,
+        f: impl FnOnce(&mut std::collections::BTreeMap<String, guests::Guest>) -> Result<(), ApiError>,
+    ) -> Result<(), ApiError> {
+        let store = &self.shared.store;
+        let _write = store.lock_settings().await;
+        let mut all = store.read(guests::all);
+        f(&mut all)?;
+        let value = json!(all);
+        store
+            .db()
+            .put_settings(guests::GUESTS_SCOPE.into(), value.clone())
+            .await
+            .map_err(ApiError::internal)?;
+        store.emit(Event::SettingsChanged {
+            scope: guests::GUESTS_SCOPE.into(),
+            value,
+        });
+        Ok(())
+    }
+
+    /// Gives a freshly added account to the guest who logged it in. Its notifications
+    /// start with no destination: the owner's shared ones are not for it.
+    async fn attach_to_guest(&self, guest: &str, account: &str) -> Result<(), ApiError> {
+        let (g, acc) = (guest.to_string(), account.to_string());
+        self.update_guests(move |all| {
+            let entry = all
+                .get_mut(&g)
+                .ok_or_else(|| ApiError::not_found("guest"))?;
+            if !entry.accounts.contains(&acc) {
+                entry.accounts.push(acc);
+            }
+            Ok(())
+        })
+        .await?;
+        let scope = settings::account_module_scope(account, "notify");
+        if self.shared.store.read(|s| !s.settings.contains_key(&scope)) {
+            self.settings_set(scope, json!({ "targets": [] }), true)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn login_start(&self, profile: Option<String>, guest: Option<String>) -> ApiResult {
+        if let Some(g) = &guest
+            && !self.shared.store.read(|s| guests::all(s).contains_key(g))
+        {
+            return Err(ApiError::not_found("guest"));
+        }
         let manifest = self.shared.manifest.load_full();
         let profile_name = profile.unwrap_or_else(|| manifest.default_profile.clone());
         let profile = manifest
@@ -892,6 +989,7 @@ impl Engine {
             verification_uri: code.verification_uri.clone(),
             verification_uri_complete: Some(code.verification_uri_complete.clone()),
             expires_at: code.expires_at,
+            guest: guest.clone(),
         };
         let cancel = self.shared.cancel.child_token();
         self.shared
@@ -915,7 +1013,13 @@ impl Engine {
             me.shared.logins.lock().remove(&flow_id);
             let (account, error) = match result {
                 Ok(creds) => match me.add_account(creds).await {
-                    Ok(id) => (Some(id), None),
+                    Ok(id) => match &guest {
+                        Some(g) => match me.attach_to_guest(g, &id).await {
+                            Ok(()) => (Some(id), None),
+                            Err(e) => (Some(id), Some(e.message)),
+                        },
+                        None => (Some(id), None),
+                    },
                     Err(e) => (None, Some(e.message)),
                 },
                 Err(e) => (None, Some(e.to_string())),

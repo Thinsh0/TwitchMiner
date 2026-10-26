@@ -1408,3 +1408,42 @@ msgstr "Tout en priorité haute (ntfy)"
 
 msgid "Delivered at once and shown as a pop-up. Otherwise only the test, the confirmation and what needs acting soon (account to reconnect, drop at risk or missed, game account to link)."
 msgstr "Remis tout de suite et affiché en bandeau. Sinon, seulement le test, la confirmation et ce qui demande d'agir vite (compte à reconnecter, drop juste ou manqué, compte de jeu à lier)."
+
+msgid "Access for {} created"
+msgstr "Accès pour {} créé"
+
+msgid "Guest: {}"
+msgstr "Invité : {}"
+
+msgid "Guests"
+msgstr "Invités"
+
+msgid "Invite"
+msgstr "Inviter"
+
+msgid "Let a friend use this server for their own Twitch account: they only see and change their accounts, never yours nor the engine settings."
+msgstr "Permets à un ami d'utiliser ce serveur pour son propre compte Twitch : il ne voit et ne modifie que ses comptes, jamais les tiens ni les réglages du moteur."
+
+msgid "No account yet"
+msgstr "Pas encore de compte"
+
+msgid "Revoke"
+msgstr "Révoquer"
+
+msgid "Revoke the access"
+msgstr "Révoquer l'accès"
+
+msgid "Send them this token with the server's address. It will not be shown again (revoke and invite again if it is lost). In the app: “Remote server”, then they connect their Twitch account."
+msgstr "Envoie-lui ce jeton avec l'adresse du serveur. Il ne sera plus affiché (révoque et invite à nouveau s'il est perdu). Dans l'appli : « Serveur distant », puis il connecte son compte Twitch."
+
+msgid "Server address: {}"
+msgstr "Adresse du serveur : {}"
+
+msgid "Their name"
+msgstr "Son nom"
+
+msgid "Token"
+msgstr "Jeton"
+
+msgid "Connect your Twitch account: its drops, channel points and notifications are then set here."
+msgstr "Connecte ton compte Twitch : ses drops, ses points de chaîne et ses notifications se règlent ensuite ici."

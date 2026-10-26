@@ -64,6 +64,9 @@ pub struct LoginFlow {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verification_uri_complete: Option<String>,
     pub expires_at: DateTime<Utc>,
+    /// Started by this guest (see `guests`): the account it adds is theirs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guest: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
@@ -50,6 +50,11 @@ pub trait Backend: Send + Sync {
     /// The engine's last `n` log lines, oldest first (poll it while a log view is open).
     async fn logs(&self, _n: usize) -> Result<Vec<LogLine>, ApiError> {
         Ok(Vec::new())
+    }
+    /// Connected with a guest token: only the holder's accounts are visible, and only
+    /// their settings (`account:<id>/module:*`) can be changed.
+    fn guest(&self) -> bool {
+        false
     }
 }
 
@@ -175,6 +180,7 @@ pub struct Remote {
     pending: Pending,
     next_id: AtomicU64,
     cancel: CancellationToken,
+    guest: Arc<AtomicBool>,
 }
 
 impl Remote {
@@ -194,6 +200,7 @@ impl Remote {
         let (out, out_rx) = mpsc::unbounded_channel();
         let pending: Pending = Arc::default();
         let cancel = CancellationToken::new();
+        let guest = Arc::new(AtomicBool::new(false));
         tokio::spawn(run_remote(
             ws_url,
             state_tx,
@@ -202,6 +209,7 @@ impl Remote {
             out_rx,
             pending.clone(),
             cancel.clone(),
+            guest.clone(),
         ));
         // Wait for the first snapshot, or the first failure, at most 10 s.
         let mut first = state.clone();
@@ -235,6 +243,7 @@ impl Remote {
             pending,
             next_id: AtomicU64::new(1),
             cancel,
+            guest,
         })
     }
 }
@@ -249,6 +258,9 @@ impl Drop for Remote {
 impl Backend for Remote {
     fn state(&self) -> watch::Receiver<Arc<State>> {
         self.state.clone()
+    }
+    fn guest(&self) -> bool {
+        self.guest.load(Ordering::Relaxed)
     }
     fn events(&self) -> broadcast::Receiver<Arc<Envelope>> {
         self.events.subscribe()
@@ -310,6 +322,7 @@ async fn run_remote(
     mut out_rx: mpsc::UnboundedReceiver<String>,
     pending: Pending,
     cancel: CancellationToken,
+    guest: Arc<AtomicBool>,
 ) {
     let net = match tm_twitch::Net::new(&tm_twitch::NetConfig::default()) {
         Ok(n) => tm_twitch::Net {
@@ -379,6 +392,7 @@ async fn run_remote(
                     let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
                     match v["type"].as_str() {
                         Some("snapshot") => {
+                            guest.store(v["access"].as_str() == Some("guest"), Ordering::Relaxed);
                             if let Ok(s) = serde_json::from_value::<State>(v["state"].clone()) {
                                 // Link first: whoever sees the new state also sees `Connected`.
                                 let _ = link.send(Link::Connected);
@@ -392,7 +406,7 @@ async fn run_remote(
                                 continue;
                             }
                             let Some(m) = mirror.as_mut() else { continue };
-                            match apply_remote(m, &v["event"], &events) {
+                            match apply_remote(m, &v["event"], &events, guest.load(Ordering::Relaxed)) {
                                 Applied::Yes => {
                                     publish_at.get_or_insert_with(|| tokio::time::Instant::now() + PUBLISH_EVERY);
                                 }
@@ -412,7 +426,7 @@ async fn run_remote(
                             // The snapshot already holds some of the buffered events.
                             let mut gap = false;
                             for e in &buffered {
-                                if apply_remote(&mut s, e, &events) == Applied::Gap {
+                                if apply_remote(&mut s, e, &events, guest.load(Ordering::Relaxed)) == Applied::Gap {
                                     gap = true;
                                     break;
                                 }
@@ -463,17 +477,19 @@ enum Applied {
     Gap,
 }
 
-/// Applies one event received from the engine to `mirror` and forwards it.
+/// Applies one event received from the engine to `mirror` and forwards it. `gaps`:
+/// a guest's stream skips the events of other accounts, so a jump in `seq` is normal.
 fn apply_remote(
     mirror: &mut State,
     event: &Value,
     events: &broadcast::Sender<Arc<Envelope>>,
+    gaps: bool,
 ) -> Applied {
     if event["seq"].as_u64().is_some_and(|seq| seq <= mirror.seq) {
         return Applied::Old;
     }
     match serde_json::from_value::<Envelope>(event.clone()) {
-        Ok(env) if env.seq == mirror.seq + 1 => {
+        Ok(env) if env.seq == mirror.seq + 1 || (gaps && env.seq > mirror.seq) => {
             apply_envelope(mirror, &env);
             let _ = events.send(Arc::new(env));
             Applied::Yes

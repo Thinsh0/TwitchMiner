@@ -24,11 +24,14 @@ component EnumChoice inherits Rectangle {
             accessible-label: SettingText.option(root.item.key, opt.label);
             accessible-item-selected: i == root.item.selected;
             accessible-action-default => { Bridge.setting-pick(root.item.section, root.item.path, i); }
+            // On a compact layout the options share the full width (shortened if needed).
+            horizontal-stretch: Theme.compact ? 1 : 0;
             HorizontalLayout {
-                padding-left: 10px;
-                padding-right: 10px;
+                padding-left: Theme.compact ? 4px : 10px;
+                padding-right: Theme.compact ? 4px : 10px;
                 Text {
                     text: SettingText.option(root.item.key, opt.label);
+                    overflow: elide;
                     font-size: Theme.font-s;
                     font-weight: i == root.item.selected ? 600 : 400;
                     color: i == root.item.selected ? Theme.text : Theme.text-muted;
@@ -155,11 +158,8 @@ export component FieldRow inherits VerticalLayout {
         item: root.item;
         height: 34px;
     }
-    if root.below && root.item.kind == "enum": HorizontalLayout {
-        alignment: start;
-        EnumChoice {
-            item: root.item;
-        }
+    if root.below && root.item.kind == "enum": EnumChoice {
+        item: root.item;
     }
 
     if root.item.kind == "list": VerticalLayout {

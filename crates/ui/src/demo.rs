@@ -86,7 +86,7 @@ impl Backend for Demo {
             (
                 "INFO",
                 "tm_modules::points",
-                "bonus claimed channel=zerator points=50",
+                "bonus claimed channel=novastream points=50",
             ),
         ];
         Ok(lines
@@ -184,7 +184,7 @@ fn demo_history(q: &Value) -> Value {
         (
             "raid_joined",
             Some("14"),
-            json!({"target_login": "otplol_"}),
+            json!({"target_login": "pixelpioneer"}),
         ),
         ("watch_stopped", Some("14"), json!({"cause": "offline"})),
         (
@@ -247,7 +247,7 @@ fn fixture(now: DateTime<Utc>) -> Value {
                              {"days": [6, 7], "start": "10:00", "end": "23:30"}]
         }, "module:predictions": {"enabled": true, "percent": 2.5},
         "account:1001/module:points": {
-            "channels": ["rustgod", "zerator", "deadlockdev", "newchannel"],
+            "channels": ["rustgod", "novastream", "deadlockdev", "newchannel"],
             "exclude": ["somebot"]
         }, "module:drops": {
             "games": ["Rust", "Marvel Rivals", "Valorant", "Deadlock", "Apex Legends"],
@@ -259,13 +259,13 @@ fn fixture(now: DateTime<Utc>) -> Value {
                 "params": {"version": "v0.2.0", "current": "0.1.0", "url": "https://github.com/thinsh0/twitchminer/releases"},
                 "message": "TwitchMiner v0.2.0 is available.", "at": m(-30)},
             "realtime_down:1001": {"id": "realtime_down:1001", "level": "warning", "kind": "realtime_down",
-                "params": {"account": "1001", "login": "thinsho"},
-                "message": "Real-time updates for thinsho are down", "at": m(-12)}
+                "params": {"account": "1001", "login": "alex_gg"},
+                "message": "Real-time updates for alex_gg are down", "at": m(-12)}
         },
         "logins": {},
         "accounts": {
             "1001": {
-                "info": {"id": "1001", "login": "thinsho", "display_name": "Thinsho",
+                "info": {"id": "1001", "login": "alex_gg", "display_name": "Alex",
                     "avatar_url": null, "enabled": true},
                 "status": {"state": "running"},
                 "modules": {"drops": {"state": "running"}, "points": {"state": "running"}},
@@ -276,19 +276,19 @@ fn fixture(now: DateTime<Utc>) -> Value {
                             "started_at": m(-140), "game": game("g1", "Rust")},
                         "points": 48210, "multiplier": 1.0, "sources": ["drops", "points"],
                         "session_points": 620, "session_minutes": 74},
-                    "12": {"id": "12", "login": "zerator", "display_name": "ZeratoR",
+                    "12": {"id": "12", "login": "novastream", "display_name": "NovaStream",
                         "avatar_url": null,
                         "stream": {"id": "s12", "title": "Soirée découverte", "viewers": 25780,
                             "started_at": m(-35), "game": game("g9", "Just Chatting")},
                         "points": 152340, "multiplier": 1.2, "sources": ["points"],
                         "session_points": 410, "session_minutes": 21},
-                    "14": {"id": "14", "login": "kamet0", "display_name": "Kamet0",
+                    "14": {"id": "14", "login": "lunaplays", "display_name": "LunaPlays",
                         "avatar_url": null,
                         "stream": {"id": "s14", "title": "Ranked jusqu'au Master", "viewers": 9120,
                             "started_at": m(-90), "game": game("g5", "League of Legends")},
                         "points": 3150, "multiplier": 1.0, "sources": ["points"],
                         "session_points": 0, "session_minutes": 0},
-                    "15": {"id": "15", "login": "gotaga", "display_name": "Gotaga",
+                    "15": {"id": "15", "login": "kaigg", "display_name": "KaiGG",
                         "avatar_url": null, "stream": null,
                         "points": 870, "multiplier": 2.0, "sources": ["points"],
                         "session_points": 0, "session_minutes": 0},

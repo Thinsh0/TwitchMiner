@@ -672,7 +672,7 @@
         "properties": {
           "all_urgent": {
             "default": false,
-            "description": "Send every message as urgent (ntfy priority `high`: delivered at once and shown\nas a pop-up). Otherwise only what needs acting soon is (see [`urgent`]), plus\ntests and the confirmation of a new destination.",
+            "description": "Send every message as urgent (ntfy priority `high`: delivered at once and shown\nas a pop-up). Otherwise only what needs acting soon is (see `urgent`), plus\ntests and the confirmation of a new destination.",
             "type": "boolean"
           },
           "enabled": {

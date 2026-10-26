@@ -274,6 +274,17 @@ component NotifyEditor inherits VerticalLayout {
                 horizontal-stretch: 1;
                 overflow: elide;
             }
+            // On the phone: subscribe in the ntfy app in one tap.
+            if Bridge.on-phone && t.subscribe != "": VerticalLayout {
+                alignment: center;
+                Button {
+                    compact: true;
+                    kind: ButtonKind.ghost;
+                    icon: Icons.external;
+                    text: @tr("Subscribe in ntfy");
+                    clicked => { Bridge.open-url(t.subscribe); }
+                }
+            }
             VerticalLayout {
                 alignment: center;
                 IconButton {
@@ -302,7 +313,9 @@ component NotifyEditor inherits VerticalLayout {
                 }
             }
             Muted {
-                text: root.kind == 0 ? @tr("Phone: install the ntfy app (Play Store), subscribe to a hard-to-guess topic, and add the same topic here. Anyone who knows the topic can read the messages.")
+                text: root.kind == 0 ? (Bridge.on-phone
+                        ? @tr("Install the ntfy app (Play Store), then here: Generate, Add, and “Subscribe in ntfy”. Anyone who knows the topic can read the messages.")
+                        : @tr("Phone: install the ntfy app (Play Store), subscribe to a hard-to-guess topic, and add the same topic here. Anyone who knows the topic can read the messages."))
                     : root.kind == 1 ? @tr("Discord: channel settings › Integrations › Webhooks › New webhook › Copy webhook URL.")
                     : root.kind == 2 ? @tr("Telegram: the token given by @BotFather, and your chat id (send a message to the bot first).")
                     : @tr("Any URL that receives a JSON POST with the text and the event.");

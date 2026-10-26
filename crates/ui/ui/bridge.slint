@@ -256,6 +256,8 @@ export struct NotifyTarget {
     // ntfy | discord | telegram | webhook
     kind: string,
     label: string,
+    // ntfy: link that opens the ntfy app on this topic (`ntfy://host/topic`).
+    subscribe: string,
 }
 
 // One kind of event the notifications module can send (`notify.events`).
@@ -423,6 +425,8 @@ export global Bridge {
     in property <bool> local-engine;
     // No local engine on this device (phone): only a remote server.
     in property <bool> remote-only;
+    // Running on a phone (Android).
+    in property <bool> on-phone;
     // API of the local engine: address it listens on (empty = off) and full token.
     in property <string> api-bind;
     // Why the local engine runs without its API (address busy or not available yet).

@@ -284,9 +284,25 @@ fn notify_target_item(t: &Value) -> NotifyTarget {
         "telegram" => format!("chat {}", t["chat_id"].as_str().unwrap_or_default()),
         _ => t["url"].as_str().and_then(url_host).unwrap_or_default(),
     };
+    let subscribe = if kind == "ntfy" {
+        t["url"].as_str().and_then(ntfy_subscribe_link)
+    } else {
+        None
+    };
     NotifyTarget {
         kind: kind.into(),
         label: label.into(),
+        subscribe: subscribe.unwrap_or_default().into(),
+    }
+}
+
+/// `https://ntfy.sh/topic` → `ntfy://ntfy.sh/topic`: the ntfy app's link to subscribe.
+pub fn ntfy_subscribe_link(url: &str) -> Option<String> {
+    if let Some(rest) = url.strip_prefix("https://") {
+        Some(format!("ntfy://{rest}"))
+    } else {
+        url.strip_prefix("http://")
+            .map(|rest| format!("ntfy://{rest}?secure=false"))
     }
 }
 
@@ -411,6 +427,14 @@ mod tests {
         )
         .label;
         assert_eq!(label.as_str(), "hooks.example.org");
+        assert_eq!(
+            ntfy_subscribe_link("https://ntfy.sh/tm-abc").as_deref(),
+            Some("ntfy://ntfy.sh/tm-abc")
+        );
+        assert_eq!(
+            ntfy_subscribe_link("http://192.168.1.2:80/t").as_deref(),
+            Some("ntfy://192.168.1.2:80/t?secure=false")
+        );
     }
 
     #[test]

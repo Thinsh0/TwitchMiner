@@ -1396,3 +1396,9 @@ msgstr "Sujet, ou https://ton-serveur/sujet"
 
 msgid "Watching started on a channel"
 msgstr "Début du visionnage d'une chaîne"
+
+msgid "Subscribe in ntfy"
+msgstr "S'abonner dans ntfy"
+
+msgid "Install the ntfy app (Play Store), then here: Generate, Add, and “Subscribe in ntfy”. Anyone who knows the topic can read the messages."
+msgstr "Installe l'appli ntfy (Play Store), puis ici : Générer, Ajouter et « S'abonner dans ntfy ». Qui connaît le sujet peut lire les messages."

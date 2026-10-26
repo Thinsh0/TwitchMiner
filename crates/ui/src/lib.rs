@@ -110,6 +110,8 @@ pub fn run(
         })
     });
     ui.global::<Bridge>().set_remote_only(opts.remote_only);
+    ui.global::<Bridge>()
+        .set_on_phone(cfg!(target_os = "android"));
     match target.or((!opts.remote_only).then_some(Target::Local)) {
         Some(target) => ctrl.open(target, false),
         None => ctrl.show_setup(false),

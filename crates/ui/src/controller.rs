@@ -814,7 +814,8 @@ impl Controller {
         }
     }
 
-    /// The window gained or lost the keyboard focus.
+    /// The window gained or lost the keyboard focus (desktop only: winit events).
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     pub fn set_focused(&self, focused: bool) {
         self.0.focused.store(focused, AtomicOrdering::Relaxed);
     }
@@ -1710,8 +1711,9 @@ fn copy_to_clipboard(_text: &str) -> Result<(), String> {
 }
 
 fn open_url(url: &str) {
-    // Only web links: never let a value from the state launch a local program.
-    if !(url.starts_with("https://") || url.starts_with("http://")) {
+    // Only web links (and the ntfy app's own links): never let a value from the state
+    // launch a local program.
+    if !(url.starts_with("https://") || url.starts_with("http://") || url.starts_with("ntfy://")) {
         return;
     }
     if crate::platform::with(|p| p.open_url(url)) == Some(true) {

@@ -147,7 +147,26 @@ impl Module for Notify {
         loop {
             let env = tokio::select! {
                 _ = ctx.cancelled() => return Ok(()),
-                _ = ctx.settings_changed() => { settings = ctx.settings()?; continue; }
+                _ = ctx.settings_changed() => {
+                    let before = std::mem::take(&mut settings.targets);
+                    settings = ctx.settings()?;
+                    // A destination just added gets a confirmation: the user knows at once
+                    // that it works.
+                    let added: Vec<Target> = settings
+                        .targets
+                        .iter()
+                        .filter(|t| !before.contains(t))
+                        .cloned()
+                        .collect();
+                    if !added.is_empty() {
+                        let text = match settings.language {
+                            Language::Fr => format!("✅ TwitchMiner est bien relié : les notifications de {} arriveront ici.", ctx.login()),
+                            Language::En => format!("✅ TwitchMiner is connected: notifications for {} will arrive here.", ctx.login()),
+                        };
+                        enqueue(&added, text, json!({"type": "connected"}));
+                    }
+                    continue;
+                }
                 call = ctx.next_call() => {
                     let Some(call) = call else { return Ok(()) };
                     let reply = if call.name == "test" {

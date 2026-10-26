@@ -29,6 +29,11 @@ pub trait Platform {
     fn keeps_running(&self) -> bool {
         false
     }
+    /// Opens a web page in the browser; `false` when the platform has no way of its own
+    /// (the `open` crate is used then).
+    fn open_url(&self, _url: &str) -> bool {
+        false
+    }
     /// The application can replace its executable and start it again (`restart`).
     fn installs_updates(&self) -> bool {
         false
@@ -75,8 +80,11 @@ impl AppHandle {
         let _ = self.ui.upgrade_in_event_loop(|ui| {
             let _ = ui.show();
             ui.window().set_minimized(false);
-            use slint::winit_030::WinitWindowAccessor;
-            ui.window().with_winit_window(|w| w.focus_window());
+            #[cfg(not(target_os = "android"))]
+            {
+                use slint::winit_030::WinitWindowAccessor;
+                ui.window().with_winit_window(|w| w.focus_window());
+            }
         });
         self.ctrl.wake();
     }

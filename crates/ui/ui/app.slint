@@ -289,6 +289,155 @@ component Sidebar inherits Rectangle {
     }
 }
 
+// Compact layout: one tab of the bottom navigation.
+component TabItem inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <Screen> target;
+    in property <int> badge;
+    property <bool> active: Bridge.screen == target;
+    horizontal-stretch: 1;
+    accessible-role: tab;
+    accessible-label: label;
+    accessible-item-selected: active;
+    accessible-action-default => { Bridge.screen = root.target; }
+    VerticalLayout {
+        alignment: center;
+        spacing: 3px;
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 52px;
+                height: 28px;
+                border-radius: 14px;
+                background: root.active ? Theme.accent-soft : transparent;
+                Icon {
+                    source: root.icon;
+                    colorize: root.active ? Theme.accent : Theme.text-muted;
+                }
+                if root.badge > 0: Rectangle {
+                    x: parent.width - 18px;
+                    y: -2px;
+                    width: max(16px, tab-badge.preferred-width + 8px);
+                    height: 16px;
+                    border-radius: 8px;
+                    background: Theme.accent-strong;
+                    tab-badge := Text {
+                        text: root.badge;
+                        color: Theme.on-accent;
+                        font-size: 10px;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+        Text {
+            text: root.label;
+            horizontal-alignment: center;
+            font-size: Theme.font-xs;
+            color: root.active ? Theme.text : Theme.text-muted;
+            font-weight: root.active ? 600 : 400;
+            overflow: elide;
+        }
+    }
+    TouchArea {
+        clicked => { Bridge.screen = root.target; }
+    }
+}
+
+component BottomNav inherits Rectangle {
+    height: 64px;
+    background: Theme.is-light ? #ffffff : Theme.mode == ThemeMode.oled ? #000000 : #14121b;
+    Rectangle {
+        y: 0;
+        height: 1px;
+        background: Theme.border;
+    }
+    HorizontalLayout {
+        padding-left: 4px;
+        padding-right: 4px;
+        TabItem {
+            icon: Icons.home;
+            label: @tr("Home");
+            target: Screen.home;
+            badge: Bridge.todo-count;
+        }
+        TabItem {
+            icon: Icons.gift;
+            label: @tr("Drops");
+            target: Screen.drops;
+        }
+        TabItem {
+            icon: Icons.tv;
+            label: @tr("Channels");
+            target: Screen.channels;
+        }
+        TabItem {
+            icon: Icons.chart;
+            label: @tr("Activity");
+            target: Screen.activity;
+        }
+        TabItem {
+            icon: Icons.settings;
+            label: @tr("Settings");
+            target: Screen.settings;
+        }
+    }
+}
+
+// Compact layout: logo, account picker and link state above the screens.
+component TopBar inherits Rectangle {
+    background: Theme.is-light ? #ffffff : Theme.mode == ThemeMode.oled ? #000000 : #14121b;
+    property <color> dot: Bridge.link == LinkState.local || Bridge.link == LinkState.connected ? Theme.success
+        : Bridge.link == LinkState.connecting ? Theme.warning : Theme.danger;
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.border;
+    }
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Image {
+                source: Icons.logo;
+                width: 26px;
+                height: 26px;
+            }
+        }
+        if Bridge.accounts.length > 1: AccountPicker {
+            horizontal-stretch: 1;
+        }
+        if Bridge.accounts.length <= 1: Text {
+            text: "TwitchMiner";
+            font-size: Theme.font-l;
+            font-weight: 700;
+            color: Theme.text;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 30px;
+                height: 30px;
+                border-radius: 15px;
+                background: link-touch.has-hover ? Theme.inset : transparent;
+                Dot {
+                    tint: root.dot;
+                }
+                link-touch := TouchArea {
+                    clicked => { Bridge.screen = Screen.settings; }
+                }
+            }
+        }
+    }
+}
+
 component Toasts inherits VerticalLayout {
     spacing: 8px;
     alignment: end;
@@ -365,15 +514,19 @@ export component MainWindow inherits Window {
     icon: Icons.logo;
     preferred-width: 1180px;
     preferred-height: 760px;
-    min-width: 820px;
-    min-height: 540px;
+    min-width: 340px;
+    min-height: 480px;
     background: Theme.bg;
     default-font-size: Theme.font-m;
 
     property <bool> light: Theme.is-light;
     property <Screen> shown-screen: Bridge.screen;
     changed shown-screen => { Bridge.screen-shown(); }
-    init => { Palette.color-scheme = Theme.is-light ? ColorScheme.light : ColorScheme.dark; }
+    init => {
+        Palette.color-scheme = Theme.is-light ? ColorScheme.light : ColorScheme.dark;
+        Theme.compact = self.width < 720px;
+    }
+    changed width => { Theme.compact = self.width < 720px; }
     changed light => { Palette.color-scheme = Theme.is-light ? ColorScheme.light : ColorScheme.dark; }
 
     Rectangle {
@@ -386,7 +539,20 @@ export component MainWindow inherits Window {
 
     if Bridge.conn == Conn.starting: Starting { }
     if Bridge.conn == Conn.setup: ConnectScreen { }
-    if Bridge.conn == Conn.ready: HorizontalLayout {
+    if Bridge.conn == Conn.ready && Theme.compact: VerticalLayout {
+        TopBar { }
+        if Bridge.link == LinkState.down: LinkBanner { }
+        Rectangle {
+            vertical-stretch: 1;
+            if Bridge.screen == Screen.home: HomeScreen { }
+            if Bridge.screen == Screen.drops: DropsScreen { }
+            if Bridge.screen == Screen.channels: ChannelsScreen { }
+            if Bridge.screen == Screen.activity: ActivityScreen { }
+            if Bridge.screen == Screen.settings: SettingsScreen { }
+        }
+        BottomNav { }
+    }
+    if Bridge.conn == Conn.ready && !Theme.compact: HorizontalLayout {
         Sidebar { }
         VerticalLayout {
             horizontal-stretch: 1;
@@ -403,8 +569,8 @@ export component MainWindow inherits Window {
     }
 
     Toasts {
-        x: parent.width - self.width - 20px;
-        y: parent.height - self.height - 20px;
-        width: 360px;
+        x: Theme.compact ? 12px : parent.width - self.width - 20px;
+        y: parent.height - self.height - (Theme.compact ? 76px : 20px);
+        width: Theme.compact ? parent.width - 24px : 360px;
     }
 }

@@ -149,8 +149,8 @@ component DropCard inherits Card {
     if Bridge.has-drop: HorizontalLayout {
         spacing: 14px;
         Rectangle {
-            width: 76px;
-            height: 76px;
+            width: Theme.compact ? 56px : 76px;
+            height: Theme.compact ? 56px : 76px;
             border-radius: Theme.radius-m;
             background: Theme.inset;
             clip: true;
@@ -186,18 +186,26 @@ component DropCard inherits Card {
             ProgressBar {
                 progress: Bridge.drop.progress;
             }
-            HorizontalLayout {
-                spacing: 8px;
+            // Side by side, or one above the other on a compact layout.
+            GridLayout {
+                spacing-horizontal: 8px;
+                spacing-vertical: 4px;
                 Text {
+                    row: 0;
+                    col: 0;
                     text: Fmt.duration(Bridge.drop.current) + " / " + Fmt.duration(Bridge.drop.required) + " · " + @tr("{}%", Math.floor(Bridge.drop.progress * 100));
                     font-size: Theme.font-s;
                     color: Theme.text;
                     font-weight: 600;
                 }
                 Rectangle {
+                    row: 0;
+                    col: 1;
                     horizontal-stretch: 1;
                 }
                 Text {
+                    row: Theme.compact ? 1 : 0;
+                    col: Theme.compact ? 0 : 2;
                     text: Bridge.drop.eta-in >= 0 ? @tr("done in about {}", Fmt.duration(Bridge.drop.eta-in))
                         : Bridge.paused ? @tr("paused") : @tr("waiting for a channel");
                     font-size: Theme.font-s;
@@ -318,14 +326,18 @@ export component HomeScreen inherits Page {
         spacing: 14px;
         NowCard { }
         DropCard { }
-        HorizontalLayout {
+        GridLayout {
             spacing: 14px;
-            // Same width for both, whatever their content.
+            // Same width for both, whatever their content; stacked on a compact layout.
             TodayCard {
+                row: 0;
+                col: 0;
                 horizontal-stretch: 1;
                 preferred-width: 0;
             }
             PauseCard {
+                row: Theme.compact ? 1 : 0;
+                col: Theme.compact ? 0 : 1;
                 horizontal-stretch: 1;
                 preferred-width: 0;
             }

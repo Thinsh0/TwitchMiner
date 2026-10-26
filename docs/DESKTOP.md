@@ -1,6 +1,6 @@
 # Application de bureau (Windows, Linux)
 
-`twitchminer-desktop` : l'interface native (Slint) et son intégration au bureau. L'interface elle-même est dans `crates/ui` (crate `tm-ui`), partagée avec la future app Android ; `apps/desktop` n'ajoute que ce qui est propre au bureau.
+`twitchminer-desktop` : l'interface native (Slint) et son intégration au bureau. L'interface elle-même est dans `crates/ui` (crate `tm-ui`), partagée avec l'appli Android (`apps/android`, voir [ANDROID.md](ANDROID.md)) ; `apps/desktop` n'ajoute que ce qui est propre au bureau. Sous 720 px de large, elle passe en disposition compacte (celle du téléphone) : navigation en bas, actions sous les textes, réglages sur une colonne.
 
 ```bash
 cargo run -p twitchminer-desktop                 # fenêtre + moteur local

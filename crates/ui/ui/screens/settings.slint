@@ -41,11 +41,16 @@ component SectionTitle inherits Text {
     color: Theme.text;
 }
 
-component SettingRow inherits HorizontalLayout {
+// Label and help on the left, the control on the right (under them when `stack`).
+component SettingRow inherits GridLayout {
     in property <string> label;
     in property <string> help;
-    spacing: 16px;
+    in property <bool> stack: Theme.compact;
+    spacing-horizontal: 16px;
+    spacing-vertical: 8px;
     VerticalLayout {
+        row: 0;
+        col: 0;
         alignment: center;
         spacing: 2px;
         horizontal-stretch: 1;
@@ -58,9 +63,14 @@ component SettingRow inherits HorizontalLayout {
             text: root.help;
         }
     }
-    VerticalLayout {
-        alignment: center;
-        @children
+    HorizontalLayout {
+        row: root.stack ? 1 : 0;
+        col: root.stack ? 0 : 1;
+        alignment: root.stack ? start : end;
+        VerticalLayout {
+            alignment: center;
+            @children
+        }
     }
 }
 
@@ -144,8 +154,8 @@ component AccountRow inherits Rectangle {
                 text: root.account.status == "standby" ? @tr("Mined by {}", root.account.detail)
                     : root.account.detail != "" ? root.account.detail : "@" + root.account.login;
             }
-            // Health of each module for this account.
-            HorizontalLayout {
+            // Health of each module for this account (too wide for a compact layout).
+            if !Theme.compact: HorizontalLayout {
                 spacing: 6px;
                 alignment: start;
                 for h in Bridge.module-health: HorizontalLayout {
@@ -258,84 +268,94 @@ component HoursRow inherits Rectangle {
     in property <HourWindow> window;
     property <string> start: window.start;
     property <string> end: window.end;
-    height: 44px;
     border-radius: Theme.radius-m;
     background: Theme.inset;
-    HorizontalLayout {
+    GridLayout {
+        min-height: 44px;
         padding-left: 8px;
         padding-right: 4px;
-        spacing: 4px;
-        for on[d] in root.window.days: VerticalLayout {
-            alignment: center;
+        padding-top: Theme.compact ? 6px : 0px;
+        padding-bottom: Theme.compact ? 6px : 0px;
+        spacing-horizontal: 10px;
+        spacing-vertical: 6px;
+        HorizontalLayout {
+            row: 0;
+            col: 0;
+            spacing: 4px;
+            for on[d] in root.window.days: VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 30px;
+                    height: 28px;
+                    border-radius: Theme.radius-s;
+                    background: on ? Theme.accent-strong : t.has-hover ? Theme.card-hover : transparent;
+                    border-width: 1px;
+                    border-color: on ? Theme.accent-strong : Theme.border;
+                    accessible-role: checkbox;
+                    accessible-checkable: true;
+                    accessible-checked: on;
+                    accessible-label: d == 0 ? @tr("Monday") : d == 1 ? @tr("Tuesday") : d == 2 ? @tr("Wednesday") : d == 3 ? @tr("Thursday") : d == 4 ? @tr("Friday") : d == 5 ? @tr("Saturday") : @tr("Sunday");
+                    accessible-action-default => { Bridge.hours-toggle-day(root.index, d); }
+                    Text {
+                        text: d == 0 ? @tr("Mo") : d == 1 ? @tr("Tu") : d == 2 ? @tr("We") : d == 3 ? @tr("Th") : d == 4 ? @tr("Fr") : d == 5 ? @tr("Sa") : @tr("Su");
+                        font-size: Theme.font-xs;
+                        font-weight: 600;
+                        color: on ? Theme.on-accent : Theme.text-muted;
+                    }
+                    t := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Bridge.hours-toggle-day(root.index, d); }
+                    }
+                }
+            }
+        }
+        HorizontalLayout {
+            row: Theme.compact ? 1 : 0;
+            col: Theme.compact ? 0 : 1;
+            spacing: 4px;
+            VerticalLayout {
+                alignment: center;
+                TextField {
+                    width: 70px;
+                    height: 30px;
+                    text <=> root.start;
+                    accepted => { Bridge.hours-set(root.index, root.start, root.end); }
+                }
+            }
+            Text {
+                text: "→";
+                color: Theme.text-faint;
+                vertical-alignment: center;
+            }
+            VerticalLayout {
+                alignment: center;
+                TextField {
+                    width: 70px;
+                    height: 30px;
+                    text <=> root.end;
+                    accepted => { Bridge.hours-set(root.index, root.start, root.end); }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Button {
+                    compact: true;
+                    kind: ButtonKind.ghost;
+                    text: @tr("Apply");
+                    enabled: root.start != root.window.start || root.end != root.window.end;
+                    clicked => { Bridge.hours-set(root.index, root.start, root.end); }
+                }
+            }
             Rectangle {
-                width: 30px;
-                height: 28px;
-                border-radius: Theme.radius-s;
-                background: on ? Theme.accent-strong : t.has-hover ? Theme.card-hover : transparent;
-                border-width: 1px;
-                border-color: on ? Theme.accent-strong : Theme.border;
-                accessible-role: checkbox;
-                accessible-checkable: true;
-                accessible-checked: on;
-                accessible-label: d == 0 ? @tr("Monday") : d == 1 ? @tr("Tuesday") : d == 2 ? @tr("Wednesday") : d == 3 ? @tr("Thursday") : d == 4 ? @tr("Friday") : d == 5 ? @tr("Saturday") : @tr("Sunday");
-                accessible-action-default => { Bridge.hours-toggle-day(root.index, d); }
-                Text {
-                    text: d == 0 ? @tr("Mo") : d == 1 ? @tr("Tu") : d == 2 ? @tr("We") : d == 3 ? @tr("Th") : d == 4 ? @tr("Fr") : d == 5 ? @tr("Sa") : @tr("Su");
-                    font-size: Theme.font-xs;
-                    font-weight: 600;
-                    color: on ? Theme.on-accent : Theme.text-muted;
+                horizontal-stretch: 1;
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: Icons.trash;
+                    tooltip: @tr("Remove this time slot");
+                    clicked => { Bridge.hours-remove(root.index); }
                 }
-                t := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { Bridge.hours-toggle-day(root.index, d); }
-                }
-            }
-        }
-        Rectangle {
-            width: 10px;
-        }
-        VerticalLayout {
-            alignment: center;
-            TextField {
-                width: 70px;
-                height: 30px;
-                text <=> root.start;
-                accepted => { Bridge.hours-set(root.index, root.start, root.end); }
-            }
-        }
-        Text {
-            text: "→";
-            color: Theme.text-faint;
-            vertical-alignment: center;
-        }
-        VerticalLayout {
-            alignment: center;
-            TextField {
-                width: 70px;
-                height: 30px;
-                text <=> root.end;
-                accepted => { Bridge.hours-set(root.index, root.start, root.end); }
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            Button {
-                compact: true;
-                kind: ButtonKind.ghost;
-                text: @tr("Apply");
-                enabled: root.start != root.window.start || root.end != root.window.end;
-                clicked => { Bridge.hours-set(root.index, root.start, root.end); }
-            }
-        }
-        Rectangle {
-            horizontal-stretch: 1;
-        }
-        VerticalLayout {
-            alignment: center;
-            IconButton {
-                icon: Icons.trash;
-                tooltip: @tr("Remove this time slot");
-                clicked => { Bridge.hours-remove(root.index); }
             }
         }
     }
@@ -533,6 +553,7 @@ export component SettingsScreen inherits Page {
             text: @tr("Startup");
         }
         if Bridge.has-autostart: SettingRow {
+            stack: false;
             label: @tr("Start with the session");
             help: @tr("TwitchMiner starts in the system tray when you log in, without opening its window.");
             Toggle {
@@ -547,21 +568,21 @@ export component SettingsScreen inherits Page {
 
     Card {
         HorizontalLayout {
-            SectionTitle {
-                text: @tr("Accounts");
-                vertical-alignment: center;
-                horizontal-stretch: 1;
-            }
-            Button {
-                compact: true;
-                icon: Icons.plus;
-                text: @tr("Add an account");
-                busy: Bridge.login-busy;
-                clicked => {
-                    Bridge.login-start();
-                    Bridge.screen = Screen.home;
-                }
-            }
+              SectionTitle {
+                  text: @tr("Accounts");
+                  vertical-alignment: center;
+                  horizontal-stretch: 1;
+              }
+              Button {
+                  compact: true;
+                  icon: Icons.plus;
+                  text: @tr("Add an account");
+                  busy: Bridge.login-busy;
+                  clicked => {
+                      Bridge.login-start();
+                      Bridge.screen = Screen.home;
+                  }
+              }
         }
         if Bridge.accounts.length == 0: Muted {
             text: @tr("No account yet.");
@@ -610,18 +631,18 @@ export component SettingsScreen inherits Page {
         accessible-expanded: root.advanced;
         accessible-action-default => { root.advanced = !root.advanced; }
         HorizontalLayout {
-            spacing: 6px;
-            alignment: start;
-            Icon {
-                source: root.advanced ? Icons.chevron-down : Icons.chevron-right;
-                size: 16px;
-            }
-            Text {
-                text: @tr("Advanced");
-                color: Theme.text-muted;
-                font-weight: 600;
-                vertical-alignment: center;
-            }
+              spacing: 6px;
+              alignment: start;
+              Icon {
+                  source: root.advanced ? Icons.chevron-down : Icons.chevron-right;
+                  size: 16px;
+              }
+              Text {
+                  text: @tr("Advanced");
+                  color: Theme.text-muted;
+                  font-weight: 600;
+                  vertical-alignment: center;
+              }
         }
         TouchArea {
             mouse-cursor: pointer;
@@ -671,24 +692,24 @@ export component SettingsScreen inherits Page {
 
     if root.advanced: Card {
         HorizontalLayout {
-            spacing: 12px;
-            VerticalLayout {
-                spacing: 2px;
-                horizontal-stretch: 1;
-                SectionTitle {
-                    text: @tr("AI agent");
-                }
-                Muted {
-                    text: @tr("Lets an AI agent (MCP) follow and drive TwitchMiner with a restricted token: no deletions, no files, secrets hidden.");
-                }
-            }
-            VerticalLayout {
-                alignment: center;
-                Toggle {
-                    checked: Bridge.agent-enabled;
-                    toggled(v) => { Bridge.setting-toggle("engine", "agent_enabled", v); }
-                }
-            }
+              spacing: 12px;
+              VerticalLayout {
+                  spacing: 2px;
+                  horizontal-stretch: 1;
+                  SectionTitle {
+                      text: @tr("AI agent");
+                  }
+                  Muted {
+                      text: @tr("Lets an AI agent (MCP) follow and drive TwitchMiner with a restricted token: no deletions, no files, secrets hidden.");
+                  }
+              }
+              VerticalLayout {
+                  alignment: center;
+                  Toggle {
+                      checked: Bridge.agent-enabled;
+                      toggled(v) => { Bridge.setting-toggle("engine", "agent_enabled", v); }
+                  }
+              }
         }
         if Bridge.agent-enabled && Bridge.agent-token != "": SecretRow {
             label: @tr("Agent token");
@@ -729,39 +750,39 @@ export component SettingsScreen inherits Page {
                 : Bridge.update-info.available ? @tr("Version {} is available.", Bridge.update-info.latest) : @tr("TwitchMiner is up to date.");
         }
         HorizontalLayout {
-            spacing: 8px;
-            alignment: start;
-            Button {
-                compact: true;
-                icon: Icons.refresh;
-                text: @tr("Check for updates");
-                clicked => { Bridge.update-check(); }
-            }
-            if Bridge.update-info.available && Bridge.update-info.can-install: Button {
-                compact: true;
-                kind: ButtonKind.primary;
-                icon: Icons.download;
-                text: @tr("Update now");
-                busy: Bridge.update-info.phase == UpdatePhase.downloading || Bridge.update-info.phase == UpdatePhase.installing;
-                clicked => { Bridge.update-install(); }
-            }
-            if Bridge.update-info.available && !Bridge.update-info.can-install && Bridge.update-info.url != "": Button {
-                compact: true;
-                kind: ButtonKind.primary;
-                icon: Icons.external;
-                text: @tr("Download");
-                clicked => { Bridge.open-url(Bridge.update-info.url); }
-            }
-            Button {
-                compact: true;
-                text: @tr("Update Twitch identifiers");
-                clicked => { Bridge.manifest-refresh(); }
-            }
-            Button {
-                compact: true;
-                text: @tr("Back up the database");
-                clicked => { Bridge.backup(); }
-            }
+              spacing: 8px;
+              alignment: start;
+              Button {
+                  compact: true;
+                  icon: Icons.refresh;
+                  text: @tr("Check for updates");
+                  clicked => { Bridge.update-check(); }
+              }
+              if Bridge.update-info.available && Bridge.update-info.can-install: Button {
+                  compact: true;
+                  kind: ButtonKind.primary;
+                  icon: Icons.download;
+                  text: @tr("Update now");
+                  busy: Bridge.update-info.phase == UpdatePhase.downloading || Bridge.update-info.phase == UpdatePhase.installing;
+                  clicked => { Bridge.update-install(); }
+              }
+              if Bridge.update-info.available && !Bridge.update-info.can-install && Bridge.update-info.url != "": Button {
+                  compact: true;
+                  kind: ButtonKind.primary;
+                  icon: Icons.external;
+                  text: @tr("Download");
+                  clicked => { Bridge.open-url(Bridge.update-info.url); }
+              }
+              Button {
+                  compact: true;
+                  text: @tr("Update Twitch identifiers");
+                  clicked => { Bridge.manifest-refresh(); }
+              }
+              Button {
+                  compact: true;
+                  text: @tr("Back up the database");
+                  clicked => { Bridge.backup(); }
+              }
         }
         AboutSlint {
             max-height: 120px;

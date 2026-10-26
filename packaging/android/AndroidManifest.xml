@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The application is the Rust library `libtwitchminer.so` (apps/android) run by the
+     system's NativeActivity: no Java code. VERSION_CODE and VERSION_NAME are filled in
+     by build-apk.sh. targetSdk 34: the window stays below the status bar (Android 15
+     forces edge-to-edge from targetSdk 35). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="io.github.thinsh0.twitchminer"
+    android:versionCode="VERSION_CODE"
+    android:versionName="VERSION_NAME">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:label="TwitchMiner"
+        android:icon="@mipmap/ic_launcher"
+        android:hasCode="false"
+        android:allowBackup="false">
+        <activity
+            android:name="android.app.NativeActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density">
+            <meta-data android:name="android.app.lib_name" android:value="twitchminer" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

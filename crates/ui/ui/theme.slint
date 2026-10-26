@@ -5,6 +5,9 @@ export enum ThemeMode { dark, light, oled }
 // Design tokens. Every colour of the interface comes from here.
 export global Theme {
     in-out property <ThemeMode> mode: ThemeMode.dark;
+    // Narrow window (phone): navigation at the bottom, tighter margins, stacked rows.
+    // Set by the main window from its width.
+    in-out property <bool> compact;
     out property <bool> is-light: mode == ThemeMode.light;
 
     // Surfaces

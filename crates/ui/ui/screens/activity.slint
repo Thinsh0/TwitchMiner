@@ -252,9 +252,12 @@ export component ActivityScreen inherits Page {
                 }
             }
         }
-        HorizontalLayout {
+        // One above the other on a compact layout.
+        GridLayout {
             spacing: 10px;
             Segmented {
+                row: 0;
+                col: 0;
                 horizontal-stretch: 1;
                 items: [{ label: @tr("Points") }, { label: @tr("Watched") }, { label: @tr("Drops") }];
                 selected: Bridge.chart-metric;
@@ -264,6 +267,8 @@ export component ActivityScreen inherits Page {
                 }
             }
             Segmented {
+                row: Theme.compact ? 1 : 0;
+                col: Theme.compact ? 0 : 1;
                 width: 240px;
                 items: [{ label: @tr("Per day") }, { label: @tr("Per channel") }];
                 selected: Bridge.chart-group;

@@ -76,7 +76,8 @@ export component LoginCard inherits Card {
     }
 }
 
-// One action card: icon, title, explanation, buttons on the right.
+// One action card: icon, title, explanation, buttons on the right (below the text on
+// a compact layout).
 export component ActionCard inherits Card {
     in property <image> icon: Icons.alert;
     in property <Tone> tone: Tone.warning;
@@ -85,9 +86,12 @@ export component ActionCard inherits Card {
     in property <bool> closable;
     callback close();
     inner-padding: 14px;
-    HorizontalLayout {
-        spacing: 12px;
+    GridLayout {
+        spacing-horizontal: 12px;
+        spacing-vertical: 10px;
         Rectangle {
+            row: 0;
+            col: 0;
             width: 34px;
             height: 34px;
             border-radius: Theme.radius-m;
@@ -98,6 +102,8 @@ export component ActionCard inherits Card {
             }
         }
         VerticalLayout {
+            row: 0;
+            col: 1;
             spacing: 3px;
             alignment: center;
             horizontal-stretch: 1;
@@ -112,8 +118,10 @@ export component ActionCard inherits Card {
             }
         }
         HorizontalLayout {
+            row: Theme.compact ? 1 : 0;
+            col: Theme.compact ? 1 : 2;
             spacing: 8px;
-            alignment: end;
+            alignment: Theme.compact ? start : end;
             VerticalLayout {
                 alignment: center;
                 HorizontalLayout {
@@ -121,13 +129,15 @@ export component ActionCard inherits Card {
                     @children
                 }
             }
-            if root.closable: VerticalLayout {
-                alignment: center;
-                IconButton {
-                    icon: Icons.x;
-                    tooltip: @tr("Dismiss");
-                    clicked => { root.close(); }
-                }
+        }
+        VerticalLayout {
+            row: 0;
+            col: 3;
+            alignment: Theme.compact ? start : center;
+            if root.closable: IconButton {
+                icon: Icons.x;
+                tooltip: @tr("Dismiss");
+                clicked => { root.close(); }
             }
         }
     }

@@ -17,14 +17,20 @@ serde_json.workspace = true
 chrono.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
-# unstable-winit-030: window attributes (open without stealing the focus).
-slint = { workspace = true, features = ["unstable-winit-030"] }
 open.workspace = true
 image.workspace = true
-arboard = { version = "3", default-features = false }
 reqwest.workspace = true
 # SHA-256 of downloaded updates (already used by rustls).
 ring = "0.17"
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+# unstable-winit-030: window attributes (open without stealing the focus).
+slint = { workspace = true, features = ["unstable-winit-030"] }
+arboard = { version = "3", default-features = false }
+
+# The Android launcher (`apps/android`) initialises this backend before `run`.
+[target.'cfg(target_os = "android")'.dependencies]
+slint = { workspace = true, features = ["backend-android-activity-06"] }
 
 [dev-dependencies]
 tm-modules.workspace = true

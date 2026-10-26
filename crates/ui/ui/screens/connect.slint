@@ -28,13 +28,14 @@ export component ConnectScreen inherits Rectangle {
                         alignment: center;
                         spacing: 2px;
                         Text {
-                            text: @tr("Where does the engine run?");
+                            text: Bridge.remote-only ? @tr("Connect to your TwitchMiner server") : @tr("Where does the engine run?");
                             font-size: Theme.font-xl;
+                            wrap: word-wrap;
                             font-weight: 700;
                             color: Theme.text;
                         }
                         Muted {
-                            text: @tr("The interface is the same in both cases.");
+                            text: Bridge.remote-only ? @tr("This app follows and controls a TwitchMiner running elsewhere (home server, PC).") : @tr("The interface is the same in both cases.");
                         }
                     }
                 }
@@ -61,7 +62,7 @@ export component ConnectScreen inherits Rectangle {
                     }
                 }
 
-                Card {
+                if !Bridge.remote-only: Card {
                     HorizontalLayout {
                         spacing: 12px;
                         Icon {
@@ -112,7 +113,8 @@ export component ConnectScreen inherits Rectangle {
                                 color: Theme.text;
                             }
                             Muted {
-                                text: @tr("Control a TwitchMiner running elsewhere (home server, another PC). Nothing is mined on this computer.");
+                                text: Bridge.remote-only ? @tr("Its address and API token. Nothing is mined on this device.")
+                                    : @tr("Control a TwitchMiner running elsewhere (home server, another PC). Nothing is mined on this computer.");
                             }
                         }
                     }
@@ -129,6 +131,10 @@ export component ConnectScreen inherits Rectangle {
                     }
                     Muted {
                         text: @tr("On the machine running the engine, the token is shown by: twitchminer api-token");
+                        color: Theme.text-faint;
+                    }
+                    Muted {
+                        text: @tr("With Docker: docker exec <container> twitchminer api-token. Over Tailscale, use http:// and the machine's name, e.g. http://my-server:7878");
                         color: Theme.text-faint;
                     }
                     HorizontalLayout {

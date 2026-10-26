@@ -64,12 +64,14 @@ jobs:
           fi
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
           cat > notes.md <<EOF
-          **Windows** : télécharger \`TwitchMiner-$TAG-windows.exe\`, le placer dans un dossier où il restera (par exemple \`C:\\Programmes\\TwitchMiner\\\`) et le lancer. Il s'ajoute au menu Démarrer et aux applications installées. Pour mettre à jour : quitter l'app (icône de la barre système › Quitter) et remplacer l'exe.
+          **Windows** : télécharger \`TwitchMiner-$TAG-windows.exe\`, le placer dans un dossier où il restera (par exemple \`C:\\Programmes\\TwitchMiner\\\`) et le lancer. Il s'ajoute au menu Démarrer et aux applications installées. Ensuite, l'app se met à jour seule (carte « Mettre à jour » dans À faire).
           L'archive \`.zip\` contient aussi le daemon en ligne de commande (\`twitchminer.exe\`).
 
           **Serveur (Docker, amd64 et arm64)** : \`docker run -d --name twitchminer --restart unless-stopped -v twitchminer:/data -p 7878:7878 $image:${TAG#v}\` (voir \`docs/SERVER.md\`).
 
-          **Linux** : \`x86_64-unknown-linux-gnu\` (app de bureau + daemon), \`x86_64-unknown-linux-musl\` et \`aarch64-unknown-linux-musl\` (daemon statique, sans dépendance). **Android** : voir \`docs/ANDROID.md\`.
+          **Android** : \`TwitchMiner-$TAG-android.apk\`, l'appli qui suit et pilote ton serveur TwitchMiner depuis le téléphone (Tailscale ou réseau local). L'installer en autorisant les sources inconnues (voir \`docs/ANDROID.md\`).
+
+          **Linux** : \`x86_64-unknown-linux-gnu\` (app de bureau + daemon), \`x86_64-unknown-linux-musl\` et \`aarch64-unknown-linux-musl\` (daemon statique, sans dépendance). Archives \`*-linux-android\` : moteur Android (daemon pour Termux, pont JNI).
           EOF
           gh release create "$TAG" --target "${{ steps.ci.outputs.sha }}" --title "TwitchMiner $TAG" --notes-file notes.md --generate-notes
       - name: download the CI binaries
@@ -82,6 +84,12 @@ jobs:
             name=twitchminer-$TAG-$target
             mkdir -p "$name"
             case $target in
+              android-apk)
+                # The Android application.
+                cp "$d/TwitchMiner.apk" "TwitchMiner-$TAG-android.apk"
+                rmdir "$name"
+                continue
+                ;;
               *windows*)
                 cp README.md "$d"/*.exe "$name/"
                 zip -qr "$name.zip" "$name"
@@ -101,10 +109,10 @@ jobs:
                 ;;
             esac
           done
-          ls -l ./*.zip ./*.tar.gz ./*.exe
+          ls -l ./*.zip ./*.tar.gz ./*.exe ./*.apk
       - name: upload
         shell: bash
-        run: gh release upload "$TAG" ./*.zip ./*.tar.gz ./*.exe --clobber
+        run: gh release upload "$TAG" ./*.zip ./*.tar.gz ./*.exe ./*.apk --clobber
 
       # Docker image from the static binaries: amd64 and arm64.
       - name: prepare the image

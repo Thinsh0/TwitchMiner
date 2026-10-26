@@ -84,13 +84,14 @@ component ChannelRow inherits Rectangle {
                     overflow: elide;
                     vertical-alignment: center;
                 }
+                // Icons only on a compact layout.
                 if root.item.priority: Pill {
-                    text: @tr("Prioritized");
+                    text: Theme.compact ? "" : @tr("Prioritized");
                     tone: Tone.accent;
                     icon: Icons.star;
                 }
                 if root.item.watching: Pill {
-                    text: @tr("Watched now");
+                    text: Theme.compact ? "" : @tr("Watched now");
                     tone: Tone.success;
                     icon: Icons.tv;
                 }
@@ -131,7 +132,9 @@ component ChannelRow inherits Rectangle {
                 }
             }
             Text {
-                text: root.item.session-points > 0 ? @tr("+{} this session", Fmt.int(root.item.session-points)) : @tr("points");
+                text: root.item.session-points > 0
+                    ? (Theme.compact ? "+" + Fmt.int(root.item.session-points) : @tr("+{} this session", Fmt.int(root.item.session-points)))
+                    : @tr("points");
                 font-size: Theme.font-xs;
                 color: root.item.session-points > 0 ? Theme.success : Theme.text-faint;
                 horizontal-alignment: right;

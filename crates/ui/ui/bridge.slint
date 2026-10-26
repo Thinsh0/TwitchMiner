@@ -408,6 +408,8 @@ export global Bridge {
     // Agent token of the local engine (empty with a remote engine).
     in property <string> agent-token;
     in property <bool> local-engine;
+    // No local engine on this device (phone): only a remote server.
+    in property <bool> remote-only;
     // API of the local engine: address it listens on (empty = off) and full token.
     in property <string> api-bind;
     // Why the local engine runs without its API (address busy or not available yet).

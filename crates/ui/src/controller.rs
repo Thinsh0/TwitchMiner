@@ -146,7 +146,7 @@ impl Controller {
         let c = self.clone();
         b.on_use_local(move || c.open(Target::Local, true));
         let c = self.clone();
-        b.on_show_setup(move || c.show_setup());
+        b.on_show_setup(move || c.show_setup(true));
         let weak = ui.as_weak();
         b.on_cancel_setup(move || {
             if let Some(ui) = weak.upgrade() {
@@ -437,12 +437,9 @@ impl Controller {
             })
         });
         let c = self.clone();
-        b.on_copy_text(move |text| {
-            let copied = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text.as_str()));
-            match copied {
-                Ok(()) => c.toast(ToastKind::Copied, Tone::Success, String::new()),
-                Err(e) => c.toast(ToastKind::Error, Tone::Danger, e.to_string()),
-            }
+        b.on_copy_text(move |text| match copy_to_clipboard(&text) {
+            Ok(()) => c.toast(ToastKind::Copied, Tone::Success, String::new()),
+            Err(e) => c.toast(ToastKind::Error, Tone::Danger, e.to_string()),
         });
         let c = self.clone();
         b.on_ignore_channel(move |login| {
@@ -665,14 +662,15 @@ impl Controller {
         });
     }
 
-    fn show_setup(&self) {
+    /// Asks which engine to use (`can_cancel`: a session is open to go back to).
+    pub(crate) fn show_setup(&self, can_cancel: bool) {
         let remote_url = LAST.with(|l| l.borrow().remote.as_ref().map(|(u, _)| u.clone()));
         self.on_ui(move |ui| {
             let b = ui.global::<Bridge>();
             b.set_setup_reason(SetupReason::None);
             b.set_setup_url(remote_url.unwrap_or_default().into());
             b.set_setup_token(SharedString::new());
-            b.set_setup_can_cancel(true);
+            b.set_setup_can_cancel(can_cancel);
             b.set_conn(Conn::Setup);
         });
     }
@@ -1613,9 +1611,24 @@ fn remove_toast(ui: &MainWindow, id: i32) {
     }
 }
 
+#[cfg(not(target_os = "android"))]
+fn copy_to_clipboard(text: &str) -> Result<(), String> {
+    arboard::Clipboard::new()
+        .and_then(|mut cb| cb.set_text(text))
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "android")]
+fn copy_to_clipboard(_text: &str) -> Result<(), String> {
+    Err("not available on this device".into())
+}
+
 fn open_url(url: &str) {
     // Only web links: never let a value from the state launch a local program.
     if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return;
+    }
+    if crate::platform::with(|p| p.open_url(url)) == Some(true) {
         return;
     }
     if let Err(e) = open::that_detached(url) {

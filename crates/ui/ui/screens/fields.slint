@@ -83,6 +83,9 @@ export component FieldRow inherits VerticalLayout {
         text: root.help;
     }
 
+    // The control on the right, or under the label on a compact layout (switches stay
+    // on the right).
+    property <bool> below: Theme.compact && (item.kind == "int" || item.kind == "number" || item.kind == "text" || item.kind == "enum");
     if root.item.kind != "group": HorizontalLayout {
         spacing: 14px;
         VerticalLayout {
@@ -115,7 +118,7 @@ export component FieldRow inherits VerticalLayout {
                 toggled(v) => { Bridge.setting-toggle(root.item.section, root.item.path, v); }
             }
         }
-        if root.item.kind == "int" || root.item.kind == "number": VerticalLayout {
+        if !root.below && (root.item.kind == "int" || root.item.kind == "number"): VerticalLayout {
             alignment: center;
             CommitField {
                 item: root.item;
@@ -124,7 +127,7 @@ export component FieldRow inherits VerticalLayout {
                 input-type: root.item.kind == "int" ? InputType.number : InputType.decimal;
             }
         }
-        if root.item.kind == "text": VerticalLayout {
+        if !root.below && root.item.kind == "text": VerticalLayout {
             alignment: center;
             CommitField {
                 item: root.item;
@@ -132,11 +135,30 @@ export component FieldRow inherits VerticalLayout {
                 height: 34px;
             }
         }
-        if root.item.kind == "enum": VerticalLayout {
+        if !root.below && root.item.kind == "enum": VerticalLayout {
             alignment: center;
             EnumChoice {
                 item: root.item;
             }
+        }
+    }
+    if root.below && (root.item.kind == "int" || root.item.kind == "number"): HorizontalLayout {
+        alignment: start;
+        CommitField {
+            item: root.item;
+            width: 120px;
+            height: 34px;
+            input-type: root.item.kind == "int" ? InputType.number : InputType.decimal;
+        }
+    }
+    if root.below && root.item.kind == "text": CommitField {
+        item: root.item;
+        height: 34px;
+    }
+    if root.below && root.item.kind == "enum": HorizontalLayout {
+        alignment: start;
+        EnumChoice {
+            item: root.item;
         }
     }
 

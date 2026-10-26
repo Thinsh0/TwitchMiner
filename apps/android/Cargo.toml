@@ -1,0 +1,21 @@
+[package]
+name = "twitchminer-android"
+description = "TwitchMiner Android application: the shared interface, connected to a remote engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# `libtwitchminer.so`, loaded by Android's NativeActivity (see `AndroidManifest.xml`).
+# Empty on other platforms.
+[lib]
+name = "twitchminer"
+crate-type = ["cdylib"]
+
+[target.'cfg(target_os = "android")'.dependencies]
+tm-ui.workspace = true
+tokio.workspace = true
+slint = { workspace = true, features = ["backend-android-activity-06"] }
+jni = { version = "0.21", default-features = false }
+tracing.workspace = true
+tracing-subscriber.workspace = true

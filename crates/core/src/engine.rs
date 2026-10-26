@@ -931,7 +931,7 @@ impl Engine {
 }
 
 /// `true` when `latest` (e.g. `v1.2.0`) is a higher version than `current`.
-fn is_newer(latest: &str, current: &str) -> bool {
+pub fn is_newer(latest: &str, current: &str) -> bool {
     fn parse(v: &str) -> Option<Vec<u64>> {
         let core = v.trim().trim_start_matches('v').split(['-', '+']).next()?;
         core.split('.').map(|p| p.parse().ok()).collect()

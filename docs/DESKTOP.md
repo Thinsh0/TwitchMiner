@@ -19,6 +19,17 @@ Un moteur distant déjà choisi qui ne répond pas au démarrage est gardé : l'
 
 Le **journal** (Réglages › Avancé) est celui du moteur, local ou distant.
 
+Si le serveur ne répond pas, l'écran de connexion dit pourquoi en clair : adresse en `https://` alors que le moteur ne parle que HTTP (écrire `http://`, Tailscale chiffre déjà), jeton refusé, rien n'écoute sur ce port (moteur arrêté, mauvais port), nom inconnu (faute de frappe, Tailscale/VPN pas connecté), pas de réponse. Une adresse tapée sans `http://` est acceptée.
+
+## Mises à jour
+
+L'app vérifie la dernière version publiée sur GitHub au démarrage puis toutes les 6 heures (sauf si « Vérifier les mises à jour » est coupé dans les réglages du moteur), et quand on clique « Rechercher des mises à jour » (Réglages › Avancé › À propos). Une nouvelle version ajoute une carte dans « À faire » :
+
+- **Windows** : « Mettre à jour » télécharge `TwitchMiner-vX.Y.Z-windows.exe`, vérifie sa taille et son empreinte SHA-256 (publiée par GitHub), remplace l'exe en place (l'ancien est renommé `.old` puis supprimé au démarrage suivant) et relance l'app (`--updated` : la nouvelle attend que l'ancienne soit fermée). Le dossier de l'exe doit être modifiable par l'utilisateur.
+- **Linux** : « Télécharger » ouvre la page de la version.
+
+Avec un moteur distant, l'avis « mise à jour » du moteur concerne le serveur : avec Docker, récupérer la nouvelle image (bouton *Update* de Dockge, ou `docker compose pull && docker compose up -d`). En local, le moteur fait partie de l'app : seule la carte de l'app est montrée.
+
 ## Bureau
 
 - **Barre système** : l'icône résume l'activité (chaînes regardées, drop en cours, pause, action requise). Clic gauche : ouvrir. Menu : ouvrir, pause / reprise, quitter.

@@ -5845,6 +5845,7 @@ dependencies = [
  "image",
  "open",
  "reqwest",
+ "ring",
  "schemars",
  "serde",
  "serde_json",

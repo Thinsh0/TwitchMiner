@@ -58,7 +58,10 @@ pub fn apply(ui: &MainWindow, input: &Input) {
             .into(),
     );
     let logins = logins(state);
-    let notices = notices(state);
+    // A local engine is this application: its own update card covers the notice.
+    let notices = notices(state, input.remote.is_none());
+    let app_update = bridge.get_update_info();
+    let app_update = usize::from(app_update.available && !app_update.dismissed);
     let plan_todos = account
         .map(|a| plan_todos(a, input.now))
         .unwrap_or_default();
@@ -70,7 +73,9 @@ pub fn apply(ui: &MainWindow, input: &Input) {
     } else {
         0
     };
-    bridge.set_todo_count((logins.len() + notices.len() + auth + plan_todos.len()) as i32);
+    bridge.set_todo_count(
+        (logins.len() + notices.len() + auth + plan_todos.len() + app_update) as i32,
+    );
     sync(bridge.get_plan_todos(), plan_todos, |m| {
         bridge.set_plan_todos(m)
     });
@@ -852,8 +857,12 @@ fn logins(state: &State) -> Vec<LoginItem> {
         .collect()
 }
 
-fn notices(state: &State) -> Vec<NoticeItem> {
-    let mut list: Vec<_> = state.notices.values().collect();
+fn notices(state: &State, local: bool) -> Vec<NoticeItem> {
+    let mut list: Vec<_> = state
+        .notices
+        .values()
+        .filter(|n| !(local && n.kind.as_deref() == Some("update")))
+        .collect();
     list.sort_by_key(|n| std::cmp::Reverse(n.at));
     list.into_iter()
         .map(|n| NoticeItem {

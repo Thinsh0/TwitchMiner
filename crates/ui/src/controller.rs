@@ -22,8 +22,10 @@ use crate::prefs::{self, Prefs, RemotePrefs};
 use crate::present::{self, Input, Last, Today};
 use crate::session::{self, LocalInfo, OpenError, Session, Target};
 use crate::settings;
+use crate::update;
 use crate::{
     Bridge, Conn, Fault, LogItem, MainWindow, SetupReason, ToastItem, ToastKind, Tone, UpdateInfo,
+    UpdatePhase,
 };
 
 thread_local! {
@@ -95,6 +97,8 @@ struct Inner {
     activity: AtomicU64,
     /// Last refresh caused by the window coming back (see `wake`).
     woke: Mutex<Option<std::time::Instant>>,
+    /// Newer release of the application found by the last check.
+    release: Mutex<Option<update::Release>>,
 }
 
 impl Controller {
@@ -112,6 +116,7 @@ impl Controller {
             activity: AtomicU64::new(0),
             // The engine refreshes by itself at start.
             woke: Mutex::new(Some(std::time::Instant::now())),
+            release: Mutex::new(None),
         }))
     }
 
@@ -397,19 +402,16 @@ impl Controller {
         });
         let c = self.clone();
         b.on_update_check(move || {
-            let me = c.clone();
-            c.run(Command::UpdateCheck, move |r| {
-                if let Ok(v) = r {
-                    let info = UpdateInfo {
-                        checked: true,
-                        available: v["update_available"].as_bool().unwrap_or_default(),
-                        latest: v["latest"].as_str().unwrap_or_default().into(),
-                        url: v["url"].as_str().unwrap_or_default().into(),
-                    };
-                    me.on_ui(move |ui| ui.global::<Bridge>().set_update_info(info));
-                }
-            })
+            c.check_app_update(true);
+            // A remote engine checks its own version (its notice is about the server).
+            if LAST.with(|l| l.borrow().remote.is_some()) {
+                c.run(Command::UpdateCheck, |_| {});
+            }
         });
+        let c = self.clone();
+        b.on_update_install(move || c.install_update());
+        let c = self.clone();
+        b.on_update_dismiss(move || c.set_update(|u| u.dismissed = true));
         let c = self.clone();
         b.on_manifest_refresh(move || {
             let me = c.clone();
@@ -1157,6 +1159,146 @@ impl Controller {
         }
         self.module_call("drops", "refresh", Value::Null, |_| {});
         self.tick();
+    }
+
+    /// Checks for a newer application at start, then every few hours (unless update
+    /// checks are turned off in the engine settings).
+    pub fn start_update_checks(&self) {
+        let me = self.clone();
+        self.0.rt.spawn(async move {
+            // Lets the engine state (and its settings) arrive first.
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            loop {
+                me.check_app_update(false);
+                tokio::time::sleep(update::CHECK_EVERY).await;
+            }
+        });
+    }
+
+    /// Looks for a newer release of the application (`manual`: asked from the view,
+    /// which also reports failures).
+    fn check_app_update(&self, manual: bool) {
+        let me = self.clone();
+        self.on_ui(move |_| {
+            let enabled = LAST.with(|l| {
+                tm_core::settings::EngineSettings::from_state(&l.borrow().state).update_check
+            });
+            if !manual && !enabled {
+                return;
+            }
+            let installs = crate::platform::with(|p| p.installs_updates()).unwrap_or(false);
+            let rt = me.0.rt.clone();
+            rt.spawn(async move {
+                match update::check(installs).await {
+                    Ok(release) => {
+                        *me.0.release.lock().expect("release lock") = release.clone();
+                        me.set_update(move |u| {
+                            let version: SharedString = release
+                                .as_ref()
+                                .map(|r| r.version.as_str())
+                                .unwrap_or_default()
+                                .into();
+                            if u.latest != version {
+                                u.dismissed = false;
+                            }
+                            u.checked = true;
+                            u.available = release.is_some();
+                            u.latest = version;
+                            u.url = release
+                                .as_ref()
+                                .map(|r| r.page.as_str())
+                                .unwrap_or_default()
+                                .into();
+                            u.can_install = release.is_some_and(|r| r.asset.is_some());
+                        });
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %format!("{e:#}"), "update check failed");
+                        if manual {
+                            me.toast(ToastKind::Error, Tone::Danger, format!("{e:#}"));
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    /// Downloads the release found by the last check, replaces the executable and
+    /// restarts the application.
+    fn install_update(&self) {
+        let Some(asset) = self
+            .0
+            .release
+            .lock()
+            .expect("release lock")
+            .as_ref()
+            .and_then(|r| r.asset.clone())
+        else {
+            return;
+        };
+        self.set_update(|u| {
+            u.phase = UpdatePhase::Downloading;
+            u.progress = 0.0;
+            u.error = SharedString::new();
+        });
+        let me = self.clone();
+        self.0.rt.spawn(async move {
+            let shown = AtomicU64::new(0);
+            let progress = |f: f32| {
+                let pct = (f.clamp(0.0, 1.0) * 100.0) as u64;
+                if shown.swap(pct, AtomicOrdering::Relaxed) != pct {
+                    me.set_update(move |u| u.progress = pct as f32 / 100.0);
+                }
+            };
+            let installed = match update::download(&asset, progress).await {
+                Ok(new) => {
+                    me.set_update(|u| u.phase = UpdatePhase::Installing);
+                    tokio::task::spawn_blocking(move || update::install(&new))
+                        .await
+                        .map_err(anyhow::Error::from)
+                        .and_then(|r| r)
+                }
+                Err(e) => Err(e),
+            };
+            match installed {
+                Ok(exe) => me.on_ui(move |ui| {
+                    let restarted = crate::platform::with(|p| p.restart(&exe))
+                        .unwrap_or_else(|| Err("not supported".into()));
+                    match restarted {
+                        Ok(()) => {
+                            let _ = slint::quit_event_loop();
+                        }
+                        Err(e) => {
+                            let b = ui.global::<Bridge>();
+                            let mut u = b.get_update_info();
+                            u.phase = UpdatePhase::Failed;
+                            u.error = format!("restart TwitchMiner to finish ({e})").into();
+                            b.set_update_info(u);
+                        }
+                    }
+                }),
+                Err(e) => {
+                    let e = format!("{e:#}");
+                    tracing::warn!(error = %e, "update failed");
+                    me.set_update(move |u| {
+                        u.phase = UpdatePhase::Failed;
+                        u.error = e.into();
+                    });
+                }
+            }
+        });
+    }
+
+    /// Changes the application update shown by the views.
+    fn set_update(&self, f: impl FnOnce(&mut UpdateInfo) + Send + 'static) {
+        self.on_ui(move |ui| {
+            let b = ui.global::<Bridge>();
+            let mut u = b.get_update_info();
+            f(&mut u);
+            b.set_update_info(u);
+            // The "À faire" count includes its card.
+            render(ui);
+        });
     }
 
     /// Periodic refresh of query-based views; keeps extra history pages.

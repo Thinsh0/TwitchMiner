@@ -34,6 +34,19 @@ pub fn acquire() -> Instance {
     acquire_on(port())
 }
 
+/// Like [`acquire`], once the previous version (which started this one) has exited:
+/// asking it to show its window would end this launch.
+pub fn acquire_after_update() -> Instance {
+    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port()));
+    for _ in 0..60 {
+        if let Ok(listener) = TcpListener::bind(addr) {
+            return Instance::First(Some(listener));
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    acquire()
+}
+
 fn acquire_on(port: u16) -> Instance {
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     if let Ok(listener) = TcpListener::bind(addr) {

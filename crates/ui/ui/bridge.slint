@@ -281,11 +281,24 @@ export struct LogItem {
     message: string,
 }
 
+export enum UpdatePhase { idle, downloading, installing, failed }
+
+// Update of the application itself (`update.rs`); `checked`: a check answered.
 export struct UpdateInfo {
     checked: bool,
     available: bool,
     latest: string,
+    // Release page.
     url: string,
+    // This platform downloads and installs it by itself (otherwise: open the page).
+    can-install: bool,
+    phase: UpdatePhase,
+    // 0..1 while downloading.
+    progress: float,
+    // Why the last installation failed.
+    error: string,
+    // Its card was dismissed (the About section still offers it).
+    dismissed: bool,
 }
 
 export struct GameItem {
@@ -413,7 +426,9 @@ export global Bridge {
     // Development (screenshots): unfold every folded section at start.
     in property <bool> dev-expand;
 
+    // Engine version (the server's with a remote engine), and this application's.
     in property <string> version;
+    in property <string> app-version;
     in property <int> manifest-revision;
 
     // Ephemeral feedback (command errors, confirmations)
@@ -474,6 +489,9 @@ export global Bridge {
     // Serve the local engine's API (on, address); restarts the local engine.
     callback set-api(bool, string);
     callback update-check();
+    // Downloads and installs `update-info.latest`, then restarts.
+    callback update-install();
+    callback update-dismiss();
     callback manifest-refresh();
     callback backup();
     callback copy-text(string);

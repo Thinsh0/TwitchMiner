@@ -1285,3 +1285,33 @@ msgstr "pas de réponse. Vérifie que le serveur est allumé et joignable depuis
 
 msgid "invalid address. Example: http://192.168.1.10:7878"
 msgstr "adresse invalide. Exemple : http://192.168.1.10:7878"
+
+msgid "Application {} · server {}"
+msgstr "Application {} · serveur {}"
+
+msgid "Downloading… {}%"
+msgstr "Téléchargement… {} %"
+
+msgid "Installing, TwitchMiner restarts…"
+msgstr "Installation, TwitchMiner redémarre…"
+
+msgid "It runs version {}. With Docker, pull the new image (in Dockge: Update); otherwise replace its executable."
+msgstr "Il est en version {}. Avec Docker, récupère la nouvelle image (dans Dockge : Update) ; sinon remplace son exécutable."
+
+msgid "The server can be updated to TwitchMiner {}"
+msgstr "Le serveur peut passer à TwitchMiner {}"
+
+msgid "The update failed: {}"
+msgstr "La mise à jour a échoué : {}"
+
+msgid "Try again"
+msgstr "Réessayer"
+
+msgid "Update now"
+msgstr "Mettre à jour"
+
+msgid "What's new"
+msgstr "Nouveautés"
+
+msgid "You have version {}. The update takes a few seconds; TwitchMiner restarts by itself."
+msgstr "Tu as la version {}. La mise à jour prend quelques secondes ; TwitchMiner redémarre tout seul."

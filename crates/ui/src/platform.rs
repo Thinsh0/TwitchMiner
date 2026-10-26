@@ -29,6 +29,15 @@ pub trait Platform {
     fn keeps_running(&self) -> bool {
         false
     }
+    /// The application can replace its executable and start it again (`restart`).
+    fn installs_updates(&self) -> bool {
+        false
+    }
+    /// Starts `exe`, just updated; the application quits right after. The new process
+    /// must wait for this one to be gone (single instance, local engine database).
+    fn restart(&self, _exe: &std::path::Path) -> Result<(), String> {
+        Err("not supported".into())
+    }
 }
 
 /// No integration (plain window).

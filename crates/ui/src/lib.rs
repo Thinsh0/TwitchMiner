@@ -22,6 +22,7 @@ mod prefs;
 mod present;
 mod session;
 mod settings;
+mod update;
 
 use std::path::PathBuf;
 
@@ -97,6 +98,10 @@ pub fn run(
         })
     });
     ctrl.open(target.unwrap_or(Target::Local), false);
+    update::cleanup();
+    ui.global::<Bridge>()
+        .set_app_version(update::CURRENT.into());
+    ctrl.start_update_checks();
     // Coming back to the window (Alt+Tab, click) refreshes what is not live.
     {
         use slint::winit_030::{EventResult, WinitWindowAccessor, winit::event::WindowEvent};

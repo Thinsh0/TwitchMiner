@@ -1,6 +1,6 @@
 import { AboutSlint, ListView } from "std-widgets.slint";
 import { Theme, ThemeMode } from "../theme.slint";
-import { Bridge, AccountItem, FieldItem, LinkState, Screen, HourWindow } from "../bridge.slint";
+import { Bridge, AccountItem, FieldItem, LinkState, Screen, HourWindow, UpdatePhase } from "../bridge.slint";
 import { Avatar, Button, ButtonKind, Card, Icon, IconButton, Icons, Muted, Page, Pill, Segmented, SegmentItem, TextField, Toggle, Tone } from "../widgets.slint";
 import { FieldList } from "fields.slint";
 import { SettingText } from "setting_text.slint";
@@ -720,10 +720,13 @@ export component SettingsScreen inherits Page {
             text: @tr("About");
         }
         Muted {
-            text: "TwitchMiner " + Bridge.version + " · " + @tr("Twitch identifiers revision {}", Bridge.manifest-revision);
+            text: (Bridge.link == LinkState.local ? "TwitchMiner " + Bridge.app-version
+                : @tr("Application {} · server {}", Bridge.app-version, Bridge.version))
+                + " · " + @tr("Twitch identifiers revision {}", Bridge.manifest-revision);
         }
         if Bridge.update-info.checked: Muted {
-            text: Bridge.update-info.available ? @tr("Version {} is available.", Bridge.update-info.latest) : @tr("TwitchMiner is up to date.");
+            text: Bridge.update-info.phase == UpdatePhase.failed ? @tr("The update failed: {}", Bridge.update-info.error)
+                : Bridge.update-info.available ? @tr("Version {} is available.", Bridge.update-info.latest) : @tr("TwitchMiner is up to date.");
         }
         HorizontalLayout {
             spacing: 8px;
@@ -734,7 +737,15 @@ export component SettingsScreen inherits Page {
                 text: @tr("Check for updates");
                 clicked => { Bridge.update-check(); }
             }
-            if Bridge.update-info.available && Bridge.update-info.url != "": Button {
+            if Bridge.update-info.available && Bridge.update-info.can-install: Button {
+                compact: true;
+                kind: ButtonKind.primary;
+                icon: Icons.download;
+                text: @tr("Update now");
+                busy: Bridge.update-info.phase == UpdatePhase.downloading || Bridge.update-info.phase == UpdatePhase.installing;
+                clicked => { Bridge.update-install(); }
+            }
+            if Bridge.update-info.available && !Bridge.update-info.can-install && Bridge.update-info.url != "": Button {
                 compact: true;
                 kind: ButtonKind.primary;
                 icon: Icons.external;

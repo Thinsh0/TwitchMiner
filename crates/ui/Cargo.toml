@@ -23,6 +23,8 @@ open.workspace = true
 image.workspace = true
 arboard = { version = "3", default-features = false }
 reqwest.workspace = true
+# SHA-256 of downloaded updates (already used by rustls).
+ring = "0.17"
 
 [dev-dependencies]
 tm-modules.workspace = true

@@ -13,6 +13,8 @@ use tm_ui::{AppHandle, Notification, Platform, Status};
 
 /// Argument used when starting with the session: start hidden in the tray.
 const BACKGROUND: &str = "--background";
+/// Argument of the first start after an update: wait for the previous version to exit.
+const UPDATED: &str = "--updated";
 
 struct Desktop {
     tray: Option<tray::Tray>,
@@ -63,6 +65,19 @@ impl Platform for Desktop {
         // Without a tray icon, a hidden window could not be brought back.
         self.tray.is_some()
     }
+
+    fn installs_updates(&self) -> bool {
+        // Linux installs come from archives or packages: the release page is offered.
+        cfg!(windows)
+    }
+
+    fn restart(&self, exe: &std::path::Path) -> Result<(), String> {
+        std::process::Command::new(exe)
+            .arg(UPDATED)
+            .spawn()
+            .map(drop)
+            .map_err(|e| e.to_string())
+    }
 }
 
 fn autostart() -> anyhow::Result<auto_launch::AutoLaunch> {
@@ -86,7 +101,12 @@ fn main() -> anyhow::Result<()> {
     let listener = if dev_snapshot {
         None
     } else {
-        match instance::acquire() {
+        let updated = std::env::args().any(|a| a == UPDATED);
+        match if updated {
+            instance::acquire_after_update()
+        } else {
+            instance::acquire()
+        } {
             instance::Instance::Other => return Ok(()),
             instance::Instance::First(listener) => listener,
         }

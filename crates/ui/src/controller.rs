@@ -23,7 +23,7 @@ use crate::present::{self, Input, Last, Today};
 use crate::session::{self, LocalInfo, OpenError, Session, Target};
 use crate::settings;
 use crate::{
-    Bridge, Conn, LogItem, MainWindow, SetupReason, ToastItem, ToastKind, Tone, UpdateInfo,
+    Bridge, Conn, Fault, LogItem, MainWindow, SetupReason, ToastItem, ToastKind, Tone, UpdateInfo,
 };
 
 thread_local! {
@@ -132,7 +132,7 @@ impl Controller {
         b.on_connect_remote(move |url, token| {
             c.open(
                 Target::Remote {
-                    url: url.trim().trim_end_matches('/').to_string(),
+                    url: tm_client::normalize_url(&url),
                     token: token.trim().to_string(),
                 },
                 true,
@@ -628,9 +628,10 @@ impl Controller {
                 }
                 Err(e) => {
                     let has_session = inner.session.lock().await.is_some();
-                    let (reason, detail, url, token) = match e {
+                    let (reason, fault, detail, url, token) = match e {
                         OpenError::Busy { pid } => (
                             SetupReason::Busy,
+                            Fault::None,
                             pid,
                             session::LOCAL_DAEMON_URL.to_string(),
                             session::local_daemon_token(inner.data_dir.clone())
@@ -642,13 +643,15 @@ impl Controller {
                                 Target::Remote { url, token } => (url.clone(), token.clone()),
                                 Target::Local | Target::Demo => Default::default(),
                             };
-                            (SetupReason::Failed, msg, url, token)
+                            let fault = present::fault(&url, &msg);
+                            (SetupReason::Failed, fault, msg, url, token)
                         }
                     };
                     me.on_ui(move |ui| {
                         let b = ui.global::<Bridge>();
                         b.set_connecting(false);
                         b.set_setup_reason(reason);
+                        b.set_setup_fault(fault);
                         b.set_setup_detail(detail.into());
                         b.set_setup_url(url.into());
                         b.set_setup_token(token.into());

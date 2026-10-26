@@ -2,6 +2,7 @@
 
 import { Theme } from "../theme.slint";
 import { Bridge, SetupReason } from "../bridge.slint";
+import { Fmt } from "../fmt.slint";
 import { Button, ButtonKind, Card, Icon, Icons, Muted, TextField, Tone, Tones } from "../widgets.slint";
 
 export component ConnectScreen inherits Rectangle {
@@ -51,7 +52,7 @@ export component ConnectScreen inherits Rectangle {
                         Text {
                             text: Bridge.setup-reason == SetupReason.busy
                                 ? @tr("TwitchMiner is already running on this computer. Connect to it as a remote server: the address and token are pre-filled.")
-                                : @tr("Could not reach the engine: {}", Bridge.setup-detail);
+                                : @tr("Could not reach the engine: {}", Fmt.fault(Bridge.setup-fault, Bridge.setup-detail));
                             color: Theme.text;
                             wrap: word-wrap;
                             horizontal-stretch: 1;

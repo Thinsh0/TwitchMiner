@@ -14,6 +14,9 @@ export enum LinkState { local, connected, connecting, down }
 // Why the "choose an engine" screen is shown.
 export enum SetupReason { none, busy, failed }
 
+// Why a remote engine is unreachable (`tm_client::Fault`); `other` shows the raw error.
+export enum Fault { none, not-https, bad-token, refused, unknown-host, no-answer, bad-url, other }
+
 export enum ToastKind { plain, error, login-ok, claimed, invalid, copied, backup, manifest, drop-claimed, api-off, unreachable, timeout }
 
 export struct AccountItem {
@@ -300,11 +303,14 @@ export global Bridge {
     // Connection to the engine
     in property <Conn> conn: Conn.starting;
     in property <LinkState> link: LinkState.local;
-    // Remote URL, or the reason of the last disconnection.
+    // Remote URL; when the link is down, why (`link-error`: the raw error).
     in property <string> link-detail;
-    // Setup screen: why it is shown (`setup-detail`: pid or error), pre-filled fields.
+    in property <Fault> link-fault;
+    in property <string> link-error;
+    // Setup screen: why it is shown (`setup-detail`: pid or raw error), pre-filled fields.
     in property <SetupReason> setup-reason;
     in property <string> setup-detail;
+    in property <Fault> setup-fault;
     in property <string> setup-url;
     in property <string> setup-token;
     in property <bool> setup-can-cancel;

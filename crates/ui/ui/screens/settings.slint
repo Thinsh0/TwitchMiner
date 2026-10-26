@@ -4,6 +4,7 @@ import { Bridge, AccountItem, FieldItem, LinkState, Screen, HourWindow } from ".
 import { Avatar, Button, ButtonKind, Card, Icon, IconButton, Icons, Muted, Page, Pill, Segmented, SegmentItem, TextField, Toggle, Tone } from "../widgets.slint";
 import { FieldList } from "fields.slint";
 import { SettingText } from "setting_text.slint";
+import { Fmt } from "../fmt.slint";
 
 export global Labels {
     pure public function account-status(s: string) -> string {
@@ -636,7 +637,7 @@ export component SettingsScreen inherits Page {
             label: Bridge.link == LinkState.local ? @tr("On this computer") : @tr("Remote server");
             help: Bridge.link == LinkState.local
                 ? @tr("The engine runs inside this application.")
-                : Bridge.link-detail;
+                : Fmt.link-detail();
             Button {
                 compact: true;
                 icon: Icons.server;

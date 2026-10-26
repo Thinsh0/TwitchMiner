@@ -28,6 +28,9 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_util::sync::CancellationToken;
 
+mod fault;
+pub use fault::{Fault, diagnose, normalize_url};
+
 /// Connection status of a backend (always `Connected` for a local engine).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Link {
@@ -175,13 +178,15 @@ pub struct Remote {
 }
 
 impl Remote {
-    /// `base_url` like `http://192.168.1.10:7878`. Returns once the first snapshot arrived
-    /// (or after 10 s, in which case the mirror fills in when the daemon becomes reachable).
+    /// `base_url` like `http://192.168.1.10:7878` (`http://` may be left out). Returns once
+    /// the first snapshot arrived (or after 10 s, in which case the mirror fills in when the
+    /// daemon becomes reachable). [`diagnose`] explains a `Link::Disconnected` reason.
     pub async fn connect(base_url: &str, token: &str) -> Result<Self, ApiError> {
         tm_twitch::tls::install_crypto_provider();
+        let base_url = normalize_url(base_url);
         let ws_url = format!(
             "{}/api/v1/ws?token={token}",
-            base_url.trim_end_matches('/').replacen("http", "ws", 1)
+            base_url.replacen("http", "ws", 1)
         );
         let (state_tx, state) = watch::channel(Arc::new(State::default()));
         let (events, _) = broadcast::channel(1024);
@@ -218,7 +223,7 @@ impl Remote {
             .build()
             .map_err(|e| ApiError::new("internal", e.to_string()))?;
         Ok(Self {
-            base_url: base_url.trim_end_matches('/').to_string(),
+            base_url,
             token: token.to_string(),
             http,
             state,

@@ -14,9 +14,9 @@ use tm_core::state::{Account, AccountStatus, Level};
 
 use crate::images;
 use crate::{
-    AccountItem, Bridge, ChannelItem, DropItem, DropLine, GameItem, Idle, LinkState, LoginItem,
-    MainWindow, NoticeItem, PlanRow, PlanTodo, PredictionSummary, RewardItem, TodayItem, WatchItem,
-    When,
+    AccountItem, Bridge, ChannelItem, DropItem, DropLine, Fault, GameItem, Idle, LinkState,
+    LoginItem, MainWindow, NoticeItem, PlanRow, PlanTodo, PredictionSummary, RewardItem, TodayItem,
+    WatchItem, When,
 };
 
 /// What the projection needs besides the state.
@@ -89,16 +89,34 @@ pub fn apply(ui: &MainWindow, input: &Input) {
         None => {
             bridge.set_link(LinkState::Local);
             bridge.set_link_detail(SharedString::new());
+            bridge.set_link_fault(Fault::None);
         }
         Some((url, link)) => {
-            let (l, detail) = match link {
-                Link::Connected => (LinkState::Connected, url.to_string()),
-                Link::Connecting => (LinkState::Connecting, url.to_string()),
-                Link::Disconnected(reason) => (LinkState::Down, format!("{url} · {reason}")),
+            let (l, fault, error) = match link {
+                Link::Connected => (LinkState::Connected, Fault::None, ""),
+                Link::Connecting => (LinkState::Connecting, Fault::None, ""),
+                Link::Disconnected(reason) => {
+                    (LinkState::Down, fault(url, reason), reason.as_str())
+                }
             };
             bridge.set_link(l);
-            bridge.set_link_detail(detail.into());
+            bridge.set_link_detail(url.into());
+            bridge.set_link_fault(fault);
+            bridge.set_link_error(error.into());
         }
+    }
+}
+
+/// Why the remote engine at `url` is unreachable, for the translated explanation.
+pub fn fault(url: &str, reason: &str) -> Fault {
+    match tm_client::diagnose(url, reason) {
+        tm_client::Fault::NotHttps => Fault::NotHttps,
+        tm_client::Fault::BadToken => Fault::BadToken,
+        tm_client::Fault::Refused => Fault::Refused,
+        tm_client::Fault::UnknownHost => Fault::UnknownHost,
+        tm_client::Fault::NoAnswer => Fault::NoAnswer,
+        tm_client::Fault::BadUrl => Fault::BadUrl,
+        tm_client::Fault::Other => Fault::Other,
     }
 }
 

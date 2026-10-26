@@ -1267,3 +1267,21 @@ msgstr "Les réglages du moteur n'ont pas encore pu être chargés ({}). Nouvel 
 
 msgid "Remote engine: the times are those of the machine running it."
 msgstr "Moteur distant : les heures sont celles de la machine qui le fait tourner."
+
+msgid "this server does not use HTTPS: write the address with http:// (Tailscale already encrypts the connection)"
+msgstr "ce serveur n'utilise pas HTTPS : écris l'adresse avec http:// (Tailscale chiffre déjà la connexion)"
+
+msgid "the token was refused. Copy it again from the server: twitchminer api-token"
+msgstr "le jeton a été refusé. Recopie-le depuis le serveur : twitchminer api-token"
+
+msgid "nothing answers on this port. Is the engine running, and is the port right (7878 by default)?"
+msgstr "rien ne répond sur ce port. Le moteur tourne-t-il, et le port est-il le bon (7878 par défaut) ?"
+
+msgid "unknown address. Check the name, and that Tailscale (or your VPN) is connected on this device."
+msgstr "adresse inconnue. Vérifie le nom, et que Tailscale (ou ton VPN) est connecté sur cet appareil."
+
+msgid "no answer. Check that the server is on and reachable from this network (Tailscale connected?)."
+msgstr "pas de réponse. Vérifie que le serveur est allumé et joignable depuis ce réseau (Tailscale connecté ?)."
+
+msgid "invalid address. Example: http://192.168.1.10:7878"
+msgstr "adresse invalide. Exemple : http://192.168.1.10:7878"

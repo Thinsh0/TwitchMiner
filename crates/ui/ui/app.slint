@@ -2,6 +2,7 @@ import { Palette } from "std-widgets.slint";
 import { Theme, ThemeMode } from "theme.slint";
 import { Bridge, Conn, LinkState, Screen, AccountItem, ToastItem, ToastKind } from "bridge.slint";
 import { Avatar, Button, Dot, Icon, IconButton, Icons, Muted, Tone, Tones } from "widgets.slint";
+import { Fmt } from "fmt.slint";
 import { HomeScreen } from "screens/home.slint";
 import { SettingsScreen } from "screens/settings.slint";
 import { ConnectScreen } from "screens/connect.slint";
@@ -121,7 +122,7 @@ component LinkIndicator inherits Rectangle {
                 overflow: elide;
             }
             if Bridge.link != LinkState.local: Text {
-                text: Bridge.link-detail;
+                text: Fmt.link-detail();
                 font-size: Theme.font-xs;
                 color: Theme.text-faint;
                 overflow: elide;

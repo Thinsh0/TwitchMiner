@@ -1,6 +1,6 @@
 // Number and duration formatting, in the interface language.
 
-import { Bridge } from "bridge.slint";
+import { Bridge, Fault, LinkState } from "bridge.slint";
 
 export global Fmt {
     // 45 min · 2 h 05 min · 3 d 4 h
@@ -18,6 +18,24 @@ export global Fmt {
             return @tr("{} d", floor(m / 1440));
         }
         return @tr("{} d {} h", floor(m / 1440), floor(mod(m, 1440) / 60));
+    }
+
+    // What to do about an unreachable remote engine.
+    pure public function fault(f: Fault, raw: string) -> string {
+        return f == Fault.not-https ? @tr("this server does not use HTTPS: write the address with http:// (Tailscale already encrypts the connection)")
+            : f == Fault.bad-token ? @tr("the token was refused. Copy it again from the server: twitchminer api-token")
+            : f == Fault.refused ? @tr("nothing answers on this port. Is the engine running, and is the port right (7878 by default)?")
+            : f == Fault.unknown-host ? @tr("unknown address. Check the name, and that Tailscale (or your VPN) is connected on this device.")
+            : f == Fault.no-answer ? @tr("no answer. Check that the server is on and reachable from this network (Tailscale connected?).")
+            : f == Fault.bad-url ? @tr("invalid address. Example: http://192.168.1.10:7878")
+            : raw;
+    }
+
+    // Remote URL, followed by the reason when the link is down.
+    pure public function link-detail() -> string {
+        return Bridge.link == LinkState.down && Bridge.link-fault != Fault.none
+            ? Bridge.link-detail + " · " + fault(Bridge.link-fault, Bridge.link-error)
+            : Bridge.link-detail;
     }
 
     // 12 345 (French) · 12,345 (English)

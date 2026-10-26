@@ -347,7 +347,7 @@ component TabItem inherits Rectangle {
 
 component BottomNav inherits Rectangle {
     height: 64px;
-    background: Theme.is-light ? #ffffff : Theme.mode == ThemeMode.oled ? #000000 : #14121b;
+    background: Theme.bar;
     Rectangle {
         y: 0;
         height: 1px;
@@ -387,7 +387,7 @@ component BottomNav inherits Rectangle {
 
 // Compact layout: logo, account picker and link state above the screens.
 component TopBar inherits Rectangle {
-    background: Theme.is-light ? #ffffff : Theme.mode == ThemeMode.oled ? #000000 : #14121b;
+    background: Theme.bar;
     property <color> dot: Bridge.link == LinkState.local || Bridge.link == LinkState.connected ? Theme.success
         : Bridge.link == LinkState.connecting ? Theme.warning : Theme.danger;
     Rectangle {
@@ -538,25 +538,33 @@ export component MainWindow inherits Window {
         background: Theme.bg-glow;
     }
 
-    if Bridge.conn == Conn.starting: Starting { }
-    if Bridge.conn == Conn.setup: ConnectScreen { }
-    if Bridge.conn == Conn.ready && Theme.compact: VerticalLayout {
-        TopBar { }
-        if Bridge.link == LinkState.down: LinkBanner { }
-        Rectangle {
-            vertical-stretch: 1;
-            if Bridge.screen == Screen.home: HomeScreen { }
-            if Bridge.screen == Screen.drops: DropsScreen { }
-            if Bridge.screen == Screen.channels: ChannelsScreen { }
-            if Bridge.screen == Screen.activity: ActivityScreen { }
-            if Bridge.screen == Screen.settings: SettingsScreen { }
-        }
-        BottomNav { }
+    // On a phone the window extends under the status bar and the navigation bar
+    // (`safe-area-insets`), and the on-screen keyboard covers its bottom: the content
+    // stays in between, the bars' colour fills the edges.
+    property <length> inset-top: self.safe-area-insets.top;
+    property <length> inset-bottom: max(self.safe-area-insets.bottom, self.virtual-keyboard-size.height);
+    property <bool> bars: Bridge.conn == Conn.ready && Theme.compact;
+    if root.bars: Rectangle {
+        y: 0;
+        height: root.inset-top;
+        background: Theme.bar;
     }
-    if Bridge.conn == Conn.ready && !Theme.compact: HorizontalLayout {
-        Sidebar { }
-        VerticalLayout {
-            horizontal-stretch: 1;
+    if root.bars: Rectangle {
+        y: root.height - root.inset-bottom;
+        height: root.inset-bottom;
+        background: Theme.bar;
+    }
+
+    Rectangle {
+        x: root.safe-area-insets.left;
+        y: root.inset-top;
+        width: root.width - root.safe-area-insets.left - root.safe-area-insets.right;
+        height: root.height - root.inset-top - root.inset-bottom;
+
+        if Bridge.conn == Conn.starting: Starting { }
+        if Bridge.conn == Conn.setup: ConnectScreen { }
+        if Bridge.conn == Conn.ready && Theme.compact: VerticalLayout {
+            TopBar { }
             if Bridge.link == LinkState.down: LinkBanner { }
             Rectangle {
                 vertical-stretch: 1;
@@ -566,12 +574,28 @@ export component MainWindow inherits Window {
                 if Bridge.screen == Screen.activity: ActivityScreen { }
                 if Bridge.screen == Screen.settings: SettingsScreen { }
             }
+            BottomNav { }
         }
-    }
+        if Bridge.conn == Conn.ready && !Theme.compact: HorizontalLayout {
+            Sidebar { }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                if Bridge.link == LinkState.down: LinkBanner { }
+                Rectangle {
+                    vertical-stretch: 1;
+                    if Bridge.screen == Screen.home: HomeScreen { }
+                    if Bridge.screen == Screen.drops: DropsScreen { }
+                    if Bridge.screen == Screen.channels: ChannelsScreen { }
+                    if Bridge.screen == Screen.activity: ActivityScreen { }
+                    if Bridge.screen == Screen.settings: SettingsScreen { }
+                }
+            }
+        }
 
-    Toasts {
-        x: Theme.compact ? 12px : parent.width - self.width - 20px;
-        y: parent.height - self.height - (Theme.compact ? 76px : 20px);
-        width: Theme.compact ? parent.width - 24px : 360px;
+        Toasts {
+            x: Theme.compact ? 12px : parent.width - self.width - 20px;
+            y: parent.height - self.height - (Theme.compact ? 76px : 20px);
+            width: Theme.compact ? parent.width - 24px : 360px;
+        }
     }
 }

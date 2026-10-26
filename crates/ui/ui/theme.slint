@@ -14,6 +14,8 @@ export global Theme {
     out property <color> bg: mode == ThemeMode.light ? #f5f4f9 : mode == ThemeMode.oled ? #000000 : #0c0b12;
     out property <brush> bg-glow: mode == ThemeMode.light ? @radial-gradient(circle, #7c4dff1c 0%, #7c4dff00 70%)
         : mode == ThemeMode.oled ? transparent : @radial-gradient(circle, #9b6bff26 0%, #9b6bff00 70%);
+    // Top and bottom bars of the compact layout.
+    out property <color> bar: mode == ThemeMode.light ? #ffffff : mode == ThemeMode.oled ? #000000 : #14121b;
     out property <color> sidebar: mode == ThemeMode.light ? #ffffffb3 : mode == ThemeMode.oled ? #000000 : #ffffff05;
     out property <color> card: mode == ThemeMode.light ? #ffffffcc : mode == ThemeMode.oled ? #ffffff0a : #ffffff0b;
     out property <color> card-hover: mode == ThemeMode.light ? #ffffff : mode == ThemeMode.oled ? #ffffff12 : #ffffff12;

@@ -67,12 +67,18 @@ export component LoginCard inherits Card {
             text: @tr("Cancel");
             clicked => { Bridge.login-cancel(root.login.flow-id); }
         }
-        Text {
+        if !Theme.compact: Text {
             text: @tr("Code valid until {}", root.login.expires-at);
             color: Theme.text-faint;
             font-size: Theme.font-s;
             vertical-alignment: center;
         }
+    }
+    // Under the buttons on a compact layout.
+    if Theme.compact: Text {
+        text: @tr("Code valid until {}", root.login.expires-at);
+        color: Theme.text-faint;
+        font-size: Theme.font-s;
     }
 }
 

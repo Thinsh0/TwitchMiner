@@ -47,6 +47,10 @@ pub struct NotifySettings {
     pub events: Vec<String>,
     /// Only notify points gains of at least this amount (for `points_earned`).
     pub min_points: i64,
+    /// Send every message as urgent (ntfy priority `high`: delivered at once and shown
+    /// as a pop-up). Otherwise only what needs acting soon is (see [`urgent`]), plus
+    /// tests and the confirmation of a new destination.
+    pub all_urgent: bool,
     pub language: Language,
 }
 
@@ -73,6 +77,7 @@ impl Default for NotifySettings {
                 "notice_raised".into(),
             ],
             min_points: 0,
+            all_urgent: false,
             language: Language::Fr,
         }
     }
@@ -109,14 +114,15 @@ impl Module for Notify {
         let sender_http = http.clone();
         tokio::spawn(async move {
             while let Some(o) = pending.recv().await {
-                send_all(&sender_http, &o.targets, &o.text, &o.event).await;
+                send_all(&sender_http, &o.targets, &o.text, &o.event, o.urgent).await;
             }
         });
-        let enqueue = |targets: &[Target], text: String, event: Value| {
+        let enqueue = |targets: &[Target], text: String, event: Value, urgent: bool| {
             let o = Outgoing {
                 targets: targets.to_vec(),
                 text,
                 event,
+                urgent,
             };
             if queue.try_send(o).is_err() {
                 tracing::warn!("notification dropped: too many waiting");
@@ -141,7 +147,7 @@ impl Module for Notify {
                 },
             };
             if let Some(text) = format_event(&ctx, &settings, &env) {
-                enqueue(&settings.targets, text, json!(env));
+                enqueue(&settings.targets, text, json!(env), true);
             }
         }
         loop {
@@ -163,7 +169,7 @@ impl Module for Notify {
                             Language::Fr => format!("✅ TwitchMiner est bien relié : les notifications de {} arriveront ici.", ctx.login()),
                             Language::En => format!("✅ TwitchMiner is connected: notifications for {} will arrive here.", ctx.login()),
                         };
-                        enqueue(&added, text, json!({"type": "connected"}));
+                        enqueue(&added, text, json!({"type": "connected"}), true);
                     }
                     continue;
                 }
@@ -174,7 +180,7 @@ impl Module for Notify {
                             Language::Fr => format!("Notification de test TwitchMiner pour {}", ctx.login()),
                             Language::En => format!("TwitchMiner test notification for {}", ctx.login()),
                         };
-                        let errors = send_all(&http, &settings.targets, &text, &json!({"type": "test"})).await;
+                        let errors = send_all(&http, &settings.targets, &text, &json!({"type": "test"}), true).await;
                         Ok(json!({"sent": settings.targets.len() - errors.len(), "errors": errors}))
                     } else {
                         Err(format!("unknown call `{}`", call.name))
@@ -194,7 +200,8 @@ impl Module for Notify {
             let Some(text) = format_event(&ctx, &settings, &env) else {
                 continue;
             };
-            enqueue(&settings.targets, text, json!(env.as_ref()));
+            let urgent = settings.all_urgent || urgent(&env.event);
+            enqueue(&settings.targets, text, json!(env.as_ref()), urgent);
         }
     }
 }
@@ -210,6 +217,19 @@ struct Outgoing {
     targets: Vec<Target>,
     text: String,
     event: Value,
+    urgent: bool,
+}
+
+/// Events that need the user soon: sent with a high priority.
+fn urgent(event: &Event) -> bool {
+    match event {
+        Event::AccountStatusChanged { status, .. } => *status == AccountStatus::AuthRequired,
+        Event::DropAlert { alert, .. } => matches!(
+            alert.kind,
+            DropAlertKind::AtRisk | DropAlertKind::WillMiss | DropAlertKind::NotLinked
+        ),
+        _ => false,
+    }
 }
 
 /// A failed send, and when it is worth trying again (`None`: it is not).
@@ -439,10 +459,11 @@ async fn send_all(
     targets: &[Target],
     text: &str,
     event: &Value,
+    urgent: bool,
 ) -> Vec<String> {
     let mut errors = Vec::new();
     for t in targets {
-        if let Err(e) = send_retrying(http, t, text, event).await {
+        if let Err(e) = send_retrying(http, t, text, event, urgent).await {
             let msg = format!("{e:#}");
             tracing::warn!(error = %msg, "notification failed");
             errors.push(msg);
@@ -458,10 +479,11 @@ async fn send_retrying(
     t: &Target,
     text: &str,
     event: &Value,
+    urgent: bool,
 ) -> anyhow::Result<()> {
     let mut attempt = 1;
     loop {
-        match send(http, t, text, event).await {
+        match send(http, t, text, event, urgent).await {
             Ok(()) => return Ok(()),
             Err(SendError {
                 retry_after: Some(wait),
@@ -480,6 +502,7 @@ async fn send(
     t: &Target,
     text: &str,
     event: &Value,
+    urgent: bool,
 ) -> Result<(), SendError> {
     let req = match t {
         Target::Discord { webhook_url } => http.post(webhook_url).json(&json!({ "content": text })),
@@ -488,6 +511,11 @@ async fn send(
                 .post(url)
                 .header("Title", "TwitchMiner")
                 .body(text.to_string());
+            // ntfy.sh asks Firebase for an immediate delivery from priority 4 (`high`) on;
+            // the app also shows it as a pop-up.
+            if urgent {
+                r = r.header("Priority", "high");
+            }
             if let Some(tok) = token {
                 r = r.bearer_auth(tok);
             }
@@ -549,6 +577,23 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[test]
+    fn only_what_needs_acting_is_urgent() {
+        let status = |status| Event::AccountStatusChanged {
+            account: "1".into(),
+            status,
+        };
+        assert!(urgent(&status(AccountStatus::AuthRequired)));
+        assert!(!urgent(&status(AccountStatus::Running)));
+        assert!(!urgent(&Event::DropClaimed {
+            account: "1".into(),
+            drop_id: "d".into(),
+            campaign_id: "c".into(),
+            drop_name: "Skin".into(),
+            game: "Rust".into(),
+        }));
+    }
+
+    #[test]
     fn rate_limit_waits_follow_the_service() {
         let mut h = reqwest::header::HeaderMap::new();
         assert_eq!(retry_wait(&h, ""), Duration::from_secs(5));
@@ -589,7 +634,7 @@ mod tests {
             headers: BTreeMap::new(),
         }];
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
-        let errors = send_all(&http, &targets, "hi", &json!({})).await;
+        let errors = send_all(&http, &targets, "hi", &json!({}), false).await;
         assert!(errors.is_empty(), "{errors:?}");
         server.await.unwrap();
     }
@@ -606,7 +651,7 @@ mod tests {
             .proxy(reqwest::Proxy::all("http://127.0.0.1:9").unwrap())
             .build()
             .unwrap();
-        let errors = send_all(&http, &targets, "hi", &json!({})).await;
+        let errors = send_all(&http, &targets, "hi", &json!({}), false).await;
         assert_eq!(errors.len(), 1);
         assert!(!errors[0].contains("SECRET"), "{}", errors[0]);
     }

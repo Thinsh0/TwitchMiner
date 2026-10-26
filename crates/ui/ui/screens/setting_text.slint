@@ -54,6 +54,7 @@ export global SettingText {
         if key == "notify.events" { return @tr("Events sent"); }
         if key == "notify.min_points" { return @tr("Lowest points to send"); }
         if key == "notify.language" { return @tr("Language of the messages"); }
+        if key == "notify.all_urgent" { return @tr("Everything in high priority (ntfy)"); }
         if key == "notify.targets" { return @tr("Destinations"); }
         // engine
         if key == "engine.max_watch_slots" { return @tr("Channels watched at once"); }
@@ -87,6 +88,7 @@ export global SettingText {
         if key == "predictions.min_balance" { return @tr("No bet when the balance is below this."); }
         if key == "predictions.seconds_before_close" { return @tr("Betting late gives a better view of the votes."); }
         if key == "notify.min_points" { return @tr("Points gains below this are not sent."); }
+        if key == "notify.all_urgent" { return @tr("Delivered at once and shown as a pop-up. Otherwise only the test, the confirmation and what needs acting soon (account to reconnect, drop at risk or missed, game account to link)."); }
         if key == "engine.update_check" { return @tr("A notice appears on the home screen when a new version is out."); }
         if key == "engine.manifest_url" { return @tr("Where the Twitch identifiers are looked for. Empty = the official address."); }
         if key == "engine.releases_url" { return @tr("Where new versions are looked for."); }

@@ -157,7 +157,10 @@ Chaque portée a un **JSON Schema** (`settings_get(...).schema`, ou `modules_lis
 //   repris de l'historique au premier démarrage ; aussi dans module_call predictions status
 // notify
 {"enabled": true, "targets": [], "events": ["drop_claimed", "drop_alert", "auth_required", "prediction_result", "notice_raised"], "min_points": 0,
- "language": "fr"}                                                       // fr | en
+ "all_urgent": false, "language": "fr"}                                  // fr | en
+// ntfy : priorité haute (« Priority: high », remise immédiate et bandeau) pour le test, la
+//   confirmation d'une nouvelle destination (envoyée dès qu'elle apparaît dans targets),
+//   auth_required et les alertes at_risk / will_miss / not_linked ; pour tout si all_urgent
 // targets: {"kind":"discord","webhook_url"} | {"kind":"ntfy","url","token?"} | {"kind":"telegram","bot_token","chat_id"} | {"kind":"webhook","url","token?","headers?"}
 // webhook : POST {"text", "event"} ; token → "Authorization: Bearer …" ; headers = en-têtes en plus (réveil d'un agent IA)
 // 3 essais par cible ; un 429 attend son Retry-After (ou le retry_after de Discord / Telegram), au plus 1 min

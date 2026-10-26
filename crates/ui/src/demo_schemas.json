@@ -547,6 +547,7 @@
     },
     {
       "default_settings": {
+        "all_urgent": false,
         "enabled": true,
         "events": [
           "drop_claimed",
@@ -669,6 +670,11 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "all_urgent": {
+            "default": false,
+            "description": "Send every message as urgent (ntfy priority `high`: delivered at once and shown\nas a pop-up). Otherwise only what needs acting soon is (see [`urgent`]), plus\ntests and the confirmation of a new destination.",
+            "type": "boolean"
+          },
           "enabled": {
             "default": true,
             "type": "boolean"

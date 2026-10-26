@@ -1402,3 +1402,9 @@ msgstr "S'abonner dans ntfy"
 
 msgid "Install the ntfy app (Play Store), then here: Generate, Add, and “Subscribe in ntfy”. Anyone who knows the topic can read the messages."
 msgstr "Installe l'appli ntfy (Play Store), puis ici : Générer, Ajouter et « S'abonner dans ntfy ». Qui connaît le sujet peut lire les messages."
+
+msgid "Everything in high priority (ntfy)"
+msgstr "Tout en priorité haute (ntfy)"
+
+msgid "Delivered at once and shown as a pop-up. Otherwise only the test, the confirmation and what needs acting soon (account to reconnect, drop at risk or missed, game account to link)."
+msgstr "Remis tout de suite et affiché en bandeau. Sinon, seulement le test, la confirmation et ce qui demande d'agir vite (compte à reconnecter, drop juste ou manqué, compte de jeu à lier)."

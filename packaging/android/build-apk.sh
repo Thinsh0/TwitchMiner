@@ -19,7 +19,9 @@ profile=${PROFILE:-release}
 
 : "${ANDROID_HOME:?ANDROID_HOME must point to the Android SDK}"
 build_tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
-platform=$(ls -d "$ANDROID_HOME"/platforms/android-* | sort -V | tail -1)
+# A released platform: CI images also carry previews (reported as "DEV").
+platform=$ANDROID_HOME/platforms/${ANDROID_PLATFORM:-android-35}
+[ -d "$platform" ] || platform=$(ls -d "$ANDROID_HOME"/platforms/android-[0-9]* | sort -V | tail -1)
 export ANDROID_JAR=${ANDROID_JAR:-$platform/android.jar}
 
 version=$(grep -m1 '^version' "$root/Cargo.toml" | cut -d'"' -f2)

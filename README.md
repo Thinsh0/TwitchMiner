@@ -65,8 +65,8 @@ Page de statut : **http://127.0.0.1:7878/** (demande le jeton : `twitchminer api
 Guide complet : [docs/SERVER.md](docs/SERVER.md) (exemple avec Tailscale).
 
 - **systemd** : `packaging/systemd/twitchminer.service`.
-- **Docker** : `docker build -t twitchminer . && docker run -d -v twitchminer:/data -p 7878:7878 twitchminer` (`docker logs` affiche le code de connexion).
-- Le binaire Linux musl est statique, sans aucune dépendance.
+- **Docker** (amd64 et arm64, publiée à chaque release) : `docker run -d --name twitchminer --restart unless-stopped -v twitchminer:/data -p 7878:7878 ghcr.io/thinsh0/twitchminer` (`docker logs twitchminer` affiche le code de connexion). Depuis les sources : `docker build -t twitchminer .`.
+- Les binaires Linux musl (`x86_64` et `aarch64`) sont statiques, sans aucune dépendance.
 - Un seul moteur par dossier de données. Entre machines, une instance `secondary` laisse le compte au serveur et prend le relais s'il tombe.
 
 ## Agent IA

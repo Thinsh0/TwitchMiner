@@ -14,13 +14,32 @@ Exemple : un mini PC allumé en permanence, un PC et un téléphone, tous dans l
 
 ## 1. Le mini PC (instance principale)
 
+### Avec Docker (le plus simple)
+
+Image publiée à chaque release, pour `amd64` et `arm64` (Raspberry Pi, mini PC ARM) :
+
 ```bash
-# binaire Linux statique (artefact CI "x86_64-unknown-linux-musl") dans ~/.local/bin
+docker run -d --name twitchminer --restart unless-stopped \
+  -v twitchminer:/data -p 7878:7878 ghcr.io/thinsh0/twitchminer
+docker logs twitchminer                          # code de connexion Twitch au premier lancement
+docker exec twitchminer twitchminer api-token    # jeton à copier sur les autres appareils
+docker exec twitchminer twitchminer ctl status
+```
+
+- Les données (comptes, réglages, historique) sont dans le volume `twitchminer` : elles survivent aux mises à jour.
+- Mettre à jour : `docker pull ghcr.io/thinsh0/twitchminer && docker rm -f twitchminer`, puis relancer la commande `docker run` ci-dessus.
+- Pour n'écouter que sur Tailscale : `-p 100.x.y.z:7878:7878` au lieu de `-p 7878:7878`.
+- Tant que le dépôt est privé, l'image l'est aussi : la rendre publique (GitHub › Packages › twitchminer › Package settings › Change visibility), ou se connecter d'abord avec `docker login ghcr.io` (jeton GitHub avec le droit `read:packages`).
+
+### Sans Docker
+
+```bash
+# binaire Linux statique de la release (x86_64- ou aarch64-unknown-linux-musl) dans ~/.local/bin
 twitchminer run --bind 100.x.y.z:7878      # IP Tailscale du mini PC (tailscale ip -4)
 twitchminer api-token                      # jeton à copier sur les autres appareils
 ```
 
-En service : `packaging/systemd/twitchminer.service`, avec `Environment=TM_API_BIND=100.x.y.z:7878`. Docker fonctionne aussi (voir README).
+En service : `packaging/systemd/twitchminer.service`, avec `Environment=TM_API_BIND=100.x.y.z:7878`.
 
 Écouter sur l'IP Tailscale plutôt que sur `0.0.0.0` : l'API n'est alors joignable que depuis ton réseau Tailscale. Le jeton reste obligatoire dans tous les cas.
 

@@ -48,7 +48,7 @@ pub struct NotifySettings {
     /// Only notify points gains of at least this amount (for `points_earned`).
     pub min_points: i64,
     /// Send every message as urgent (ntfy priority `high`: delivered at once and shown
-    /// as a pop-up). Otherwise only what needs acting soon is (see [`urgent`]), plus
+    /// as a pop-up). Otherwise only what needs acting soon is (see `urgent`), plus
     /// tests and the confirmation of a new destination.
     pub all_urgent: bool,
     pub language: Language,

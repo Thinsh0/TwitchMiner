@@ -1,5 +1,7 @@
-//! System notifications while the window is hidden: what to say for an engine event
-//! (the views' translations do not reach here, so both languages are written out).
+//! System notifications while the window does not have the focus (hidden, or behind
+//! another one): what to say for an engine event (the views' translations do not reach
+//! here, so both languages are written out). Important ones are sent even while the
+//! window has the focus: a card in the interface is easy to miss.
 
 use chrono::{DateTime, Local, Utc};
 use tm_core::state::{AccountStatus, DropAlertKind};
@@ -96,6 +98,17 @@ pub fn compose(event: &Event, state: &State, fr: bool) -> Option<Notification> {
     }
 }
 
+/// Sent even while the window has the focus: something stopped and needs the user.
+pub fn important(event: &Event) -> bool {
+    matches!(
+        event,
+        Event::AccountStatusChanged {
+            status: AccountStatus::AuthRequired,
+            ..
+        }
+    )
+}
+
 fn day_time(t: DateTime<Utc>) -> String {
     t.with_timezone(&Local).format("%d/%m %H:%M").to_string()
 }
@@ -135,5 +148,7 @@ mod tests {
             status: AccountStatus::Running,
         };
         assert!(compose(&other, &state, true).is_none());
+        assert!(important(&e));
+        assert!(!important(&other));
     }
 }

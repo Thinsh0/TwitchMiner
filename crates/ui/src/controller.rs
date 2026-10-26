@@ -97,6 +97,8 @@ struct Inner {
     activity: AtomicU64,
     /// Last refresh caused by the window coming back (see `wake`).
     woke: Mutex<Option<std::time::Instant>>,
+    /// The window has the keyboard focus (notifications are sent otherwise).
+    focused: std::sync::atomic::AtomicBool,
     /// Newer release of the application found by the last check.
     release: Mutex<Option<update::Release>>,
 }
@@ -117,6 +119,7 @@ impl Controller {
             // The engine refreshes by itself at start.
             woke: Mutex::new(Some(std::time::Instant::now())),
             release: Mutex::new(None),
+            focused: std::sync::atomic::AtomicBool::new(false),
         }))
     }
 
@@ -745,20 +748,28 @@ impl Controller {
         }
     }
 
+    /// The window gained or lost the keyboard focus.
+    pub fn set_focused(&self, focused: bool) {
+        self.0.focused.store(focused, AtomicOrdering::Relaxed);
+    }
+
     fn on_event(&self, event: &Event) {
-        // Window hidden (tray): the news worth it as a system notification.
+        // Window without the focus (hidden, or behind another one): the news worth it
+        // as a system notification; important ones even with the focus.
         let notable = matches!(
             event,
             Event::DropClaimed { .. }
                 | Event::DropAlert { .. }
                 | Event::AccountStatusChanged { .. }
         );
+        let important = crate::notifications::important(event);
+        let focused = self.0.focused.load(AtomicOrdering::Relaxed);
         let e = event.clone();
         self.on_ui(move |ui| {
             if !notable {
                 return;
             }
-            if ui.window().is_visible() {
+            if !important && focused && ui.window().is_visible() {
                 return;
             }
             let fr = ui.global::<Bridge>().get_language() != 1;

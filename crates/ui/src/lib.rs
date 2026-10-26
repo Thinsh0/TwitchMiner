@@ -121,14 +121,18 @@ pub fn run(
     if let Some(crash) = opts.last_crash {
         ctrl.report_crash(crash);
     }
-    // Coming back to the window (Alt+Tab, click) refreshes what is not live.
+    // Coming back to the window (Alt+Tab, click) refreshes what is not live; without
+    // the focus, notable events become system notifications.
     #[cfg(not(target_os = "android"))]
     {
         use slint::winit_030::{EventResult, WinitWindowAccessor, winit::event::WindowEvent};
         let ctrl = ctrl.clone();
         ui.window().on_winit_window_event(move |_, event| {
-            if matches!(event, WindowEvent::Focused(true)) {
-                ctrl.wake();
+            if let WindowEvent::Focused(focused) = event {
+                ctrl.set_focused(*focused);
+                if *focused {
+                    ctrl.wake();
+                }
             }
             EventResult::Propagate
         });

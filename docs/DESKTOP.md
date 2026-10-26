@@ -34,7 +34,7 @@ Avec un moteur distant, l'avis « mise à jour » du moteur concerne le serveur 
 
 - **Barre système** : l'icône résume l'activité (chaînes regardées, drop en cours, pause, action requise). Clic gauche : ouvrir. Menu : ouvrir, pause / reprise, quitter.
 - **Fermer la fenêtre** la masque : le moteur continue. « Quitter » dans le menu de l'icône arrête tout proprement.
-- **Notifications système** quand la fenêtre est masquée : drop récupéré, compte à reconnecter, alertes des drops (campagne juste, manquée, compte de jeu à lier, nouvelle campagne).
+- **Notifications système** dès que la fenêtre n'a pas le focus (masquée, ou ouverte derrière une autre) : drop récupéré, compte à reconnecter, alertes des drops (campagne juste, manquée, compte de jeu à lier, nouvelle campagne). Un compte à reconnecter est notifié même quand la fenêtre a le focus : la carte dans l'interface passe facilement inaperçue.
 - **Lancer avec la session** (Réglages › Démarrage) : inscrit l'app au démarrage de la session de l'utilisateur (registre `Run` sous Windows, `~/.config/autostart` sous Linux), avec `--background` : elle démarre dans la barre système sans ouvrir de fenêtre.
 - **Retour sur la fenêtre** (sortie de la barre système, Alt+Tab, clic) : l'app redemande les campagnes de drops (inventaire, progression de chaque drop) et les totaux du jour, au plus toutes les 2 minutes. Le reste (drop en cours, plan, chaînes) est déjà en direct.
 - **Une seule instance** par utilisateur et dossier de données : relancer l'app affiche la fenêtre déjà ouverte.

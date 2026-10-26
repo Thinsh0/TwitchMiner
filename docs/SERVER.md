@@ -29,7 +29,22 @@ docker exec twitchminer twitchminer ctl status
 - Les données (comptes, réglages, historique) sont dans le volume `twitchminer` : elles survivent aux mises à jour.
 - Mettre à jour : `docker pull ghcr.io/thinsh0/twitchminer && docker rm -f twitchminer`, puis relancer la commande `docker run` ci-dessus.
 - Pour n'écouter que sur Tailscale : `-p 100.x.y.z:7878:7878` au lieu de `-p 7878:7878`.
-- Tant que le dépôt est privé, l'image l'est aussi : la rendre publique (GitHub › Packages › twitchminer › Package settings › Change visibility), ou se connecter d'abord avec `docker login ghcr.io` (jeton GitHub avec le droit `read:packages`).
+- **Dockge / Portainer / Compose** : une pile avec ce `compose.yaml`, puis le bouton *Update* (ou `docker compose pull && docker compose up -d`) à chaque nouvelle version :
+
+  ```yaml
+  services:
+    twitchminer:
+      image: ghcr.io/thinsh0/twitchminer:latest
+      restart: unless-stopped
+      environment:
+        - TZ=Europe/Paris        # plages horaires à l'heure locale
+      volumes:
+        - data:/data
+      ports:
+        - 7878:7878
+  volumes:
+    data:
+  ```
 
 ### Sans Docker
 
@@ -48,6 +63,8 @@ En service : `packaging/systemd/twitchminer.service`, avec `Environment=TM_API_B
 - **Navigateur** : `http://100.x.y.z:7878/` (page de statut, demande le jeton).
 - **Ligne de commande** : `twitchminer ctl --url http://100.x.y.z:7878 --token … status`.
 - **App de bureau** : Réglages › Avancé › Moteur › « Changer… », mode « serveur distant » (`tm_client::Remote`). L'app n'exécute alors aucun moteur local. Voir [DESKTOP.md](DESKTOP.md).
+- **Téléphone** : l'appli Android (`TwitchMiner-vX.Y.Z-android.apk` de la release), même interface en disposition téléphone. Voir [ANDROID.md](ANDROID.md).
+- Adresse : toujours `http://` (le moteur ne parle pas HTTPS ; Tailscale chiffre déjà), par exemple `http://mini-pc:7878` avec MagicDNS.
 - **Agent IA** sur le mini PC ou ailleurs : serveur MCP avec un jeton restreint, voir [AGENT.md](AGENT.md).
 
 ## 3. Optionnel : secours automatique sur un autre appareil

@@ -1,6 +1,6 @@
 import { AboutSlint, ListView } from "std-widgets.slint";
 import { Theme, ThemeMode } from "../theme.slint";
-import { Bridge, AccountItem, FieldItem, LinkState, Screen, HourWindow, UpdatePhase } from "../bridge.slint";
+import { Bridge, AccountItem, FieldItem, LinkState, Screen, HourWindow, NotifyEvent, NotifyTarget, UpdatePhase } from "../bridge.slint";
 import { Avatar, Button, ButtonKind, Card, Icon, IconButton, Icons, Muted, Page, Pill, Segmented, SegmentItem, TextField, Toggle, Tone } from "../widgets.slint";
 import { FieldList } from "fields.slint";
 import { SettingText } from "setting_text.slint";
@@ -215,6 +215,171 @@ component AccountRow inherits Rectangle {
     }
 }
 
+// Notifications: where they go and what is sent, without writing JSON.
+component NotifyEditor inherits VerticalLayout {
+    // ntfy, discord, telegram, webhook
+    property <int> kind;
+    property <string> value;
+    property <string> chat;
+    property <string> kind-id: kind == 0 ? "ntfy" : kind == 1 ? "discord" : kind == 2 ? "telegram" : "webhook";
+    spacing: 10px;
+
+    pure function event-label(key: string) -> string {
+        if key == "drop_claimed" { return @tr("Drop claimed"); }
+        if key == "drop_alert" { return @tr("Drop alerts (tight, will be missed, game account to link, new campaign)"); }
+        if key == "auth_required" { return @tr("Account must sign in again"); }
+        if key == "notice_raised" { return @tr("Engine warnings (update available, proxy, mined twice…)"); }
+        if key == "prediction_result" { return @tr("Prediction results"); }
+        if key == "prediction_placed" { return @tr("Prediction bets placed"); }
+        if key == "points_earned" { return @tr("Points earned (each gain: many messages)"); }
+        if key == "raid_joined" { return @tr("Raids joined"); }
+        if key == "watch_started" { return @tr("Watching started on a channel"); }
+        return key;
+    }
+
+    function add() {
+        Bridge.notify-add(root.kind-id, root.value, root.chat);
+        root.value = "";
+        root.chat = "";
+    }
+
+    Text {
+        text: @tr("Destinations");
+        color: Theme.text;
+        font-weight: 600;
+    }
+    if Bridge.notify-targets.length == 0: Muted {
+        text: @tr("None yet: nothing is sent.");
+    }
+    for t[i] in Bridge.notify-targets: Rectangle {
+        height: 38px;
+        border-radius: Theme.radius-m;
+        background: Theme.inset;
+        HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 4px;
+            spacing: 8px;
+            VerticalLayout {
+                alignment: center;
+                Pill {
+                    text: t.kind == "ntfy" ? "ntfy" : t.kind == "discord" ? "Discord" : t.kind == "telegram" ? "Telegram" : "Webhook";
+                    tone: Tone.accent;
+                }
+            }
+            Text {
+                text: t.label;
+                font-size: Theme.font-s;
+                color: Theme.text;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: Icons.trash;
+                    tooltip: @tr("Remove");
+                    clicked => { Bridge.notify-remove(i); }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        border-radius: Theme.radius-m;
+        border-width: 1px;
+        border-color: Theme.border;
+        VerticalLayout {
+            padding: 10px;
+            spacing: 8px;
+            Segmented {
+                items: [{ label: "ntfy" }, { label: "Discord" }, { label: "Telegram" }, { label: "Webhook" }];
+                selected: root.kind;
+                picked(i) => {
+                    root.kind = i;
+                    root.value = "";
+                    root.chat = "";
+                }
+            }
+            Muted {
+                text: root.kind == 0 ? @tr("Phone: install the ntfy app (Play Store), subscribe to a hard-to-guess topic, and add the same topic here. Anyone who knows the topic can read the messages.")
+                    : root.kind == 1 ? @tr("Discord: channel settings › Integrations › Webhooks › New webhook › Copy webhook URL.")
+                    : root.kind == 2 ? @tr("Telegram: the token given by @BotFather, and your chat id (send a message to the bot first).")
+                    : @tr("Any URL that receives a JSON POST with the text and the event.");
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                TextField {
+                    placeholder: root.kind == 0 ? @tr("Topic, or https://your-server/topic")
+                        : root.kind == 1 ? "https://discord.com/api/webhooks/…"
+                        : root.kind == 2 ? @tr("Bot token") : "https://…";
+                    text <=> root.value;
+                    accepted => { root.add(); }
+                }
+                if root.kind == 0: Button {
+                    compact: true;
+                    kind: ButtonKind.ghost;
+                    icon: Icons.refresh;
+                    text: @tr("Generate");
+                    clicked => { root.value = Bridge.notify-random-topic(); }
+                }
+            }
+            if root.kind == 2: TextField {
+                placeholder: @tr("Chat id");
+                text <=> root.chat;
+                accepted => { root.add(); }
+            }
+            HorizontalLayout {
+                alignment: start;
+                Button {
+                    compact: true;
+                    kind: ButtonKind.primary;
+                    icon: Icons.plus;
+                    text: @tr("Add");
+                    enabled: root.value != "" && (root.kind != 2 || root.chat != "");
+                    clicked => { root.add(); }
+                }
+            }
+        }
+    }
+    HorizontalLayout {
+        alignment: start;
+        Button {
+            compact: true;
+            text: @tr("Send a test notification");
+            enabled: Bridge.notify-targets.length > 0;
+            clicked => { Bridge.notify-test(); }
+        }
+    }
+
+    Rectangle {
+        height: 1px;
+        background: Theme.border;
+    }
+    Text {
+        text: @tr("Events sent");
+        color: Theme.text;
+        font-weight: 600;
+    }
+    for e in Bridge.notify-events: HorizontalLayout {
+        spacing: 12px;
+        Text {
+            text: root.event-label(e.key);
+            color: Theme.text;
+            wrap: word-wrap;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        VerticalLayout {
+            alignment: center;
+            Toggle {
+                checked: e.on;
+                toggled(v) => { Bridge.notify-event(e.key, v); }
+            }
+        }
+    }
+}
+
 // One module: on/off in the header, its options folded.
 component ModuleCard inherits Card {
     in property <string> id;
@@ -254,6 +419,14 @@ component ModuleCard inherits Card {
         }
     }
     if root.open: Rectangle {
+        height: 1px;
+        background: Theme.border;
+    }
+    if root.id == "notify" && !root.open && Bridge.notify-targets.length == 0: Muted {
+        text: @tr("No destination yet: open the options to add your phone (ntfy), Discord or Telegram.");
+    }
+    if root.id == "notify" && root.open: NotifyEditor { }
+    if root.open && root.fields.length > 0: Rectangle {
         height: 1px;
         background: Theme.border;
     }

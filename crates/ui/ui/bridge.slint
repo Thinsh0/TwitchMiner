@@ -17,7 +17,7 @@ export enum SetupReason { none, busy, failed }
 // Why a remote engine is unreachable (`tm_client::Fault`); `other` shows the raw error.
 export enum Fault { none, not-https, bad-token, refused, unknown-host, no-answer, bad-url, other }
 
-export enum ToastKind { plain, error, login-ok, claimed, invalid, copied, backup, manifest, drop-claimed, api-off, unreachable, timeout, crashed }
+export enum ToastKind { plain, error, login-ok, claimed, invalid, copied, backup, manifest, drop-claimed, api-off, unreachable, timeout, crashed, notify-sent }
 
 export struct AccountItem {
     id: string,
@@ -249,6 +249,19 @@ export struct FieldItem {
     values: [string],
     // Differs from the default (shows "Rétablir").
     modified: bool,
+}
+
+// A notification destination (`notify.targets`); `label` never shows a secret whole.
+export struct NotifyTarget {
+    // ntfy | discord | telegram | webhook
+    kind: string,
+    label: string,
+}
+
+// One kind of event the notifications module can send (`notify.events`).
+export struct NotifyEvent {
+    key: string,
+    on: bool,
 }
 
 export struct ModuleForm {
@@ -483,6 +496,15 @@ export global Bridge {
     callback setting-list-add(string, string, string);
     callback setting-list-remove(string, string, string);
     callback setting-reset(string, string);
+    // Notifications: destinations (kind, value, second value for Telegram's chat id),
+    // events sent, test message, a random ntfy topic.
+    in property <[NotifyTarget]> notify-targets;
+    in property <[NotifyEvent]> notify-events;
+    callback notify-add(string, string, string);
+    callback notify-remove(int);
+    callback notify-event(string, bool);
+    callback notify-test();
+    pure callback notify-random-topic() -> string;
     callback hours-add();
     callback hours-remove(int);
     callback hours-toggle-day(int, int);

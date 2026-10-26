@@ -10,7 +10,9 @@ use tm_core::state::ModuleHealth;
 
 use crate::forms::{self, Field};
 use crate::present;
-use crate::{Bridge, FieldItem, HealthItem, HourWindow, MainWindow, ModuleForm};
+use crate::{
+    Bridge, FieldItem, HealthItem, HourWindow, MainWindow, ModuleForm, NotifyEvent, NotifyTarget,
+};
 
 /// Settings shown on another screen (one main screen per piece of data), or with a
 /// dedicated control, per section.
@@ -19,6 +21,7 @@ fn hidden(section: &str) -> &'static [&'static str] {
         "drops" => &["enabled", "games", "exclude_games", "wanted_rewards"],
         "points" => &["enabled", "channels", "exclude", "follows", "order_by"],
         "engine" => &["paused", "active_hours", "agent_enabled"],
+        "notify" => &["enabled", "targets", "events"],
         _ => &["enabled"],
     }
 }
@@ -229,12 +232,98 @@ pub fn render(ui: &MainWindow, state: &State) {
         b.set_engine_maintenance(section(None));
     });
 
+    let notify = effective(state, &account, "notify");
+    let targets: Vec<NotifyTarget> = notify["targets"]
+        .as_array()
+        .map(|list| list.iter().map(notify_target_item).collect())
+        .unwrap_or_default();
+    b.set_notify_targets(ModelRc::new(VecModel::from(targets)));
+    let wanted = present::string_list(Some(&notify["events"]));
+    let events: Vec<NotifyEvent> = NOTIFY_EVENTS
+        .iter()
+        .map(|k| NotifyEvent {
+            key: (*k).into(),
+            on: wanted.iter().any(|w| w == k),
+        })
+        .collect();
+    b.set_notify_events(ModelRc::new(VecModel::from(events)));
+
     let hours: Vec<HourWindow> = engine["active_hours"]
         .as_array()
         .map(|list| list.iter().map(hour_window).collect())
         .unwrap_or_default();
     b.set_active_hours(ModelRc::new(VecModel::from(hours)));
     BUILT.with(|b| *b.borrow_mut() = Some(built));
+}
+
+/// Event kinds the notifications module can send, in the order shown.
+pub const NOTIFY_EVENTS: &[&str] = &[
+    "drop_claimed",
+    "drop_alert",
+    "auth_required",
+    "notice_raised",
+    "prediction_result",
+    "prediction_placed",
+    "points_earned",
+    "raid_joined",
+    "watch_started",
+];
+
+/// How a destination is listed: what it is, never a whole secret.
+fn notify_target_item(t: &Value) -> NotifyTarget {
+    let kind = t["kind"].as_str().unwrap_or_default();
+    let tail = |s: &str| -> String {
+        let n = s.chars().count();
+        let end: String = s.chars().skip(n.saturating_sub(4)).collect();
+        format!("…{end}")
+    };
+    let label = match kind {
+        // The topic is what the phone subscribes to: shown whole.
+        "ntfy" => t["url"].as_str().unwrap_or_default().to_string(),
+        "discord" => tail(t["webhook_url"].as_str().unwrap_or_default()),
+        "telegram" => format!("chat {}", t["chat_id"].as_str().unwrap_or_default()),
+        _ => t["url"].as_str().and_then(url_host).unwrap_or_default(),
+    };
+    NotifyTarget {
+        kind: kind.into(),
+        label: label.into(),
+    }
+}
+
+fn url_host(url: &str) -> Option<String> {
+    let rest = url.split_once("://")?.1;
+    Some(rest.split(['/', '?']).next()?.to_string())
+}
+
+/// A destination from the add form: `a` is the ntfy topic or URL, the Discord or
+/// webhook URL, or the Telegram bot token (`b`: its chat id). `None` when invalid.
+pub fn notify_target(kind: &str, a: &str, b: &str) -> Option<Value> {
+    let (a, b) = (a.trim(), b.trim());
+    let web = |u: &str| u.starts_with("https://") || u.starts_with("http://");
+    match kind {
+        "ntfy" => {
+            let url = if a.contains("://") {
+                a.trim_end_matches('/').to_string()
+            } else {
+                let topic_ok = !a.is_empty()
+                    && a.len() <= 64
+                    && a.chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+                if !topic_ok {
+                    return None;
+                }
+                format!("https://ntfy.sh/{a}")
+            };
+            web(&url).then(|| serde_json::json!({"kind": "ntfy", "url": url}))
+        }
+        "discord" => (a.starts_with("https://discord.com/api/webhooks/")
+            || a.starts_with("https://discordapp.com/api/webhooks/"))
+        .then(|| serde_json::json!({"kind": "discord", "webhook_url": a})),
+        "telegram" => (a.contains(':') && !b.is_empty())
+            .then(|| serde_json::json!({"kind": "telegram", "bot_token": a, "chat_id": b})),
+        "webhook" => web(a).then(|| serde_json::json!({"kind": "webhook", "url": a})),
+        _ => None,
+    }
 }
 
 fn hour_window(w: &Value) -> HourWindow {
@@ -297,6 +386,31 @@ mod tests {
         assert_eq!(hours[0]["days"], json!([1, 2, 3, 4, 5, 6]));
         toggle_day(&mut hours, 0, 7);
         assert_eq!(hours[0]["days"], json!([]));
+    }
+
+    #[test]
+    fn notify_destinations() {
+        assert_eq!(
+            notify_target("ntfy", " twitchminer-k8f3 ", ""),
+            Some(json!({"kind": "ntfy", "url": "https://ntfy.sh/twitchminer-k8f3"}))
+        );
+        assert_eq!(
+            notify_target("ntfy", "https://ntfy.example.org/topic/", ""),
+            Some(json!({"kind": "ntfy", "url": "https://ntfy.example.org/topic"}))
+        );
+        assert_eq!(notify_target("ntfy", "bad topic", ""), None);
+        assert_eq!(notify_target("discord", "https://example.org/x", ""), None);
+        assert!(notify_target("discord", "https://discord.com/api/webhooks/1/abc", "").is_some());
+        assert_eq!(notify_target("telegram", "123:abc", ""), None);
+        assert!(notify_target("telegram", "123:abc", "42").is_some());
+        assert_eq!(notify_target("webhook", "ftp://x", ""), None);
+        let label = notify_target_item(&json!({"kind": "discord", "webhook_url": "https://discord.com/api/webhooks/1/SECRETabcd"})).label;
+        assert_eq!(label.as_str(), "…abcd");
+        let label = notify_target_item(
+            &json!({"kind": "webhook", "url": "https://hooks.example.org/p?k=SECRET"}),
+        )
+        .label;
+        assert_eq!(label.as_str(), "hooks.example.org");
     }
 
     #[test]

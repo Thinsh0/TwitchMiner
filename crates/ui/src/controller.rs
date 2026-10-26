@@ -328,6 +328,72 @@ impl Controller {
             })
         });
         let c = self.clone();
+        b.on_notify_add(move |kind, a, b| {
+            let Some(target) = settings::notify_target(&kind, &a, &b) else {
+                c.toast(ToastKind::Invalid, Tone::Warning, String::new());
+                return;
+            };
+            c.edit_setting("notify", "targets", move |v| {
+                let mut list = v.as_array().cloned().unwrap_or_default();
+                if !list.contains(&target) {
+                    list.push(target);
+                }
+                *v = Value::Array(list);
+            })
+        });
+        let c = self.clone();
+        b.on_notify_remove(move |i| {
+            c.edit_setting("notify", "targets", move |v| {
+                if let Some(list) = v.as_array_mut()
+                    && i >= 0
+                    && (i as usize) < list.len()
+                {
+                    list.remove(i as usize);
+                }
+            })
+        });
+        let c = self.clone();
+        b.on_notify_event(move |key, on| {
+            let key = key.to_string();
+            c.edit_setting("notify", "events", move |v| {
+                let mut list = present::string_list(Some(v));
+                list.retain(|k| *k != key);
+                if on {
+                    list.push(key);
+                }
+                *v = json!(list);
+            })
+        });
+        let c = self.clone();
+        b.on_notify_test(move || {
+            let me = c.clone();
+            c.module_call("notify", "test", Value::Null, move |r| {
+                if let Ok(v) = r {
+                    let sent = v["sent"].as_u64().unwrap_or_default();
+                    let errors: Vec<&str> = v["errors"]
+                        .as_array()
+                        .map(|e| e.iter().filter_map(Value::as_str).collect())
+                        .unwrap_or_default();
+                    if errors.is_empty() {
+                        me.toast(ToastKind::NotifySent, Tone::Success, sent.to_string());
+                    } else {
+                        me.toast(ToastKind::Error, Tone::Danger, errors.join(" · "));
+                    }
+                }
+            })
+        });
+        b.on_notify_random_topic(|| {
+            use rand::Rng;
+            let mut rng = rand::rng();
+            let tail: String = (0..10)
+                .map(|_| {
+                    let i = rng.random_range(0..36u32);
+                    char::from_digit(i, 36).unwrap_or('x')
+                })
+                .collect();
+            format!("twitchminer-{tail}").into()
+        });
+        let c = self.clone();
         b.on_setting_reset(move |section, path| {
             let default = forms::get(&settings::defaults(&section), &path).clone();
             c.write_setting(&section, &path, default);

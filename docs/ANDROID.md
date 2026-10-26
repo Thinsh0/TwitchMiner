@@ -33,7 +33,13 @@ packaging/android/build-apk.sh target/TwitchMiner.apk   # ABIS="arm64-v8a x86_64
 
 Le code : `apps/android` (bibliothèque `libtwitchminer.so` lancée par la `NativeActivity` d'Android, sans Java ; liens ouverts par un `Intent` via JNI), `packaging/android` (manifeste, icônes, script). Journaux : `adb logcat -s TwitchMiner`.
 
-À venir : notifications (drop récupéré, compte à reconnecter).
+**Notifications sur le téléphone** : c'est le serveur qui les envoie, par **ntfy**. L'appli ntfy (Play Store, serveur `ntfy.sh`) les reçoit par le push d'Android (Firebase), même téléphone en veille et appli TwitchMiner fermée, sans user la batterie. Pour les activer :
+
+1. dans ntfy, s'abonner à un sujet difficile à deviner (qui connaît le sujet peut lire les messages) ;
+2. dans TwitchMiner, **Réglages › Notifications › Options › Destinations** : onglet ntfy, coller le même sujet (ou « Générer » puis le recopier dans ntfy), **Ajouter** ;
+3. **Envoyer une notification de test**, puis choisir les **événements envoyés**.
+
+Discord, Telegram et un webhook s'ajoutent au même endroit.
 
 ## Moteur sur le téléphone (plus tard)
 

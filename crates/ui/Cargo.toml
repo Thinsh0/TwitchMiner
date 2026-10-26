@@ -20,6 +20,7 @@ tracing.workspace = true
 open.workspace = true
 image.workspace = true
 reqwest.workspace = true
+rand.workspace = true
 # SHA-256 of downloaded updates (already used by rustls).
 ring = "0.17"
 

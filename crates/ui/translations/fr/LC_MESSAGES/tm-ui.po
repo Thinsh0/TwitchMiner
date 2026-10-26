@@ -1330,3 +1330,69 @@ msgstr "Avec Docker : docker exec <conteneur> twitchminer api-token. Avec Tailsc
 
 msgid "TwitchMiner stopped unexpectedly last time. Cause, to report: {}"
 msgstr "TwitchMiner s'est arrêté brutalement la dernière fois. Cause, à signaler : {}"
+
+msgid "Account must sign in again"
+msgstr "Compte à reconnecter"
+
+msgid "Any URL that receives a JSON POST with the text and the event."
+msgstr "N'importe quelle URL qui reçoit un POST JSON avec le texte et l'événement."
+
+msgid "Bot token"
+msgstr "Jeton du bot"
+
+msgid "Chat id"
+msgstr "Identifiant du chat"
+
+msgid "Discord: channel settings › Integrations › Webhooks › New webhook › Copy webhook URL."
+msgstr "Discord : paramètres du salon › Intégrations › Webhooks › Nouveau webhook › Copier l'URL du webhook."
+
+msgid "Drop alerts (tight, will be missed, game account to link, new campaign)"
+msgstr "Alertes de drops (juste, sera manquée, compte de jeu à lier, nouvelle campagne)"
+
+msgid "Drop claimed"
+msgstr "Drop récupéré"
+
+msgid "Engine warnings (update available, proxy, mined twice…)"
+msgstr "Avertissements du moteur (mise à jour, proxy, compte miné deux fois…)"
+
+msgid "Generate"
+msgstr "Générer"
+
+msgid "No destination yet: open the options to add your phone (ntfy), Discord or Telegram."
+msgstr "Aucune destination : ouvre les options pour ajouter ton téléphone (ntfy), Discord ou Telegram."
+
+msgid "No destination: add one first."
+msgstr "Aucune destination : ajoutes-en une d'abord."
+
+msgid "None yet: nothing is sent."
+msgstr "Aucune pour l'instant : rien n'est envoyé."
+
+msgid "Phone: install the ntfy app (Play Store), subscribe to a hard-to-guess topic, and add the same topic here. Anyone who knows the topic can read the messages."
+msgstr "Téléphone : installe l'appli ntfy (Play Store), abonne-toi à un sujet difficile à deviner et ajoute le même sujet ici. Qui connaît le sujet peut lire les messages."
+
+msgid "Points earned (each gain: many messages)"
+msgstr "Points gagnés (à chaque gain : beaucoup de messages)"
+
+msgid "Prediction bets placed"
+msgstr "Paris de prédiction placés"
+
+msgid "Prediction results"
+msgstr "Résultats des prédictions"
+
+msgid "Raids joined"
+msgstr "Raids suivis"
+
+msgid "Send a test notification"
+msgstr "Envoyer une notification de test"
+
+msgid "Telegram: the token given by @BotFather, and your chat id (send a message to the bot first)."
+msgstr "Telegram : le jeton donné par @BotFather et ton identifiant de chat (envoie d'abord un message au bot)."
+
+msgid "Test sent to {} destination(s): check that it arrived."
+msgstr "Test envoyé à {} destination(s) : vérifie qu'il est bien arrivé."
+
+msgid "Topic, or https://your-server/topic"
+msgstr "Sujet, ou https://ton-serveur/sujet"
+
+msgid "Watching started on a channel"
+msgstr "Début du visionnage d'une chaîne"

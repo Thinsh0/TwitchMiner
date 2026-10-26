@@ -1391,6 +1391,11 @@ impl Controller {
         });
     }
 
+    /// Tells about the panic that ended the previous run.
+    pub(crate) fn report_crash(&self, text: String) {
+        self.toast(ToastKind::Crashed, Tone::Danger, text);
+    }
+
     fn toast(&self, kind: ToastKind, tone: Tone, detail: String) {
         self.on_ui(move |ui| push_toast(ui, kind, tone, detail));
     }
@@ -1594,6 +1599,10 @@ fn push_toast(ui: &MainWindow, kind: ToastKind, tone: Tone, detail: String) {
         tone,
         detail: detail.into(),
     });
+    // A crash report stays until dismissed (time to read or screenshot it).
+    if kind == ToastKind::Crashed {
+        return;
+    }
     let weak = ui.as_weak();
     slint::Timer::single_shot(TOAST_TTL, move || {
         if let Some(ui) = weak.upgrade() {

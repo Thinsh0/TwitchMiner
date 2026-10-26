@@ -6,6 +6,7 @@
 mod android {
     use std::ffi::{CString, c_char, c_int};
     use std::io::Write;
+    use std::path::{Path, PathBuf};
 
     use slint::android::AndroidApp;
 
@@ -37,14 +38,32 @@ mod android {
         }
     }
 
-    fn init_logs() {
+    /// Where a panic is written, to be shown at the next start (no logcat on a phone
+    /// without a computer).
+    const CRASH_FILE: &str = "last-crash.txt";
+
+    fn init_logs(data_dir: Option<PathBuf>) {
         let _ = tracing_subscriber::fmt()
             .with_writer(|| Logcat)
             .with_ansi(false)
             .without_time()
             .with_env_filter("info")
             .try_init();
-        std::panic::set_hook(Box::new(|info| logcat(6, &format!("panic: {info}"))));
+        std::panic::set_hook(Box::new(move |info| {
+            let text = format!("panic: {info}");
+            logcat(6, &text);
+            if let Some(dir) = &data_dir {
+                let _ = std::fs::write(dir.join(CRASH_FILE), &text);
+            }
+        }));
+    }
+
+    /// The panic of the previous run, if any (read once).
+    fn last_crash(data_dir: Option<&Path>) -> Option<String> {
+        let path = data_dir?.join(CRASH_FILE);
+        let text = std::fs::read_to_string(&path).ok()?;
+        let _ = std::fs::remove_file(&path);
+        Some(text.chars().take(600).collect())
     }
 
     struct Phone {
@@ -103,8 +122,9 @@ mod android {
 
     #[unsafe(no_mangle)]
     fn android_main(app: AndroidApp) {
-        init_logs();
         let data_dir = app.internal_data_path();
+        init_logs(data_dir.clone());
+        let last_crash = last_crash(data_dir.as_deref());
         if let Err(e) = slint::android::init(app.clone()) {
             logcat(6, &format!("cannot start the interface: {e}"));
             return;
@@ -124,11 +144,15 @@ mod android {
         let opts = tm_ui::Options {
             data_dir,
             remote_only: true,
+            last_crash,
             ..Default::default()
         };
         if let Err(e) = tm_ui::run(runtime.handle().clone(), opts, Box::new(Phone { app })) {
             logcat(6, &format!("interface stopped: {e:#}"));
         }
         runtime.shutdown_timeout(std::time::Duration::from_secs(2));
+        // The activity is gone. Android may start a new one in this same process, and
+        // the interface cannot be set up twice: end the process so it starts afresh.
+        std::process::exit(0);
     }
 }

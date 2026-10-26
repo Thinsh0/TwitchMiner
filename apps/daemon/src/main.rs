@@ -231,7 +231,10 @@ async fn mcp_stdio(
         None => tm_app::read_token(data_dir, tm_app::TokenKind::Agent).await?,
     };
     let endpoint = format!("{}/api/v1/mcp", url.trim_end_matches('/'));
-    let http = reqwest::Client::builder().no_proxy().build()?;
+    let http = reqwest::Client::builder()
+        .use_preconfigured_tls((*tm_core::twitch::tls::client_config()).clone())
+        .no_proxy()
+        .build()?;
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut stdout = tokio::io::stdout();
     while let Some(line) = lines.next_line().await? {
@@ -344,7 +347,10 @@ async fn ctl(
         None => tm_app::read_api_token(data_dir).await?,
     };
     let url = url.trim_end_matches('/').to_string();
-    let http = reqwest::Client::builder().no_proxy().build()?;
+    let http = reqwest::Client::builder()
+        .use_preconfigured_tls((*tm_core::twitch::tls::client_config()).clone())
+        .no_proxy()
+        .build()?;
     let c = Client {
         http,
         url: url.clone(),

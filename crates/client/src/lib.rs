@@ -217,7 +217,9 @@ impl Remote {
             }
         })
         .await;
+        // The engine's TLS settings: reqwest's default verifier panics on Android.
         let http = reqwest::Client::builder()
+            .use_preconfigured_tls((*tm_twitch::tls::client_config()).clone())
             .no_proxy()
             .timeout(Duration::from_secs(15))
             .build()

@@ -37,8 +37,7 @@ pub struct Asset {
 }
 
 fn client() -> Result<reqwest::Client> {
-    tm_core::twitch::tls::install_crypto_provider();
-    Ok(reqwest::Client::builder()
+    Ok(crate::http_client()
         .user_agent(concat!("TwitchMiner/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(20))
         .build()?)

@@ -42,6 +42,8 @@ pub struct Options {
     /// No local engine (phone): only a remote server can be used, asked for at the
     /// first start.
     pub remote_only: bool,
+    /// Why the previous run stopped (a panic), shown once at start.
+    pub last_crash: Option<String>,
 }
 
 /// Opens the main window and runs the event loop until the application quits.
@@ -116,6 +118,9 @@ pub fn run(
     ui.global::<Bridge>()
         .set_app_version(update::CURRENT.into());
     ctrl.start_update_checks();
+    if let Some(crash) = opts.last_crash {
+        ctrl.report_crash(crash);
+    }
     // Coming back to the window (Alt+Tab, click) refreshes what is not live.
     #[cfg(not(target_os = "android"))]
     {
@@ -161,6 +166,14 @@ pub fn run(
     }
     runtime.block_on(ctrl.close());
     Ok(())
+}
+
+/// HTTP client builder with the engine's TLS settings (bundled and system roots).
+/// reqwest's default verifier asks the platform, which on Android needs a Java
+/// component this application does not ship: the first HTTPS request would panic.
+pub(crate) fn http_client() -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .use_preconfigured_tls((*tm_core::twitch::tls::client_config()).clone())
 }
 
 /// French unless English is asked (`TM_LANG=en` or the preference).

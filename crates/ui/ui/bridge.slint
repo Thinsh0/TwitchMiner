@@ -17,7 +17,7 @@ export enum SetupReason { none, busy, failed }
 // Why a remote engine is unreachable (`tm_client::Fault`); `other` shows the raw error.
 export enum Fault { none, not-https, bad-token, refused, unknown-host, no-answer, bad-url, other }
 
-export enum ToastKind { plain, error, login-ok, claimed, invalid, copied, backup, manifest, drop-claimed, api-off, unreachable, timeout }
+export enum ToastKind { plain, error, login-ok, claimed, invalid, copied, backup, manifest, drop-claimed, api-off, unreachable, timeout, crashed }
 
 export struct AccountItem {
     id: string,

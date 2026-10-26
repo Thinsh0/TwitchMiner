@@ -78,7 +78,7 @@ async fn download(url: &str) -> Option<SharedPixelBuffer<Rgba8Pixel>> {
     static CLIENT: OnceLock<Option<reqwest::Client>> = OnceLock::new();
     let client = CLIENT
         .get_or_init(|| {
-            reqwest::Client::builder()
+            crate::http_client()
                 .timeout(Duration::from_secs(20))
                 .build()
                 .ok()

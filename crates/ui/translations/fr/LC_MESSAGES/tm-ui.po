@@ -1327,3 +1327,6 @@ msgstr "Son adresse et son jeton d'API. Rien n'est miné sur cet appareil."
 
 msgid "With Docker: docker exec <container> twitchminer api-token. Over Tailscale, use http:// and the machine's name, e.g. http://my-server:7878"
 msgstr "Avec Docker : docker exec <conteneur> twitchminer api-token. Avec Tailscale, mets http:// et le nom de la machine, par exemple http://mon-serveur:7878"
+
+msgid "TwitchMiner stopped unexpectedly last time. Cause, to report: {}"
+msgstr "TwitchMiner s'est arrêté brutalement la dernière fois. Cause, à signaler : {}"

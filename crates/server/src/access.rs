@@ -107,6 +107,12 @@ pub fn redact_settings(scope: &str, doc: &mut Value) {
         }
     }
     if is_notify_scope(scope)
+        && let Some(key) = doc.get_mut("firebase_key")
+        && key.as_str().is_some_and(|k| !k.is_empty())
+    {
+        hide(key);
+    }
+    if is_notify_scope(scope)
         && let Some(targets) = doc.get_mut("targets").and_then(Value::as_array_mut)
     {
         for t in targets {
@@ -202,14 +208,14 @@ mod tests {
     fn secrets_are_masked() {
         let mut state = json!({"settings": {
             "engine": {"proxy": "http://u:p@h:1", "peers": [{"url": "http://x", "token": "s3cret"}], "paused": false},
-            "module:notify": {"targets": [{"kind": "discord", "webhook_url": "https://discord/hook"}]},
+            "module:notify": {"targets": [{"kind": "discord", "webhook_url": "https://discord/hook"}], "firebase_key": "{\"private_key\": \"PEM\"}"},
             "module:drops": {"games": ["Rust"]},
             "guests": {"g": {"token_sha256": "HASH"}}
         }});
         redact_state(&mut state);
         let s = state.to_string();
         assert!(!s.contains("s3cret") && !s.contains("discord/hook") && !s.contains("u:p@"));
-        assert!(!s.contains("HASH"));
+        assert!(!s.contains("HASH") && !s.contains("PEM"));
         assert!(s.contains("Rust") && s.contains("http://x"));
     }
 }

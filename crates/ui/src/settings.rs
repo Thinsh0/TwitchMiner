@@ -22,7 +22,7 @@ fn hidden(section: &str) -> &'static [&'static str] {
         "drops" => &["enabled", "games", "exclude_games", "wanted_rewards"],
         "points" => &["enabled", "channels", "exclude", "follows", "order_by"],
         "engine" => &["paused", "active_hours", "agent_enabled"],
-        "notify" => &["enabled", "targets", "events"],
+        "notify" => &["enabled", "targets", "events", "firebase_key"],
         _ => &["enabled"],
     }
 }
@@ -243,6 +243,17 @@ pub fn render(ui: &MainWindow, state: &State) {
         .map(|list| list.iter().map(notify_target_item).collect())
         .unwrap_or_default();
     b.set_notify_targets(ModelRc::new(VecModel::from(targets)));
+    b.set_firebase_key(firebase_key_label(&notify["firebase_key"]).into());
+    let device = crate::platform::with(|p| p.push_device()).flatten();
+    let here = device.as_deref().and_then(|d| fcm_target_of(&notify, d));
+    b.set_push_here(here.is_some());
+    if let Some(target) = here
+        && let Some(Ok(addr)) = crate::platform::with(|p| p.push_address()).flatten()
+        && target["token"] != addr.token.as_str()
+        && RENEWED.with(|r| r.replace(Some(addr.token.clone())) != Some(addr.token))
+    {
+        b.invoke_push_renew();
+    }
     let wanted = present::string_list(Some(&notify["events"]));
     let events: Vec<NotifyEvent> = NOTIFY_EVENTS
         .iter()
@@ -307,6 +318,7 @@ fn notify_target_item(t: &Value) -> NotifyTarget {
         format!("…{end}")
     };
     let label = match kind {
+        "fcm" => t["name"].as_str().unwrap_or_default().to_string(),
         // The topic is what the phone subscribes to: shown whole.
         "ntfy" => t["url"].as_str().unwrap_or_default().to_string(),
         "discord" => tail(t["webhook_url"].as_str().unwrap_or_default()),
@@ -323,6 +335,44 @@ fn notify_target_item(t: &Value) -> NotifyTarget {
         label: label.into(),
         subscribe: subscribe.unwrap_or_default().into(),
     }
+}
+
+thread_local! {
+    /// The last push address this phone's destination was renewed with (once each).
+    static RENEWED: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+/// How the Firebase key is shown: its project id, `***` when hidden, empty for none.
+pub fn firebase_key_label(key: &Value) -> String {
+    match key.as_str().map(str::trim) {
+        None | Some("") => String::new(),
+        Some("***") => "***".into(),
+        Some(k) => serde_json::from_str::<Value>(k)
+            .ok()
+            .and_then(|v| v["project_id"].as_str().map(str::to_string))
+            .unwrap_or_else(|| "?".into()),
+    }
+}
+
+/// The `fcm` destination of phone `device`, if there is one.
+pub fn fcm_target_of<'a>(notify: &'a Value, device: &str) -> Option<&'a Value> {
+    notify["targets"]
+        .as_array()?
+        .iter()
+        .find(|t| t["kind"] == "fcm" && t["device"] == device)
+}
+
+/// `targets` with this phone's destination added, or its token renewed.
+pub fn with_push_target(targets: &Value, addr: &crate::PushAddress) -> Value {
+    let mut list = targets.as_array().cloned().unwrap_or_default();
+    list.retain(|t| !(t["kind"] == "fcm" && t["device"] == addr.device.as_str()));
+    list.push(serde_json::json!({
+        "kind": "fcm",
+        "token": addr.token,
+        "device": addr.device,
+        "name": addr.name,
+    }));
+    Value::Array(list)
 }
 
 /// `https://ntfy.sh/topic` → `ntfy://ntfy.sh/topic`: the ntfy app's link to subscribe.
@@ -431,6 +481,38 @@ mod tests {
         assert_eq!(hours[0]["days"], json!([1, 2, 3, 4, 5, 6]));
         toggle_day(&mut hours, 0, 7);
         assert_eq!(hours[0]["days"], json!([]));
+    }
+
+    #[test]
+    fn phones_and_the_firebase_key() {
+        let addr = crate::PushAddress {
+            token: "new".into(),
+            device: "d1".into(),
+            name: "Pixel 8".into(),
+        };
+        let before = json!([
+            {"kind": "ntfy", "url": "https://ntfy.sh/x"},
+            {"kind": "fcm", "token": "old", "device": "d1", "name": "Pixel 8"},
+        ]);
+        let after = with_push_target(&before, &addr);
+        assert_eq!(after.as_array().unwrap().len(), 2);
+        let notify = json!({"targets": after});
+        assert_eq!(fcm_target_of(&notify, "d1").unwrap()["token"], "new");
+        assert!(fcm_target_of(&notify, "d2").is_none());
+        assert_eq!(
+            notify_target_item(&fcm_target_of(&notify, "d1").unwrap().clone())
+                .label
+                .as_str(),
+            "Pixel 8"
+        );
+        assert_eq!(firebase_key_label(&json!("")), "");
+        assert_eq!(firebase_key_label(&json!("***")), "***");
+        assert_eq!(
+            firebase_key_label(&json!(
+                r#"{"type": "service_account", "project_id": "tm-123"}"#
+            )),
+            "tm-123"
+        );
     }
 
     #[test]

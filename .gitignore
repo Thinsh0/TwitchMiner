@@ -4,3 +4,6 @@
 *.db
 *.db-*
 .env
+/packaging/android/.gradle
+/packaging/android/google-services.json
+/packaging/android/local.properties

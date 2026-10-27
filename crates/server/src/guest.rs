@@ -234,6 +234,14 @@ impl View {
                 if scope.ends_with("/module:notify") && out["raw"].get("targets").is_none() {
                     access::redact_settings("module:notify", &mut out["effective"]);
                 }
+                // Nor the owner's Firebase key, used for the guest's phones too.
+                if scope.ends_with("/module:notify")
+                    && out["raw"].get("firebase_key").is_none()
+                    && let Some(key) = out["effective"].get_mut("firebase_key")
+                    && key.as_str().is_some_and(|k| !k.is_empty())
+                {
+                    *key = json!("***");
+                }
             }
             ReplyKind::Other => {}
         }
@@ -494,5 +502,19 @@ mod tests {
             .filter_map(|a| a["id"].as_str())
             .collect();
         assert!(!ids.contains(&"other"));
+    }
+
+    #[test]
+    fn the_owner_firebase_key_stays_hidden() {
+        let s = state();
+        let view = View::of(&s, "g").unwrap();
+        let kind = ReplyKind::Settings("account:mine/module:notify".into());
+        let mut out = json!({
+            "raw": {"targets": [{"kind": "fcm", "token": "t"}]},
+            "effective": {"targets": [{"kind": "fcm", "token": "t"}], "firebase_key": "{\"private_key\": \"PEM\"}"},
+        });
+        view.filter_reply(&kind, &mut out, &s);
+        assert_eq!(out["effective"]["firebase_key"], "***");
+        assert_eq!(out["effective"]["targets"][0]["token"], "t");
     }
 }

@@ -1447,3 +1447,60 @@ msgstr "Jeton"
 
 msgid "Connect your Twitch account: its drops, channel points and notifications are then set here."
 msgstr "Connecte ton compte Twitch : ses drops, ses points de chaîne et ses notifications se règlent ensuite ici."
+
+msgid "App"
+msgstr "Appli"
+
+msgid "Cannot receive notifications here: {}"
+msgstr "Impossible de recevoir les notifications ici : {}"
+
+msgid "Choose the key file"
+msgstr "Choisir le fichier de clé"
+
+msgid "Firebase console › Project settings › Service accounts › Generate new private key. Keep the file private: it lets anyone send notifications to the app."
+msgstr "Console Firebase › Paramètres du projet › Comptes de service › Générer une nouvelle clé privée. Garde ce fichier pour toi : il permet d'envoyer des notifications à l'appli."
+
+msgid "Firebase key"
+msgstr "Clé Firebase"
+
+msgid "No answer from Google Play services: check the connection and try again."
+msgstr "Pas de réponse des services Google Play : vérifie la connexion et réessaie."
+
+msgid "Notifications are turned off for TwitchMiner: allow them in the phone settings."
+msgstr "Les notifications sont désactivées pour TwitchMiner : autorise-les dans les paramètres du téléphone."
+
+msgid "Notifications from TwitchMiner itself, without another app. The server needs the Firebase key once (here or from the PC app)."
+msgstr "Les notifications de TwitchMiner lui-même, sans autre appli. Le serveur a besoin de la clé Firebase une fois (ici ou depuis l'appli PC)."
+
+msgid "Notifications in the TwitchMiner Android app, without another app. Add the Firebase key here once, then on the phone: Settings › Notifications › App › Receive on this phone."
+msgstr "Les notifications dans l'appli Android TwitchMiner, sans autre appli. Ajoute la clé Firebase ici une fois, puis sur le téléphone : Réglages › Notifications › Appli › Recevoir sur ce téléphone."
+
+msgid "Paste the content of the key file (JSON)"
+msgstr "Colle le contenu du fichier de clé (JSON)"
+
+msgid "Receive on this phone"
+msgstr "Recevoir sur ce téléphone"
+
+msgid "Register this phone again"
+msgstr "Réenregistrer ce téléphone"
+
+msgid "Replace"
+msgstr "Remplacer"
+
+msgid "This build of the app cannot receive notifications from the server: use ntfy."
+msgstr "Cette version de l'appli ne peut pas recevoir les notifications du serveur : utilise ntfy."
+
+msgid "This phone receives the notifications."
+msgstr "Ce téléphone reçoit les notifications."
+
+msgid "Waiting…"
+msgstr "En attente…"
+
+msgid "Without the Firebase key on the server, nothing will arrive yet."
+msgstr "Sans la clé Firebase sur le serveur, rien n'arrivera pour l'instant."
+
+msgid "none"
+msgstr "aucune"
+
+msgid "set"
+msgstr "enregistrée"

@@ -24,20 +24,35 @@ keytool -genkeypair -keystore release.keystore -alias twitchminer -keyalg RSA -k
 base64 -w0 release.keystore   # valeur du secret ANDROID_KEYSTORE
 ```
 
-**Construire** (sans Gradle : cargo-ndk, puis aapt2, zipalign et apksigner du SDK) :
+**Construire** : cargo-ndk pour la bibliothèque Rust, puis Gradle (code Java et Firebase), puis apksigner.
 
 ```bash
-export ANDROID_NDK_HOME=... ANDROID_HOME=...      # NDK r27, SDK avec build-tools et une plateforme
+export ANDROID_NDK_HOME=... ANDROID_HOME=...      # NDK r27, SDK avec build-tools et une plateforme ; JDK 17+
+export GOOGLE_SERVICES_JSON="$(cat google-services.json)"   # facultatif : notifications Firebase
 packaging/android/build-apk.sh target/TwitchMiner.apk   # ABIS="arm64-v8a x86_64" pour l'émulateur
 ```
 
-Le code : `apps/android` (bibliothèque `libtwitchminer.so` lancée par la `NativeActivity` d'Android, sans Java ; liens ouverts par un `Intent` via JNI), `packaging/android` (manifeste, icônes, script). Journaux : `adb logcat -s TwitchMiner`.
+Le code : `apps/android` (bibliothèque `libtwitchminer.so`, l'interface Rust lancée par une `NativeActivity`) et `packaging/android` : `java/` (`MainActivity` : demande d'autorisation, jeton Firebase, choix de fichier, appelés depuis le Rust par JNI ; `PushService` : notifications reçues appli ouverte), manifeste, icônes, `build.gradle.kts`, script. Journaux : `adb logcat -s TwitchMiner`.
 
-**Notifications sur le téléphone** : c'est le serveur qui les envoie, par **ntfy**. L'appli ntfy (Play Store, serveur `ntfy.sh`) les reçoit par le push d'Android (Firebase), même téléphone en veille et appli TwitchMiner fermée, sans user la batterie. Pour les activer :
+## Notifications sur le téléphone
 
-1. dans ntfy, s'abonner à un sujet difficile à deviner (qui connaît le sujet peut lire les messages) ;
-2. dans TwitchMiner, **Réglages › Notifications › Options › Destinations** : onglet ntfy, coller le même sujet (ou « Générer » puis le recopier dans ntfy), **Ajouter** ;
-3. **Envoyer une notification de test**, puis choisir les **événements envoyés**.
+C'est toujours le serveur qui les envoie. Deux façons de les recevoir, au choix ou ensemble, dans **Réglages › Notifications › Options › Destinations** :
+
+**Dans l'appli TwitchMiner (onglet « Appli »)**, par Firebase Cloud Messaging, le push d'Android : elles arrivent même téléphone en veille et appli fermée, sans autre appli ni batterie consommée.
+
+1. Une fois, mettre sur le serveur la **clé Firebase** du projet avec lequel l'APK a été construit : console Firebase › Paramètres du projet › Comptes de service › **Générer une nouvelle clé privée**, puis dans l'onglet « Appli » **Choisir le fichier de clé** (téléphone) ou coller son contenu (PC ou téléphone). Seul le nom du projet s'affiche ensuite ; la clé n'est jamais montrée au jeton agent ni aux invités. Garder ce fichier pour soi : il permet d'envoyer des notifications à l'appli.
+2. Sur chaque téléphone : **Recevoir sur ce téléphone**, accepter les notifications. Le téléphone s'ajoute aux destinations et reçoit aussitôt une notification de confirmation.
+3. **Envoyer une notification de test**, puis choisir les **événements envoyés**. Les alertes importantes (compte à reconnecter, drop à risque, compte de jeu à lier) passent par le canal « Important » : remise immédiate et bandeau. Les autres par « Events », réglables dans les paramètres Android de l'appli.
+
+Un invité peut faire de même sur son téléphone : la notification de ses comptes lui arrive, avec la clé du serveur (qu'il ne voit pas).
+
+Qui a besoin de Firebase : seulement celui qui construit l'APK (son `google-services.json`, secret `GOOGLE_SERVICES_JSON` de la CI) et les serveurs qui ont la clé de ce projet. L'APK officiel ne reçoit donc que des serveurs à qui son auteur a donné la clé. Sinon, ntfy.
+
+**Par l'appli ntfy (onglet ntfy)**, qui relaie par son propre Firebase : marche avec n'importe quel serveur, sans clé.
+
+1. dans ntfy (Play Store, serveur `ntfy.sh`), s'abonner à un sujet difficile à deviner (qui connaît le sujet peut lire les messages) ;
+2. dans TwitchMiner, onglet ntfy : coller le même sujet (ou « Générer », **Ajouter**, puis « S'abonner dans ntfy ») ;
+3. **Envoyer une notification de test**.
 
 Discord, Telegram et un webhook s'ajoutent au même endroit.
 

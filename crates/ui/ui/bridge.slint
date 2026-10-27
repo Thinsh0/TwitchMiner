@@ -17,7 +17,7 @@ export enum SetupReason { none, busy, failed }
 // Why a remote engine is unreachable (`tm_client::Fault`); `other` shows the raw error.
 export enum Fault { none, not-https, bad-token, refused, unknown-host, no-answer, bad-url, other }
 
-export enum ToastKind { plain, error, login-ok, claimed, invalid, copied, backup, manifest, drop-claimed, api-off, unreachable, timeout, crashed, notify-sent }
+export enum ToastKind { plain, error, login-ok, claimed, invalid, copied, backup, manifest, drop-claimed, api-off, unreachable, timeout, crashed, notify-sent, push-failed }
 
 export struct AccountItem {
     id: string,
@@ -263,7 +263,7 @@ export struct FieldItem {
 
 // A notification destination (`notify.targets`); `label` never shows a secret whole.
 export struct NotifyTarget {
-    // ntfy | discord | telegram | webhook
+    // fcm (a phone with the app) | ntfy | discord | telegram | webhook
     kind: string,
     label: string,
     // ntfy: link that opens the ntfy app on this topic (`ntfy://host/topic`).
@@ -528,6 +528,22 @@ export global Bridge {
     callback notify-event(string, bool);
     callback notify-test();
     pure callback notify-random-topic() -> string;
+    // Firebase key of the server: its project id, "***" when hidden (guest), "" none.
+    in property <string> firebase-key;
+    callback firebase-key-set(string);
+    callback firebase-key-remove();
+    // Reads the key from a file (system file chooser, where there is one).
+    in property <bool> picks-files;
+    callback firebase-key-pick();
+    // This app can receive notifications pushed by the server (Firebase build).
+    in property <bool> push-available;
+    // This phone is already one of the destinations.
+    in property <bool> push-here;
+    // Waiting for the permission or the phone's push address.
+    in property <bool> push-busy;
+    callback push-enable();
+    // This phone's push address changed (Firebase renews it at times): update it.
+    callback push-renew();
     callback hours-add();
     callback hours-remove(int);
     callback hours-toggle-day(int, int);

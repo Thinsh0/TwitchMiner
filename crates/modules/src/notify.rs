@@ -1,4 +1,7 @@
-//! Notifications: forwards selected events to Discord, ntfy, Telegram or any webhook.
+//! Notifications: forwards selected events to Discord, ntfy, Telegram, any webhook, or
+//! the TwitchMiner Android app (Firebase Cloud Messaging).
+
+mod fcm;
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -35,6 +38,19 @@ pub enum Target {
         #[serde(default)]
         headers: BTreeMap<String, String>,
     },
+    /// A phone running the TwitchMiner app, reached through Firebase (needs
+    /// `firebase_key`). Added by the app itself (“Receive on this phone”).
+    Fcm {
+        /// The app's Firebase registration token.
+        token: String,
+        /// Identifies the phone (the same after a reinstall): its new token replaces
+        /// the old one.
+        #[serde(default)]
+        device: String,
+        /// Shown in the list (phone model).
+        #[serde(default)]
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
@@ -52,6 +68,10 @@ pub struct NotifySettings {
     /// tests and the confirmation of a new destination.
     pub all_urgent: bool,
     pub language: Language,
+    /// Firebase service account key (the JSON file from Firebase › Project settings ›
+    /// Service accounts), for `fcm` destinations. Only the server holding the key of
+    /// the Firebase project the app was built with can reach it.
+    pub firebase_key: String,
 }
 
 #[derive(
@@ -79,6 +99,7 @@ impl Default for NotifySettings {
             min_points: 0,
             all_urgent: false,
             language: Language::Fr,
+            firebase_key: String::new(),
         }
     }
 }
@@ -89,14 +110,19 @@ impl Module for Notify {
         ModuleInfo::new(
             "notify",
             "Notifications",
-            "Sends drops, login problems and other events to Discord, ntfy, Telegram or a webhook.",
+            "Sends drops, login problems and other events to the TwitchMiner app, ntfy, Discord, Telegram or a webhook.",
             json!(NotifySettings::default()),
         )
         .with_schema::<NotifySettings>()
     }
 
     fn validate_settings(&self, v: &Value) -> Result<(), String> {
-        tm_core::module::validate_as::<NotifySettings>(v)
+        tm_core::module::validate_as::<NotifySettings>(v)?;
+        // A wrong file is refused at once rather than failing at the first message.
+        match v["firebase_key"].as_str().and_then(fcm::account_for) {
+            Some(Err(e)) => Err(format!("firebase_key: {e}")),
+            _ => Ok(()),
+        }
     }
 
     /// Keeps running while the account waits for a new login, to report it.
@@ -114,15 +140,26 @@ impl Module for Notify {
         let sender_http = http.clone();
         tokio::spawn(async move {
             while let Some(o) = pending.recv().await {
-                send_all(&sender_http, &o.targets, &o.text, &o.event, o.urgent).await;
+                let m = Message {
+                    text: &o.text,
+                    event: &o.event,
+                    urgent: o.urgent,
+                    firebase: &o.firebase,
+                };
+                send_all(&sender_http, &o.targets, &m).await;
             }
         });
-        let enqueue = |targets: &[Target], text: String, event: Value, urgent: bool| {
+        let enqueue = |settings: &NotifySettings,
+                       targets: &[Target],
+                       text: String,
+                       event: Value,
+                       urgent: bool| {
             let o = Outgoing {
                 targets: targets.to_vec(),
                 text,
                 event,
                 urgent,
+                firebase: firebase(settings),
             };
             if queue.try_send(o).is_err() {
                 tracing::warn!("notification dropped: too many waiting");
@@ -147,7 +184,7 @@ impl Module for Notify {
                 },
             };
             if let Some(text) = format_event(&ctx, &settings, &env) {
-                enqueue(&settings.targets, text, json!(env), true);
+                enqueue(&settings, &settings.targets, text, json!(env), true);
             }
         }
         loop {
@@ -169,7 +206,7 @@ impl Module for Notify {
                             Language::Fr => format!("✅ TwitchMiner est bien relié : les notifications de {} arriveront ici.", ctx.login()),
                             Language::En => format!("✅ TwitchMiner is connected: notifications for {} will arrive here.", ctx.login()),
                         };
-                        enqueue(&added, text, json!({"type": "connected"}), true);
+                        enqueue(&settings, &added, text, json!({"type": "connected"}), true);
                     }
                     continue;
                 }
@@ -180,7 +217,13 @@ impl Module for Notify {
                             Language::Fr => format!("Notification de test TwitchMiner pour {}", ctx.login()),
                             Language::En => format!("TwitchMiner test notification for {}", ctx.login()),
                         };
-                        let errors = send_all(&http, &settings.targets, &text, &json!({"type": "test"}), true).await;
+                        let m = Message {
+                            text: &text,
+                            event: &json!({"type": "test"}),
+                            urgent: true,
+                            firebase: &firebase(&settings),
+                        };
+                        let errors = send_all(&http, &settings.targets, &m).await;
                         Ok(json!({"sent": settings.targets.len() - errors.len(), "errors": errors}))
                     } else {
                         Err(format!("unknown call `{}`", call.name))
@@ -201,7 +244,13 @@ impl Module for Notify {
                 continue;
             };
             let urgent = settings.all_urgent || urgent(&env.event);
-            enqueue(&settings.targets, text, json!(env.as_ref()), urgent);
+            enqueue(
+                &settings,
+                &settings.targets,
+                text,
+                json!(env.as_ref()),
+                urgent,
+            );
         }
     }
 }
@@ -218,6 +267,24 @@ struct Outgoing {
     text: String,
     event: Value,
     urgent: bool,
+    firebase: Firebase,
+}
+
+/// The Firebase account to send `fcm` destinations with, or why there is none.
+type Firebase = fcm::Parsed;
+
+fn firebase(s: &NotifySettings) -> Firebase {
+    fcm::account_for(&s.firebase_key).unwrap_or_else(|| {
+        Err("no Firebase key on the server (Settings › Notifications › Firebase key)".into())
+    })
+}
+
+/// One notification, as sent to each destination.
+struct Message<'a> {
+    text: &'a str,
+    event: &'a Value,
+    urgent: bool,
+    firebase: &'a Firebase,
 }
 
 /// Events that need the user soon: sent with a high priority.
@@ -454,16 +521,10 @@ fn format_event(ctx: &ModuleContext, s: &NotifySettings, env: &Envelope) -> Opti
 }
 
 /// Sends to every target; returns one error message per failed target.
-async fn send_all(
-    http: &reqwest::Client,
-    targets: &[Target],
-    text: &str,
-    event: &Value,
-    urgent: bool,
-) -> Vec<String> {
+async fn send_all(http: &reqwest::Client, targets: &[Target], m: &Message<'_>) -> Vec<String> {
     let mut errors = Vec::new();
     for t in targets {
-        if let Err(e) = send_retrying(http, t, text, event, urgent).await {
+        if let Err(e) = send_retrying(http, t, m).await {
             let msg = format!("{e:#}");
             tracing::warn!(error = %msg, "notification failed");
             errors.push(msg);
@@ -474,16 +535,10 @@ async fn send_all(
 
 /// Sends to one target: a rate limit (429) waits what the service asks, a network or
 /// server error waits a little; `ATTEMPTS` tries in all.
-async fn send_retrying(
-    http: &reqwest::Client,
-    t: &Target,
-    text: &str,
-    event: &Value,
-    urgent: bool,
-) -> anyhow::Result<()> {
+async fn send_retrying(http: &reqwest::Client, t: &Target, m: &Message<'_>) -> anyhow::Result<()> {
     let mut attempt = 1;
     loop {
-        match send(http, t, text, event, urgent).await {
+        match send(http, t, m).await {
             Ok(()) => return Ok(()),
             Err(SendError {
                 retry_after: Some(wait),
@@ -497,13 +552,13 @@ async fn send_retrying(
     }
 }
 
-async fn send(
-    http: &reqwest::Client,
-    t: &Target,
-    text: &str,
-    event: &Value,
-    urgent: bool,
-) -> Result<(), SendError> {
+async fn send(http: &reqwest::Client, t: &Target, m: &Message<'_>) -> Result<(), SendError> {
+    let &Message {
+        text,
+        event,
+        urgent,
+        ..
+    } = m;
     let req = match t {
         Target::Discord { webhook_url } => http.post(webhook_url).json(&json!({ "content": text })),
         Target::Ntfy { url, token } => {
@@ -542,6 +597,21 @@ async fn send(
             }
             r
         }
+        Target::Fcm { token, .. } => {
+            let account = m
+                .firebase
+                .as_ref()
+                .map_err(|e| SendError::fatal(anyhow::anyhow!("{e}")))?;
+            let access = fcm::access_token(http, account)
+                .await
+                .map_err(|e| SendError {
+                    error: e,
+                    retry_after: Some(Duration::from_secs(3)),
+                })?;
+            http.post(fcm::send_url(account))
+                .bearer_auth(access)
+                .json(&fcm::message(token, text, urgent))
+        }
     };
     // Errors without their URL: webhook and bot URLs carry the target's secret.
     let resp = req
@@ -555,6 +625,27 @@ async fn send(
     let status = resp.status();
     if status.is_success() {
         return Ok(());
+    }
+    if let (Target::Fcm { .. }, Ok(account)) = (t, m.firebase) {
+        let body = resp.text().await.unwrap_or_default();
+        let reason = fcm::error_reason(&body).unwrap_or_default();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            fcm::forget(account);
+        }
+        let error = match reason.as_str() {
+            "UNREGISTERED" => anyhow::anyhow!(
+                "this phone no longer receives notifications (app removed or its data cleared): add it again"
+            ),
+            "SENDER_ID_MISMATCH" => anyhow::anyhow!(
+                "the Firebase key is not the one of the project the app was built with"
+            ),
+            _ => anyhow::anyhow!("Firebase: HTTP {status} {reason}"),
+        };
+        let retry_after = (status == reqwest::StatusCode::UNAUTHORIZED
+            || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+            || status.is_server_error())
+        .then(|| Duration::from_secs(3));
+        return Err(SendError { error, retry_after });
     }
     let retry_after = if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
         let headers = resp.headers().clone();
@@ -574,7 +665,42 @@ async fn send(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::LazyLock;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    fn test_message() -> Message<'static> {
+        static EVENT: Value = Value::Null;
+        static NO_KEY: LazyLock<Firebase> = LazyLock::new(|| Err("none".into()));
+        Message {
+            text: "hi",
+            event: &EVENT,
+            urgent: false,
+            firebase: &NO_KEY,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_phone_needs_the_firebase_key() {
+        tm_twitch::tls::install_crypto_provider();
+        let targets = [Target::Fcm {
+            token: "t".into(),
+            device: "d".into(),
+            name: "Pixel".into(),
+        }];
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let errors = send_all(&http, &targets, &test_message()).await;
+        assert_eq!(errors, ["none"]);
+        let s = NotifySettings {
+            firebase_key: "{}".into(),
+            ..Default::default()
+        };
+        assert!(Notify.validate_settings(&json!(s)).is_err());
+        assert!(
+            Notify
+                .validate_settings(&json!(NotifySettings::default()))
+                .is_ok()
+        );
+    }
 
     #[test]
     fn only_what_needs_acting_is_urgent() {
@@ -634,7 +760,7 @@ mod tests {
             headers: BTreeMap::new(),
         }];
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
-        let errors = send_all(&http, &targets, "hi", &json!({}), false).await;
+        let errors = send_all(&http, &targets, &test_message()).await;
         assert!(errors.is_empty(), "{errors:?}");
         server.await.unwrap();
     }
@@ -651,7 +777,7 @@ mod tests {
             .proxy(reqwest::Proxy::all("http://127.0.0.1:9").unwrap())
             .build()
             .unwrap();
-        let errors = send_all(&http, &targets, "hi", &json!({}), false).await;
+        let errors = send_all(&http, &targets, &test_message()).await;
         assert_eq!(errors.len(), 1);
         assert!(!errors[0].contains("SECRET"), "{}", errors[0]);
     }

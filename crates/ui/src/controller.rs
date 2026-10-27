@@ -412,6 +412,63 @@ impl Controller {
                 }
             })
         });
+        let c = self.clone();
+        b.on_firebase_key_set(move |key| {
+            let key = key.trim().to_string();
+            if !key.is_empty() {
+                c.write_setting("notify", "firebase_key", json!(key));
+            }
+        });
+        let c = self.clone();
+        b.on_firebase_key_remove(move || c.write_setting("notify", "firebase_key", json!("")));
+        let c = self.clone();
+        b.on_firebase_key_pick(move || {
+            if crate::platform::with(|p| p.pick_file()) != Some(true) {
+                return;
+            }
+            let me = c.clone();
+            // The chooser stays open as long as the user needs.
+            poll(
+                Duration::from_secs(900),
+                || crate::platform::with(|p| p.picked_file()).flatten(),
+                move |r| match r {
+                    Some(Ok(text)) => {
+                        me.write_setting("notify", "firebase_key", json!(text.trim()))
+                    }
+                    Some(Err(e)) if e != "cancelled" => me.toast(ToastKind::Error, Tone::Danger, e),
+                    _ => {}
+                },
+            );
+        });
+        let c = self.clone();
+        b.on_push_enable(move || {
+            crate::platform::with(|p| p.push_enable());
+            let me = c.clone();
+            c.on_ui(|ui| ui.global::<Bridge>().set_push_busy(true));
+            poll(
+                PUSH_WAIT,
+                || crate::platform::with(|p| p.push_address()).flatten(),
+                move |r| {
+                    me.on_ui(|ui| ui.global::<Bridge>().set_push_busy(false));
+                    match r {
+                        // The server confirms with a first notification on the phone.
+                        Some(Ok(addr)) => me.edit_setting("notify", "targets", move |v| {
+                            *v = settings::with_push_target(v, &addr);
+                        }),
+                        Some(Err(e)) => me.toast(ToastKind::PushFailed, Tone::Warning, e),
+                        None => me.toast(ToastKind::PushFailed, Tone::Warning, "timeout".into()),
+                    }
+                },
+            );
+        });
+        let c = self.clone();
+        b.on_push_renew(move || {
+            if let Some(Ok(addr)) = crate::platform::with(|p| p.push_address()).flatten() {
+                c.edit_setting("notify", "targets", move |v| {
+                    *v = settings::with_push_target(v, &addr);
+                });
+            }
+        });
         b.on_notify_random_topic(|| {
             use rand::Rng;
             let mut rng = rand::rng();
@@ -1766,4 +1823,39 @@ fn open_url(url: &str) {
     if let Err(e) = open::that_detached(url) {
         tracing::warn!(error = %e, url, "cannot open the browser");
     }
+}
+
+/// Longest wait for the permission to notify and the phone's push address.
+const PUSH_WAIT: Duration = Duration::from_secs(90);
+
+/// Calls `check` on the UI thread every 300 ms until it gives something or `limit`
+/// has passed, then `done` with it (`None`: nothing came in time).
+fn poll<T: 'static>(
+    limit: Duration,
+    check: impl Fn() -> Option<T> + 'static,
+    done: impl FnOnce(Option<T>) + 'static,
+) {
+    let timer = Rc::new(slint::Timer::default());
+    // The timer keeps itself alive until it is done.
+    let me = RefCell::new(Some(timer.clone()));
+    let done = RefCell::new(Some(done));
+    let started = std::time::Instant::now();
+    timer.start(
+        slint::TimerMode::Repeated,
+        Duration::from_millis(300),
+        move || {
+            let value = check();
+            if value.is_none() && started.elapsed() < limit {
+                return;
+            }
+            if let Some(t) = me.borrow_mut().take() {
+                t.stop();
+                // Not dropped inside its own callback.
+                slint::Timer::single_shot(Duration::ZERO, move || drop(t));
+            }
+            if let Some(d) = done.borrow_mut().take() {
+                d(value);
+            }
+        },
+    );
 }

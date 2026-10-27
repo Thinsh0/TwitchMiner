@@ -1,22 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The application is the Rust library `libtwitchminer.so` (apps/android) run by the
-     system's NativeActivity: no Java code. VERSION_CODE and VERSION_NAME are filled in
-     by build-apk.sh. targetSdk 34: the window stays below the status bar (Android 15
-     forces edge-to-edge from targetSdk 35). -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="io.github.thinsh0.twitchminer"
-    android:versionCode="VERSION_CODE"
-    android:versionName="VERSION_NAME">
+<!-- The interface is the Rust library `libtwitchminer.so` (apps/android), run by
+     NativeActivity through a small subclass (MainActivity.java) that adds what needs
+     Java: notifications pushed by the server (Firebase) and the file chooser.
+     Built by build-apk.sh (Gradle): package name and version come from build.gradle.kts.
+     targetSdk 34: the window stays below the status bar (Android 15 forces
+     edge-to-edge from targetSdk 35). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:label="TwitchMiner"
         android:icon="@mipmap/ic_launcher"
-        android:hasCode="false"
         android:allowBackup="false">
         <activity
-            android:name="android.app.NativeActivity"
+            android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
@@ -28,5 +27,27 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".PushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Notifications shown by Android while the app is not running. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/accent" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="events" />
+        <!-- No analytics nor data collection. -->
+        <meta-data android:name="firebase_analytics_collection_deactivated" android:value="true" />
+        <meta-data android:name="google_analytics_adid_collection_enabled" android:value="false" />
     </application>
 </manifest>

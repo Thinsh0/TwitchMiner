@@ -28,7 +28,7 @@ TM_TOKEN=... cargo run -p tm-twitch --example smoke   # test réel contre Twitch
 
 Avant de valider un changement : `rustup update stable`, puis fmt, clippy et tests. La CI prend toujours la dernière Rust stable, dont les nouvelles règles clippy peuvent la faire échouer alors que tout passe avec une version plus ancienne. Après un push, vérifier que la CI passe.
 
-Android : appli (client d'un serveur) `packaging/android/build-apk.sh` (voir `docs/ANDROID.md`) ; moteur seul `cargo ndk --target aarch64-linux-android --platform 26 build -p tm-app`. L'interface doit rester utilisable en disposition compacte (`Theme.compact`, fenêtre de 412 px : `TM_UI_SIZE=412x880`).
+Android : appli (client d'un serveur) `packaging/android/build-apk.sh` (cargo-ndk puis Gradle ; un peu de Java dans `packaging/android/java`, appelé depuis `apps/android` par JNI ; voir `docs/ANDROID.md`) ; moteur seul `cargo ndk --target aarch64-linux-android --platform 26 build -p tm-app`. L'interface doit rester utilisable en disposition compacte (`Theme.compact`, fenêtre de 412 px : `TM_UI_SIZE=412x880`).
 
 Une seule branche : tout se fait sur `main` (la CI ne tourne que là et sur les pull requests).
 

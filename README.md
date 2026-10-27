@@ -20,7 +20,7 @@ TwitchMiner regarde des streams à ta place, en arrière-plan et en qualité min
 
 - 🎁 **Drops** : il trouve les campagnes, les planifie selon **ton ordre de jeux**, fait passer devant celles qui vont bientôt finir, et récupère les récompenses. « Faire en premier » sur une campagne, alertes quand c'est juste ou qu'un compte de jeu doit être lié.
 - 💜 **Points de chaîne** : tes chaînes préférées, coffres bonus, raids, moments, séries de visionnage. Prédictions automatiques en option, avec garde-fous.
-- 🔔 **Notifications** sur ton téléphone (ntfy), Discord ou Telegram, et sur le bureau.
+- 🔔 **Notifications** dans l'appli Android, par ntfy, Discord ou Telegram, et sur le bureau.
 - 🖥️ **Appli de bureau** discrète : elle vit dans la barre système et se met à jour seule.
 - 📱 **Appli Android** pour suivre et piloter ton serveur de n'importe où.
 - 🏠 **Mode serveur** : une image Docker pour un NAS, un Raspberry Pi ou un mini PC, qui mine même PC éteint.
@@ -71,7 +71,7 @@ Puis connecte l'appli de bureau ou Android au serveur (« Serveur distant »). G
 |---|---|
 | [Appli de bureau](docs/DESKTOP.md) | moteur local ou distant, Windows, mises à jour, notifications |
 | [Serveur maison](docs/SERVER.md) | Docker, Dockge, systemd, Tailscale, miner pour un ami, secours entre machines |
-| [Android](docs/ANDROID.md) | installer l'APK, se connecter, notifications avec ntfy |
+| [Android](docs/ANDROID.md) | installer l'APK, se connecter, notifications (appli ou ntfy) |
 | [Ligne de commande](docs/CLI.md) | le daemon `twitchminer` et `twitchminer ctl` |
 | [Agents IA](docs/AGENT.md) | piloter TwitchMiner depuis un agent (MCP) |
 | [Développement](docs/DEVELOPMENT.md) | compiler, organisation du code, CI et versions |

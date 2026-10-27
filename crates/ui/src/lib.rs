@@ -27,7 +27,7 @@ mod update;
 use std::path::PathBuf;
 
 pub use notifications::Notification;
-pub use platform::{AppHandle, NoPlatform, Platform, Status};
+pub use platform::{AppHandle, NoPlatform, Platform, PushAddress, Status};
 pub use session::Target;
 
 #[derive(Debug, Clone, Default)]
@@ -112,6 +112,10 @@ pub fn run(
     ui.global::<Bridge>().set_remote_only(opts.remote_only);
     ui.global::<Bridge>()
         .set_on_phone(cfg!(target_os = "android"));
+    ui.global::<Bridge>()
+        .set_push_available(platform::with(|p| p.push_device().is_some()) == Some(true));
+    ui.global::<Bridge>()
+        .set_picks_files(cfg!(target_os = "android"));
     match target.or((!opts.remote_only).then_some(Target::Local)) {
         Some(target) => ctrl.open(target, false),
         None => ctrl.show_setup(false),

@@ -11,7 +11,7 @@ cargo run -p twitchminer -- run            # daemon
 cargo fmt --all
 cargo clippy --workspace --all-targets     # sans avertissement (la CI utilise -D warnings)
 cargo test --workspace
-packaging/android/build-apk.sh             # APK Android (NDK + SDK, voir ANDROID.md)
+packaging/android/build-apk.sh             # APK Android (NDK + SDK + Gradle, voir ANDROID.md)
 ```
 
 Captures d'écran sans fenêtre : `TM_UI_DEMO=1 TM_UI_SNAPSHOT=capture.bmp TM_UI_SIZE=412x880 TM_UI_SCREEN=drops` (voir [DESKTOP.md](DESKTOP.md)). Les images du README en viennent (mode démo, noms fictifs).

@@ -220,13 +220,126 @@ component AccountRow inherits Rectangle {
     }
 }
 
+// Notifications in the TwitchMiner app itself (Firebase): the server's key, and on the
+// phone the button that adds it to the destinations.
+component FirebasePanel inherits VerticalLayout {
+    property <string> key;
+    property <bool> replace;
+    spacing: 8px;
+
+    Muted {
+        text: Bridge.on-phone
+            ? @tr("Notifications from TwitchMiner itself, without another app. The server needs the Firebase key once (here or from the PC app).")
+            : @tr("Notifications in the TwitchMiner Android app, without another app. Add the Firebase key here once, then on the phone: Settings › Notifications › App › Receive on this phone.");
+    }
+    if !Bridge.guest: HorizontalLayout {
+        spacing: 8px;
+        Text {
+            text: @tr("Firebase key");
+            color: Theme.text;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+        Text {
+            text: Bridge.firebase-key == "" ? @tr("none") : Bridge.firebase-key == "***" ? @tr("set") : Bridge.firebase-key;
+            color: Bridge.firebase-key == "" ? Theme.text-muted : Theme.text;
+            font-size: Theme.font-s;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        if Bridge.firebase-key != "" && !root.replace: VerticalLayout {
+            alignment: center;
+            Button {
+                compact: true;
+                kind: ButtonKind.ghost;
+                text: @tr("Replace");
+                clicked => { root.replace = true; }
+            }
+        }
+        if Bridge.firebase-key != "": VerticalLayout {
+            alignment: center;
+            IconButton {
+                icon: Icons.trash;
+                tooltip: @tr("Remove");
+                clicked => {
+                    root.replace = false;
+                    Bridge.firebase-key-remove();
+                }
+            }
+        }
+    }
+    if !Bridge.guest && (Bridge.firebase-key == "" || root.replace): Muted {
+        text: @tr("Firebase console › Project settings › Service accounts › Generate new private key. Keep the file private: it lets anyone send notifications to the app.");
+    }
+    if !Bridge.guest && (Bridge.firebase-key == "" || root.replace): HorizontalLayout {
+        spacing: 6px;
+        TextField {
+            placeholder: @tr("Paste the content of the key file (JSON)");
+            input-type: password;
+            text <=> root.key;
+            accepted => {
+                Bridge.firebase-key-set(root.key);
+                root.key = "";
+                root.replace = false;
+            }
+        }
+        Button {
+            compact: true;
+            kind: ButtonKind.primary;
+            text: @tr("Save");
+            enabled: root.key != "";
+            clicked => {
+                Bridge.firebase-key-set(root.key);
+                root.key = "";
+                root.replace = false;
+            }
+        }
+    }
+    if !Bridge.guest && Bridge.picks-files && (Bridge.firebase-key == "" || root.replace): HorizontalLayout {
+        alignment: start;
+        Button {
+            compact: true;
+            kind: ButtonKind.ghost;
+            icon: Icons.external;
+            text: @tr("Choose the key file");
+            clicked => {
+                root.replace = false;
+                Bridge.firebase-key-pick();
+            }
+        }
+    }
+    if Bridge.on-phone && Bridge.push-available: HorizontalLayout {
+        alignment: start;
+        spacing: 8px;
+        Button {
+            compact: true;
+            kind: Bridge.push-here ? ButtonKind.ghost : ButtonKind.primary;
+            icon: Icons.plus;
+            text: Bridge.push-busy ? @tr("Waiting…") : Bridge.push-here ? @tr("Register this phone again") : @tr("Receive on this phone");
+            enabled: !Bridge.push-busy;
+            clicked => { Bridge.push-enable(); }
+        }
+    }
+    if Bridge.on-phone && Bridge.push-available && Bridge.push-here: Muted {
+        text: @tr("This phone receives the notifications.");
+    }
+    if Bridge.on-phone && Bridge.push-available && Bridge.firebase-key == "" && !Bridge.push-here: Muted {
+        text: @tr("Without the Firebase key on the server, nothing will arrive yet.");
+    }
+    if Bridge.on-phone && !Bridge.push-available: Muted {
+        text: @tr("This build of the app cannot receive notifications from the server: use ntfy.");
+    }
+}
+
 // Notifications: where they go and what is sent, without writing JSON.
 component NotifyEditor inherits VerticalLayout {
-    // ntfy, discord, telegram, webhook
+    // app (Firebase), ntfy, discord, telegram, webhook
     property <int> kind;
     property <string> value;
     property <string> chat;
-    property <string> kind-id: kind == 0 ? "ntfy" : kind == 1 ? "discord" : kind == 2 ? "telegram" : "webhook";
+    property <string> key;
+    property <string> kind-id: kind == 1 ? "ntfy" : kind == 2 ? "discord" : kind == 3 ? "telegram" : "webhook";
     spacing: 10px;
 
     pure function event-label(key: string) -> string {
@@ -267,7 +380,7 @@ component NotifyEditor inherits VerticalLayout {
             VerticalLayout {
                 alignment: center;
                 Pill {
-                    text: t.kind == "ntfy" ? "ntfy" : t.kind == "discord" ? "Discord" : t.kind == "telegram" ? "Telegram" : "Webhook";
+                    text: t.kind == "fcm" ? @tr("App") : t.kind == "ntfy" ? "ntfy" : t.kind == "discord" ? "Discord" : t.kind == "telegram" ? "Telegram" : "Webhook";
                     tone: Tone.accent;
                 }
             }
@@ -309,7 +422,7 @@ component NotifyEditor inherits VerticalLayout {
             padding: 10px;
             spacing: 8px;
             Segmented {
-                items: [{ label: "ntfy" }, { label: "Discord" }, { label: "Telegram" }, { label: "Webhook" }];
+                items: [{ label: @tr("App") }, { label: "ntfy" }, { label: "Discord" }, { label: "Telegram" }, { label: "Webhook" }];
                 selected: root.kind;
                 picked(i) => {
                     root.kind = i;
@@ -317,24 +430,25 @@ component NotifyEditor inherits VerticalLayout {
                     root.chat = "";
                 }
             }
-            Muted {
-                text: root.kind == 0 ? (Bridge.on-phone
+            if root.kind == 0: FirebasePanel { }
+            if root.kind != 0: Muted {
+                text: root.kind == 1 ? (Bridge.on-phone
                         ? @tr("Install the ntfy app (Play Store), then here: Generate, Add, and “Subscribe in ntfy”. Anyone who knows the topic can read the messages.")
                         : @tr("Phone: install the ntfy app (Play Store), subscribe to a hard-to-guess topic, and add the same topic here. Anyone who knows the topic can read the messages."))
-                    : root.kind == 1 ? @tr("Discord: channel settings › Integrations › Webhooks › New webhook › Copy webhook URL.")
-                    : root.kind == 2 ? @tr("Telegram: the token given by @BotFather, and your chat id (send a message to the bot first).")
+                    : root.kind == 2 ? @tr("Discord: channel settings › Integrations › Webhooks › New webhook › Copy webhook URL.")
+                    : root.kind == 3 ? @tr("Telegram: the token given by @BotFather, and your chat id (send a message to the bot first).")
                     : @tr("Any URL that receives a JSON POST with the text and the event.");
             }
-            HorizontalLayout {
+            if root.kind != 0: HorizontalLayout {
                 spacing: 6px;
                 TextField {
-                    placeholder: root.kind == 0 ? @tr("Topic, or https://your-server/topic")
-                        : root.kind == 1 ? "https://discord.com/api/webhooks/…"
-                        : root.kind == 2 ? @tr("Bot token") : "https://…";
+                    placeholder: root.kind == 1 ? @tr("Topic, or https://your-server/topic")
+                        : root.kind == 2 ? "https://discord.com/api/webhooks/…"
+                        : root.kind == 3 ? @tr("Bot token") : "https://…";
                     text <=> root.value;
                     accepted => { root.add(); }
                 }
-                if root.kind == 0: Button {
+                if root.kind == 1: Button {
                     compact: true;
                     kind: ButtonKind.ghost;
                     icon: Icons.refresh;
@@ -342,19 +456,19 @@ component NotifyEditor inherits VerticalLayout {
                     clicked => { root.value = Bridge.notify-random-topic(); }
                 }
             }
-            if root.kind == 2: TextField {
+            if root.kind == 3: TextField {
                 placeholder: @tr("Chat id");
                 text <=> root.chat;
                 accepted => { root.add(); }
             }
-            HorizontalLayout {
+            if root.kind != 0: HorizontalLayout {
                 alignment: start;
                 Button {
                     compact: true;
                     kind: ButtonKind.primary;
                     icon: Icons.plus;
                     text: @tr("Add");
-                    enabled: root.value != "" && (root.kind != 2 || root.chat != "");
+                    enabled: root.value != "" && (root.kind != 3 || root.chat != "");
                     clicked => { root.add(); }
                 }
             }

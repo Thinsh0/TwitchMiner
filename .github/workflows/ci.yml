@@ -128,10 +128,12 @@ jobs:
         with:
           ndk-version: r27c
       # Slint compiles a small Java helper to dex: JDK 17 (21 trips older build tools).
+      # Also runs Gradle (Java glue and Firebase, packaging/android/build.gradle.kts).
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
       - run: cargo install cargo-ndk --locked
       # A private signing key when the repository has one (secrets ANDROID_KEYSTORE as
       # base64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS), else the public test key.
@@ -148,6 +150,9 @@ jobs:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'android' }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'twitchminer' }}
+          # Firebase project of the app (notifications pushed by the server); without
+          # it the APK is built without them.
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
       - uses: actions/upload-artifact@v4
         with:
           name: twitchminer-android-apk

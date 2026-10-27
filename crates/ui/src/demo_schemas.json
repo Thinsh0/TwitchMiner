@@ -556,11 +556,12 @@
           "prediction_result",
           "notice_raised"
         ],
+        "firebase_key": "",
         "language": "fr",
         "min_points": 0,
         "targets": []
       },
-      "description": "Sends drops, login problems and other events to Discord, ntfy, Telegram or a webhook.",
+      "description": "Sends drops, login problems and other events to the TwitchMiner app, ntfy, Discord, Telegram or a webhook.",
       "id": "notify",
       "name": "Notifications",
       "settings_schema": {
@@ -664,6 +665,34 @@
                   "url"
                 ],
                 "type": "object"
+              },
+              {
+                "description": "A phone running the TwitchMiner app, reached through Firebase (needs\n`firebase_key`). Added by the app itself (“Receive on this phone”).",
+                "properties": {
+                  "device": {
+                    "default": "",
+                    "description": "Identifies the phone (the same after a reinstall): its new token replaces\nthe old one.",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "fcm",
+                    "type": "string"
+                  },
+                  "name": {
+                    "default": "",
+                    "description": "Shown in the list (phone model).",
+                    "type": "string"
+                  },
+                  "token": {
+                    "description": "The app's Firebase registration token.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "token"
+                ],
+                "type": "object"
               }
             ]
           }
@@ -692,6 +721,11 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "firebase_key": {
+            "default": "",
+            "description": "Firebase service account key (the JSON file from Firebase › Project settings ›\nService accounts), for `fcm` destinations. Only the server holding the key of\nthe Firebase project the app was built with can reach it.",
+            "type": "string"
           },
           "language": {
             "$ref": "#/$defs/Language",

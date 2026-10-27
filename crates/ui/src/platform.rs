@@ -43,6 +43,39 @@ pub trait Platform {
     fn restart(&self, _exe: &std::path::Path) -> Result<(), String> {
         Err("not supported".into())
     }
+    /// This device's id for notifications pushed by the engine (Firebase), the same
+    /// after a reinstall; `None` when the application cannot receive them.
+    fn push_device(&self) -> Option<String> {
+        None
+    }
+    /// Asks for the permission to notify and for this device's push address, given
+    /// later by `push_address`.
+    fn push_enable(&self) {}
+    /// This device's push address once known, or why there is none (`denied`,
+    /// `unavailable`, or an error message). `None` while waiting.
+    fn push_address(&self) -> Option<Result<PushAddress, String>> {
+        None
+    }
+    /// Opens the system's file chooser (`false` when there is none); the chosen text
+    /// file is then given by `picked_file`.
+    fn pick_file(&self) -> bool {
+        false
+    }
+    /// The chosen file's content, or why it could not be read (`cancelled` when no
+    /// file was chosen). `None` while the chooser is open.
+    fn picked_file(&self) -> Option<Result<String, String>> {
+        None
+    }
+}
+
+/// Where the engine pushes notifications for this device (a `notify` target `fcm`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PushAddress {
+    /// Firebase registration token.
+    pub token: String,
+    pub device: String,
+    /// Shown in the destinations (phone model).
+    pub name: String,
 }
 
 /// No integration (plain window).

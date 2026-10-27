@@ -27,7 +27,7 @@ export global Fmt {
             : f == Fault.refused ? @tr("nothing answers on this port. Is the engine running, and is the port right (7878 by default)?")
             : f == Fault.unknown-host ? @tr("unknown address. Check the name, and that Tailscale (or your VPN) is connected on this device.")
             : f == Fault.no-answer ? @tr("no answer. Check that the server is on and reachable from this network (Tailscale connected?).")
-            : f == Fault.bad-url ? @tr("invalid address. Example: http://192.168.1.10:7878")
+            : f == Fault.bad-url ? @tr("invalid address ({}). Example: http://192.168.1.10:7878", raw)
             : raw;
     }
 

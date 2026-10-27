@@ -141,7 +141,7 @@ impl Controller {
             c.open(
                 Target::Remote {
                     url: tm_client::normalize_url(&url),
-                    token: token.trim().to_string(),
+                    token: tm_client::clean_token(&token),
                 },
                 true,
             )

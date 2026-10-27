@@ -1283,8 +1283,8 @@ msgstr "adresse inconnue. Vérifie le nom, et que Tailscale (ou ton VPN) est con
 msgid "no answer. Check that the server is on and reachable from this network (Tailscale connected?)."
 msgstr "pas de réponse. Vérifie que le serveur est allumé et joignable depuis ce réseau (Tailscale connecté ?)."
 
-msgid "invalid address. Example: http://192.168.1.10:7878"
-msgstr "adresse invalide. Exemple : http://192.168.1.10:7878"
+msgid "invalid address ({}). Example: http://192.168.1.10:7878"
+msgstr "adresse invalide ({}). Exemple : http://192.168.1.10:7878"
 
 msgid "Application {} · server {}"
 msgstr "Application {} · serveur {}"

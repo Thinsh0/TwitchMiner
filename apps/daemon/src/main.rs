@@ -230,7 +230,8 @@ async fn mcp_stdio(
 ) -> anyhow::Result<()> {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     let token = match token {
-        Some(t) => t,
+        // Pasted tokens often carry spaces or line breaks.
+        Some(t) => t.chars().filter(|c| !c.is_whitespace()).collect(),
         None => tm_app::read_token(data_dir, tm_app::TokenKind::Agent).await?,
     };
     let endpoint = format!("{}/api/v1/mcp", url.trim_end_matches('/'));

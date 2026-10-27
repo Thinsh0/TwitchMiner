@@ -120,6 +120,13 @@ async fn local_and_remote_mirror_the_same_state() {
         .await
         .unwrap();
 
+    // A token pasted with a line break and spaces still works.
+    let pasted = Remote::connect(&format!("http://{addr}"), " sec\r\nret ")
+        .await
+        .unwrap();
+    assert_eq!(*pasted.link().borrow(), Link::Connected);
+    drop(pasted);
+
     // Wrong token is refused.
     let intruder = Remote::connect(&format!("http://{addr}"), "wrong")
         .await

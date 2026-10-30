@@ -147,7 +147,8 @@ component PlanRowCard inherits Rectangle {
                         text: PlanText.label(root.entry);
                         tone: PlanText.tone(root.entry.status);
                     }
-                    if root.entry.has-progress && root.entry.status != "done": VerticalLayout {
+                    // Phone: below the bar, the row is too narrow for both.
+                    if !Theme.compact && root.entry.has-progress && root.entry.status != "done": VerticalLayout {
                         alignment: center;
                         Text {
                             text: @tr("{}% · {} left", Math.floor(root.entry.progress * 100), Fmt.duration(root.entry.remaining-minutes));
@@ -160,6 +161,11 @@ component PlanRowCard inherits Rectangle {
                     height: 4px;
                     progress: root.entry.progress;
                     tint: root.entry.status == "done" ? Theme.success : root.entry.status == "will_miss" ? Theme.danger : Theme.accent;
+                }
+                if Theme.compact && root.entry.has-progress && root.entry.status != "done": Text {
+                    text: @tr("{}% · {} left", Math.floor(root.entry.progress * 100), Fmt.duration(root.entry.remaining-minutes));
+                    font-size: Theme.font-xs;
+                    color: Theme.text-faint;
                 }
             }
             HorizontalLayout {

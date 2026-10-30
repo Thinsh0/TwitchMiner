@@ -316,7 +316,7 @@ export component ActivityScreen inherits Page {
                 horizontal-stretch: 1;
             }
         }
-        Segmented {
+        if !Theme.compact: Segmented {
             items: [
                 { label: @tr("All") },
                 { label: @tr("Points") },
@@ -329,6 +329,29 @@ export component ActivityScreen inherits Page {
             picked(i) => {
                 Bridge.history-filter = i;
                 Bridge.activity-changed();
+            }
+        }
+        // Phone: the six filters on two rows (one row does not fit).
+        if Theme.compact: HorizontalLayout {
+            alignment: start;
+            Segmented {
+                items: [{ label: @tr("All") }, { label: @tr("Points") }, { label: @tr("Drops") }];
+                selected: Bridge.history-filter < 3 ? Bridge.history-filter : -1;
+                picked(i) => {
+                    Bridge.history-filter = i;
+                    Bridge.activity-changed();
+                }
+            }
+        }
+        if Theme.compact: HorizontalLayout {
+            alignment: start;
+            Segmented {
+                items: [{ label: @tr("Watching") }, { label: @tr("Bets & raids") }, { label: @tr("Account") }];
+                selected: Bridge.history-filter >= 3 ? Bridge.history-filter - 3 : -1;
+                picked(i) => {
+                    Bridge.history-filter = i + 3;
+                    Bridge.activity-changed();
+                }
             }
         }
         for item[i] in Bridge.history: VerticalLayout {

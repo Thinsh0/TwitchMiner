@@ -83,7 +83,8 @@ sign() {
     [ -f "$key" ] || die "no such key file: $key"
     inside_repo "$key" && die "the private key is inside the repository: move it out (it must never be committed)"
     [ -f "$manifest" ] || die "missing $manifest"
-    if grep -q $'\r' "$manifest"; then
+    # Not grep: Git Bash's grep hides the CR of a CRLF line.
+    if [ "$(tr -dc '\r' <"$manifest" | wc -c | tr -d ' \r')" -ne 0 ]; then
         die "manifest/twitch.json has Windows line endings (CRLF): the signed bytes would not be the published ones. Convert it to LF (git checkout -- manifest/twitch.json, or set the editor to LF)"
     fi
 

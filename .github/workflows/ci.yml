@@ -136,7 +136,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: cargo install cargo-ndk --locked
       # A private signing key when the repository has one (secrets ANDROID_KEYSTORE as
-      # base64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS), else the public test key.
+      # base64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS), else the public test key
+      # (pull requests, forks): the Release workflow refuses to publish such an APK.
       - name: signing key
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}

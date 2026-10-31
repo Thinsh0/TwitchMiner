@@ -5,6 +5,12 @@ name: Release
 # (Actions › Release › Run workflow) with the version: the tag is then created on the
 # commit. The CI must have passed on that commit. Running it again for an existing
 # release replaces its files and the image.
+#
+# Required secrets (see docs/DESKTOP.md and docs/ANDROID.md):
+# - RELEASE_SIGNING_KEY: ed25519 private key (PEM) signing every file (`<file>.sig`);
+#   the desktop application installs an update only with a valid signature.
+# - ANDROID_KEYSTORE (+ _PASSWORD, _KEY_ALIAS), used by the CI: an APK signed with
+#   the public test key (packaging/android/debug.keystore) is never published.
 on:
   push:
     tags: ["v*"]
@@ -50,6 +56,46 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "run=$run" >> "$GITHUB_OUTPUT"
           echo "commit $sha, CI run $run"
+      - name: download the CI binaries
+        run: gh run download "${{ steps.ci.outputs.run }}" -D ci
+      # Nothing is published unless the files can be signed and the APK was signed
+      # with a private key.
+      - name: check the signing keys
+        shell: bash
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          if [ -z "$RELEASE_SIGNING_KEY" ]; then
+            echo "::error::secret RELEASE_SIGNING_KEY missing: the release files cannot be signed (see docs/DESKTOP.md)"
+            exit 1
+          fi
+          umask 077
+          printf '%s\n' "$RELEASE_SIGNING_KEY" > "$RUNNER_TEMP/release-signing.pem"
+          public=$(openssl pkey -in "$RUNNER_TEMP/release-signing.pem" -pubout -outform DER | tail -c 32 | od -An -tx1 | tr -d ' \n')
+          if [ ${#public} -ne 64 ]; then
+            echo "::error::RELEASE_SIGNING_KEY is not an ed25519 private key (PEM)"
+            exit 1
+          fi
+          embedded=$(sed -n 's/^pub const RELEASE_PUBLIC_KEY: &str = "\([0-9a-fA-F]*\)";/\1/p' crates/ui/src/update.rs | tr 'A-F' 'a-f')
+          if [ -z "$embedded" ]; then
+            echo "::warning::RELEASE_PUBLIC_KEY is empty in crates/ui/src/update.rs: this version will not install updates by itself (put $public there)"
+          elif [ "$embedded" != "$public" ]; then
+            echo "::error::RELEASE_PUBLIC_KEY in crates/ui/src/update.rs ($embedded) is not the public key of RELEASE_SIGNING_KEY ($public)"
+            exit 1
+          fi
+          apk=ci/twitchminer-android-apk/TwitchMiner.apk
+          build_tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          signer=$("$build_tools/apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr -d ': ' | tr 'A-F' 'a-f')
+          debug=$(keytool -exportcert -keystore packaging/android/debug.keystore -storepass android -alias twitchminer | sha256sum | cut -d' ' -f1)
+          if [ -z "$signer" ] || [ -z "$debug" ]; then
+            echo "::error::cannot read the APK signer or the test key"
+            exit 1
+          fi
+          if [ "$signer" = "$debug" ]; then
+            echo "::error::the APK is signed with the public test key (packaging/android/debug.keystore): add the ANDROID_KEYSTORE secrets, run the CI again, then this (see docs/ANDROID.md)"
+            exit 1
+          fi
+          echo "APK signer: $signer"
       - name: create the release (an existing one is kept)
         shell: bash
         run: |
@@ -72,10 +118,10 @@ jobs:
           **Android** : \`TwitchMiner-$TAG-android.apk\`, l'appli qui suit et pilote ton serveur TwitchMiner depuis le téléphone (Tailscale ou réseau local). L'installer en autorisant les sources inconnues (voir \`docs/ANDROID.md\`).
 
           **Linux** : \`x86_64-unknown-linux-gnu\` (app de bureau + daemon), \`x86_64-unknown-linux-musl\` et \`aarch64-unknown-linux-musl\` (daemon statique, sans dépendance). Archives \`*-linux-android\` : moteur Android (daemon pour Termux, pont JNI).
+
+          **Signatures** : chaque fichier a sa signature ed25519 \`<fichier>.sig\` (vérification : voir \`docs/DESKTOP.md\`).
           EOF
           gh release create "$TAG" --target "${{ steps.ci.outputs.sha }}" --title "TwitchMiner $TAG" --notes-file notes.md --generate-notes
-      - name: download the CI binaries
-        run: gh run download "${{ steps.ci.outputs.run }}" -D ci
       - name: package
         shell: bash
         run: |
@@ -110,9 +156,21 @@ jobs:
             esac
           done
           ls -l ./*.zip ./*.tar.gz ./*.exe ./*.apk
+      # A detached ed25519 signature per file (`<file>.sig`, 64 raw bytes): checked by
+      # the desktop application before installing an update.
+      - name: sign
+        shell: bash
+        run: |
+          key="$RUNNER_TEMP/release-signing.pem"
+          openssl pkey -in "$key" -pubout -out "$RUNNER_TEMP/release-signing.pub"
+          for f in ./*.zip ./*.tar.gz ./*.exe ./*.apk; do
+            openssl pkeyutl -sign -inkey "$key" -rawin -in "$f" -out "$f.sig"
+            openssl pkeyutl -verify -pubin -inkey "$RUNNER_TEMP/release-signing.pub" -rawin -in "$f" -sigfile "$f.sig"
+          done
+          rm -f "$key"
       - name: upload
         shell: bash
-        run: gh release upload "$TAG" ./*.zip ./*.tar.gz ./*.exe ./*.apk --clobber
+        run: gh release upload "$TAG" ./*.zip ./*.tar.gz ./*.exe ./*.apk ./*.sig --clobber
 
       # Docker image from the static binaries: amd64 and arm64.
       - name: prepare the image

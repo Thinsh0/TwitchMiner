@@ -11,7 +11,8 @@
 # Firebase project's google-services.json; without it the APK is built without them.
 # Signing: ANDROID_KEYSTORE / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS when set,
 # otherwise the public test key next to this script (anyone can sign with it: fine for
-# trying the app, not for distributing it widely).
+# trying the app and for pull request builds, never for a release: the Release
+# workflow refuses an APK signed with it).
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -56,6 +57,11 @@ unsigned=$root/target/android/outputs/apk/release/twitchminer-release-unsigned.a
 
 # Gradle already aligns the archive.
 mkdir -p "$(dirname "$out")"
+signing=private
+if [ -z "${ANDROID_KEYSTORE:-}" ]; then
+    signing="public test key"
+    echo "warning: no ANDROID_KEYSTORE, signing with the public test key $here/debug.keystore (not for distribution)" >&2
+fi
 "$build_tools/apksigner" sign \
     --ks "${ANDROID_KEYSTORE:-$here/debug.keystore}" \
     --ks-pass "pass:${ANDROID_KEYSTORE_PASSWORD:-android}" \
@@ -63,4 +69,4 @@ mkdir -p "$(dirname "$out")"
     --out "$out" "$unsigned"
 "$build_tools/apksigner" verify "$out"
 rm -f "$out.idsig"
-echo "$out ($version, versionCode $code, $abis, Firebase: $firebase)"
+echo "$out ($version, versionCode $code, $abis, Firebase: $firebase, signing: $signing)"

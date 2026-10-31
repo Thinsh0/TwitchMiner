@@ -30,7 +30,7 @@ L'app vérifie la dernière version publiée sur GitHub au démarrage puis toute
 
 ### Signature des mises à jour (mainteneur)
 
-Une mise à jour n'est installée automatiquement que si sa signature correspond à la clé publique `RELEASE_PUBLIC_KEY` de `crates/ui/src/update.rs`. Tant que cette constante est vide (cas du dépôt tel quel), l'app ne s'installe jamais elle-même : elle propose la page de la version. Pour l'activer, une seule fois :
+Une mise à jour n'est installée automatiquement que si sa signature correspond à la clé publique `RELEASE_PUBLIC_KEY` de `crates/ui/src/update.rs`. Si cette constante est vide (par exemple dans un fork), l'app ne s'installe jamais elle-même : elle propose la page de la version. Pour l'activer, une seule fois :
 
 1. Créer la paire de clés, **hors du dépôt** (jamais commitée ; `*.pem` est ignoré par git). Sous Windows, dans **Git Bash** : Git for Windows fournit OpenSSL 3 (`C:\Program Files\Git\usr\bin\openssl.exe`, soit `/usr/bin/openssl` dans Git Bash) :
 

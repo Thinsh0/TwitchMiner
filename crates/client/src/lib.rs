@@ -192,11 +192,9 @@ impl Remote {
         tm_twitch::tls::install_crypto_provider();
         let base_url = normalize_url(base_url);
         let token = clean_token(token);
-        let ws_url = format!(
-            "{}/api/v1/ws?token={}",
-            base_url.replacen("http", "ws", 1),
-            fault::query_value(&token)
-        );
+        // The token goes in the `Authorization` header, never in the URL (understood by
+        // older servers too).
+        let ws_url = format!("{}/api/v1/ws", base_url.replacen("http", "ws", 1));
         let (state_tx, state) = watch::channel(Arc::new(State::default()));
         let (events, _) = broadcast::channel(1024);
         let (link_tx, link) = watch::channel(Link::Connecting);
@@ -206,6 +204,7 @@ impl Remote {
         let guest = Arc::new(AtomicBool::new(false));
         tokio::spawn(run_remote(
             ws_url,
+            token.clone(),
             state_tx,
             events.clone(),
             link_tx,
@@ -319,6 +318,7 @@ impl Backend for Remote {
 #[allow(clippy::too_many_arguments)]
 async fn run_remote(
     url: String,
+    token: String,
     state_tx: watch::Sender<Arc<State>>,
     events: broadcast::Sender<Arc<Envelope>>,
     link: watch::Sender<Link>,
@@ -343,7 +343,7 @@ async fn run_remote(
         let _ = link.send(Link::Connecting);
         let ws = tokio::select! {
             _ = cancel.cancelled() => return,
-            r = tm_twitch::ws::connect(&net, &url) => r,
+            r = tm_twitch::ws::connect_with_token(&net, &url, Some(&token)) => r,
         };
         let ws = match ws {
             Ok(ws) => ws,

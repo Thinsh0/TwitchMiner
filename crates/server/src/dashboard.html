@@ -42,7 +42,8 @@
 <div id="auth" class="card" hidden>
   <h2>Jeton d'API</h2>
   <p class="muted">Obtenez-le avec <code>twitchminer api-token</code>.</p>
-  <div class="row"><input id="tok" class="grow" placeholder="token"><button id="tokBtn">Connexion</button></div>
+  <div class="row"><input id="tok" class="grow" type="password" autocomplete="off" placeholder="token"><button id="tokBtn">Connexion</button></div>
+  <p id="authErr" class="muted"></p>
 </div>
 <main id="app" hidden>
   <section class="card stats" id="totals"></section>
@@ -56,17 +57,31 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 const params = new URLSearchParams(location.search);
 let token = params.get("token") || (() => { try { return localStorage.getItem("tm_token"); } catch { return null; } })();
-let ws, state = null, nextId = 1; const waiting = new Map();
+// A token passed in the address is taken once, then removed from the address bar and history.
+if (params.has("token")) history.replaceState(null, "", location.pathname);
+let ws, state = null, nextId = 1, retry = null, refused = false; const waiting = new Map();
 
 function connect() {
+  clearTimeout(retry);
   if (!token) { $("#auth").hidden = false; return; }
+  refused = false;
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${proto}://${location.host}/api/v1/ws?token=${encodeURIComponent(token)}`);
-  ws.onopen = () => { try { localStorage.setItem("tm_token", token); } catch {} $("#dot").className = "dot on"; $("#auth").hidden = true; $("#app").hidden = false; };
-  ws.onclose = () => { $("#dot").className = "dot off"; if (!state) { $("#auth").hidden = false; } setTimeout(connect, 3000); };
+  // The token goes in the first message, never in the URL (addresses end up in logs).
+  ws = new WebSocket(`${proto}://${location.host}/api/v1/ws`);
+  ws.onopen = () => ws.send(JSON.stringify({ type: "auth", token }));
+  // A refused token is not retried on its own: repeated bad tokens lock the address out.
+  ws.onclose = () => { $("#dot").className = "dot off"; if (!state || refused) { $("#auth").hidden = false; } if (!refused) retry = setTimeout(connect, 3000); };
   ws.onmessage = (m) => {
     const msg = JSON.parse(m.data);
-    if (msg.type === "snapshot") { state = msg.state; render(); }
+    if (msg.type === "snapshot") {
+      try { localStorage.setItem("tm_token", token); } catch {}
+      $("#dot").className = "dot on"; $("#auth").hidden = true; $("#authErr").textContent = ""; $("#app").hidden = false;
+      state = msg.state; render();
+    }
+    else if (msg.type === "error") {
+      refused = true; $("#authErr").textContent = msg.error.message;
+      if (msg.error.code === "unauthorized") { token = null; try { localStorage.removeItem("tm_token"); } catch {} }
+    }
     else if (msg.type === "event") { log(msg.event); refresh(); }
     else if (msg.type === "reply") { const cb = waiting.get(msg.id); waiting.delete(msg.id); cb && cb(msg); }
   };
@@ -137,7 +152,7 @@ function renderAccount(a) {
   </div>`;
 }
 
-$("#tokBtn").onclick = () => { token = $("#tok").value.trim(); connect(); };
+$("#tokBtn").onclick = () => { token = $("#tok").value.trim(); if (ws) { ws.onclose = null; ws.close(); } connect(); };
 $("#loginBtn").onclick = async () => { const r = await cmd({ cmd: "login_start" }); if (!r.ok) alert(r.error.message); };
 connect();
 </script>

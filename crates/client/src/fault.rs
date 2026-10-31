@@ -73,19 +73,6 @@ pub fn clean_token(token: &str) -> String {
     token.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
-/// Percent-encodes a query value (only unreserved characters are kept as they are), so
-/// an unexpected character in a token cannot make the address itself invalid.
-pub fn query_value(v: &str) -> String {
-    v.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                (b as char).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
-}
-
 /// `192.168.1.10:7878` → `http://192.168.1.10:7878`; trailing slashes removed.
 pub fn normalize_url(url: &str) -> String {
     let url = url.trim().trim_end_matches('/');
@@ -149,8 +136,6 @@ mod tests {
     #[test]
     fn tokens_survive_copy_and_paste() {
         assert_eq!(clean_token(" ab12\r\ncd34 \u{a0}ef "), "ab12cd34ef");
-        assert_eq!(query_value("ab 12/é"), "ab%2012%2F%C3%A9");
-        assert_eq!(query_value("0f9A-_.~"), "0f9A-_.~");
     }
 
     #[test]

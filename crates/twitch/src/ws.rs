@@ -6,6 +6,8 @@ use std::time::Duration;
 use base64::Engine;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::{Connector, MaybeTlsStream, WebSocketStream, client_async_tls_with_config};
 
 use crate::error::{Error, Result};
@@ -17,12 +19,18 @@ pub type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub async fn connect(net: &Net, url: &str) -> Result<WsStream> {
-    tokio::time::timeout(CONNECT_TIMEOUT, connect_inner(net, url))
+    connect_with_token(net, url, None).await
+}
+
+/// Like [`connect`], sending `Authorization: Bearer <token>` with the upgrade request
+/// (keeps the token out of the URL, hence out of logs).
+pub async fn connect_with_token(net: &Net, url: &str, token: Option<&str>) -> Result<WsStream> {
+    tokio::time::timeout(CONNECT_TIMEOUT, connect_inner(net, url, token))
         .await
         .map_err(|_| Error::Timeout(CONNECT_TIMEOUT))?
 }
 
-async fn connect_inner(net: &Net, url: &str) -> Result<WsStream> {
+async fn connect_inner(net: &Net, url: &str, token: Option<&str>) -> Result<WsStream> {
     let target = url::Url::parse(url).map_err(|e| Error::WebSocket(e.to_string()))?;
     let host = target
         .host_str()
@@ -38,7 +46,18 @@ async fn connect_inner(net: &Net, url: &str) -> Result<WsStream> {
     };
     tcp.set_nodelay(true).ok();
     let connector = Connector::Rustls(tls::client_config());
-    let (ws, _resp) = client_async_tls_with_config(url, tcp, None, Some(connector))
+    let mut request = url
+        .into_client_request()
+        .map_err(|e| Error::WebSocket(e.to_string()))?;
+    if let Some(t) = token {
+        let value = HeaderValue::from_str(&format!("Bearer {t}"))
+            .map_err(|_| Error::WebSocket("token not usable in a header".into()))?;
+        request.headers_mut().insert(
+            tokio_tungstenite::tungstenite::http::header::AUTHORIZATION,
+            value,
+        );
+    }
+    let (ws, _resp) = client_async_tls_with_config(request, tcp, None, Some(connector))
         .await
         .map_err(|e| Error::WebSocket(e.to_string()))?;
     Ok(ws)

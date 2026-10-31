@@ -10,22 +10,30 @@
 //! | `GET  /api/v1/ws`      | snapshot + live events + commands (`?logs=1` for logs) |
 //! | `POST /api/v1/mcp`     | Model Context Protocol endpoint for AI agents          |
 //!
-//! Auth: `Authorization: Bearer <token>` or `?token=<token>` (for browsers' WebSocket).
+//! Auth: `Authorization: Bearer <token>`. The WebSocket also accepts the token as its
+//! first message (`{"type": "auth", "token": …}`, for browsers, which cannot set
+//! headers). `?token=<token>` in the URL still works but is deprecated (URLs end up in
+//! logs and histories).
 //! The full token can do everything; the agent token is restricted (see `access`); a
-//! guest token only sees and changes its holder's accounts (see `guest`).
+//! guest token only sees and changes its holder's accounts (see `guest`). Every route
+//! is behind `guard` (Host, Origin, CORS, lockout after repeated bad tokens).
 
 pub mod access;
+mod guard;
 pub mod guest;
 mod mcp;
 
+pub use guard::{FIRST_LOCK, FREE_FAILURES, MAX_LOCK};
+
 pub use access::Access;
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Extension, Query, Request, State};
-use axum::http::{HeaderValue, Method, StatusCode, header};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -40,7 +48,8 @@ use tokio::sync::broadcast::error::RecvError;
 #[derive(Clone)]
 pub struct ServerConfig {
     pub bind: SocketAddr,
-    /// `None` disables authentication (only sensible on a loopback address).
+    /// `None` disables authentication: refused by [`serve`] unless the address is a
+    /// loopback one.
     pub token: Option<String>,
     /// Restricted token for AI agents (see [`access`]).
     pub agent_token: Option<String>,
@@ -53,6 +62,7 @@ struct AppState {
     token: Option<Arc<str>>,
     agent_token: Option<Arc<str>>,
     logs: Option<LogBuffer>,
+    strikes: Arc<guard::Strikes>,
 }
 
 /// Bumped on breaking changes of the HTTP/WS protocol (additive changes keep it).
@@ -71,19 +81,21 @@ pub fn router(engine: Engine, cfg: &ServerConfig) -> Router {
         token: cfg.token.as_deref().map(Arc::from),
         agent_token: cfg.agent_token.as_deref().map(Arc::from),
         logs: cfg.logs.clone(),
+        strikes: Arc::default(),
     };
     let api = Router::new()
         .route("/state", get(get_state))
         .route("/command", post(post_command))
         .route("/logs", get(get_logs))
-        .route("/ws", get(ws_upgrade))
         .route("/mcp", post(mcp_post).get(mcp_get))
         .route_layer(middleware::from_fn_with_state(state.clone(), auth));
     Router::new()
         .route("/", get(dashboard))
         .route("/api/v1/health", get(health))
+        // Authenticates itself: header, legacy `?token=`, or first message.
+        .route("/api/v1/ws", get(ws_upgrade))
         .nest("/api/v1", api)
-        .layer(middleware::from_fn(cors))
+        .layer(middleware::from_fn_with_state(state.clone(), guard::guard))
         .with_state(state)
 }
 
@@ -104,11 +116,23 @@ pub async fn serve_on(
     cfg: ServerConfig,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
+    let addr = listener.local_addr()?;
+    if cfg.token.is_none() && !addr.ip().is_loopback() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "refusing to serve the API on {addr} without a token (only on a loopback address)"
+            ),
+        ));
+    }
     let app = router(engine, &cfg);
-    tracing::info!(addr = %listener.local_addr()?, auth = cfg.token.is_some(), "API listening");
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown)
-        .await
+    tracing::info!(%addr, auth = cfg.token.is_some(), "API listening");
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown)
+    .await
 }
 
 #[derive(Deserialize)]
@@ -116,23 +140,81 @@ struct TokenQuery {
     token: Option<String>,
 }
 
-async fn auth(
-    State(st): State<AppState>,
-    Query(q): Query<TokenQuery>,
-    mut req: Request,
-    next: Next,
-) -> Response {
-    let Some(full) = &st.token else {
-        req.extensions_mut().insert(Access::Full);
-        return next.run(req).await;
-    };
-    let header_token = req
-        .headers()
+/// Why a token was not accepted.
+enum AuthError {
+    /// Too many bad tokens from this address lately.
+    Locked(std::time::Duration),
+    Bad,
+    AgentDisabled,
+}
+
+impl AuthError {
+    fn api_error(&self) -> tm_core::ApiError {
+        match self {
+            AuthError::Locked(wait) => tm_core::ApiError::new(
+                "rate_limited",
+                format!(
+                    "too many bad tokens from this address: try again in {} s",
+                    wait.as_secs().max(1)
+                ),
+            ),
+            AuthError::Bad => tm_core::ApiError::new("unauthorized", "missing or bad token"),
+            AuthError::AgentDisabled => tm_core::ApiError::new("forbidden", AGENT_DISABLED),
+        }
+    }
+
+    fn response(&self) -> Response {
+        let status = match self {
+            AuthError::Locked(_) => StatusCode::TOO_MANY_REQUESTS,
+            AuthError::Bad => StatusCode::UNAUTHORIZED,
+            AuthError::AgentDisabled => StatusCode::FORBIDDEN,
+        };
+        let mut r = (
+            status,
+            Json(json!({"ok": false, "error": self.api_error()})),
+        )
+            .into_response();
+        if let AuthError::Locked(wait) = self
+            && let Ok(v) = wait.as_secs().max(1).to_string().parse()
+        {
+            r.headers_mut().insert(header::RETRY_AFTER, v);
+        }
+        r
+    }
+}
+
+/// The token of an `Authorization: Bearer` header.
+fn bearer(headers: &HeaderMap) -> Option<String> {
+    headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::to_string);
-    let given = header_token.or(q.token).unwrap_or_default();
+        .map(|t| t.trim().to_string())
+}
+
+/// Logs once that a client still sends its token in the URL (never the token itself).
+fn note_token_in_url() {
+    static NOTED: AtomicBool = AtomicBool::new(false);
+    if !NOTED.swap(true, Ordering::Relaxed) {
+        tracing::info!(
+            "a client sends its API token in the URL (?token=, deprecated): update it to send the Authorization header"
+        );
+    }
+}
+
+/// Which access `given` grants, counting failures per client address.
+fn authenticate(
+    st: &AppState,
+    ip: Option<IpAddr>,
+    given: Option<&str>,
+) -> Result<Access, AuthError> {
+    if let Some(wait) = st.strikes.locked(ip) {
+        return Err(AuthError::Locked(wait));
+    }
+    let Some(full) = &st.token else {
+        return Ok(Access::Full);
+    };
+    let given = given.unwrap_or_default();
     let matches = |t: &str| constant_time_eq(given.as_bytes(), t.as_bytes());
     let access = if matches(full) {
         Some(Access::Full)
@@ -141,26 +223,54 @@ async fn auth(
     } else {
         st.engine
             .store()
-            .read(|s| tm_core::guests::by_token(s, &given))
+            .read(|s| tm_core::guests::by_token(s, given))
             .map(|(id, _)| Access::Guest(id))
     };
     match access {
-        Some(Access::Agent) if !agent_enabled(&st.engine) => (
-            StatusCode::FORBIDDEN,
-            Json(json!({"ok": false, "error": {"code": "forbidden", "message": AGENT_DISABLED}})),
-        )
-            .into_response(),
+        Some(Access::Agent) if !agent_enabled(&st.engine) => Err(AuthError::AgentDisabled),
         Some(a) => {
+            st.strikes.success(ip);
+            Ok(a)
+        }
+        None => {
+            st.strikes.failure(ip);
+            Err(AuthError::Bad)
+        }
+    }
+}
+
+async fn auth(
+    State(st): State<AppState>,
+    Extension(guard::ClientIp(ip)): Extension<guard::ClientIp>,
+    Query(q): Query<TokenQuery>,
+    mut req: Request,
+    next: Next,
+) -> Response {
+    let header_token = bearer(req.headers());
+    if header_token.is_none() && q.token.is_some() {
+        note_token_in_url();
+    }
+    let given = header_token.or(q.token);
+    match authenticate(&st, ip, given.as_deref()) {
+        Ok(a) => {
             req.extensions_mut().insert(a);
             next.run(req).await
         }
-        None => (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"ok": false, "error": {"code": "unauthorized", "message": "missing or bad token"}})),
-        )
-            .into_response(),
+        Err(e) => e.response(),
     }
 }
+
+/// `true` when the body is declared as JSON: a web page cannot send that to another
+/// site without the CORS check (a plain form can only send `text/plain` and the like).
+fn is_json(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(';').next())
+        .is_some_and(|v| v.trim().eq_ignore_ascii_case("application/json"))
+}
+
+const NOT_JSON: &str = "Content-Type must be application/json";
 
 /// WebSocket clients are pinged this often, and dropped after this long in silence.
 const WS_PING_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
@@ -182,33 +292,6 @@ fn agent_enabled(engine: &Engine) -> bool {
 
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
-}
-
-async fn cors(req: Request, next: Next) -> Response {
-    if req.method() == Method::OPTIONS {
-        let mut r = StatusCode::NO_CONTENT.into_response();
-        add_cors(&mut r);
-        return r;
-    }
-    let mut r = next.run(req).await;
-    add_cors(&mut r);
-    r
-}
-
-fn add_cors(r: &mut Response) {
-    let h = r.headers_mut();
-    h.insert(
-        header::ACCESS_CONTROL_ALLOW_ORIGIN,
-        HeaderValue::from_static("*"),
-    );
-    h.insert(
-        header::ACCESS_CONTROL_ALLOW_HEADERS,
-        HeaderValue::from_static("authorization, content-type"),
-    );
-    h.insert(
-        header::ACCESS_CONTROL_ALLOW_METHODS,
-        HeaderValue::from_static("GET, POST, OPTIONS"),
-    );
 }
 
 /// Minimal built-in status page (uses only the public WebSocket API).
@@ -316,8 +399,16 @@ fn reply(r: tm_core::ApiResult) -> Value {
 async fn post_command(
     State(st): State<AppState>,
     Extension(access): Extension<Access>,
+    headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
+    if !is_json(&headers) {
+        return (
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Json(json!({"ok": false, "error": {"code": "bad_request", "message": NOT_JSON}})),
+        )
+            .into_response();
+    }
     match serde_json::from_slice::<Command>(&body) {
         Ok(cmd) => {
             let r = run_command(&st.engine, access, cmd).await;
@@ -366,22 +457,97 @@ async fn get_logs(
 struct WsQuery {
     #[serde(default)]
     logs: Option<u8>,
+    /// Deprecated: prefer the `Authorization` header or the first message.
+    #[serde(default)]
+    token: Option<String>,
 }
+
+/// How long a WebSocket opened without a token may take to send it.
+const WS_AUTH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 async fn ws_upgrade(
     State(st): State<AppState>,
-    Extension(access): Extension<Access>,
+    Extension(guard::ClientIp(ip)): Extension<guard::ClientIp>,
+    headers: HeaderMap,
     Query(q): Query<WsQuery>,
     ws: WebSocketUpgrade,
 ) -> Response {
-    let logs = q.logs.unwrap_or(0) == 1 && !matches!(access, Access::Guest(_));
-    ws.on_upgrade(move |socket| ws_session(st, access, socket, logs))
+    let header_token = bearer(&headers);
+    let query_token = q.token.filter(|t| !t.is_empty());
+    if header_token.is_none() && query_token.is_some() {
+        note_token_in_url();
+    }
+    // A token with the request is checked now (a bad one answers 401, as before);
+    // without one, the first message must carry it.
+    let known = match header_token.or(query_token) {
+        Some(t) => match authenticate(&st, ip, Some(&t)) {
+            Ok(a) => Some(a),
+            Err(e) => return e.response(),
+        },
+        None if st.token.is_none() => Some(Access::Full),
+        None => {
+            if let Some(wait) = st.strikes.locked(ip) {
+                return AuthError::Locked(wait).response();
+            }
+            None
+        }
+    };
+    let wants_logs = q.logs.unwrap_or(0) == 1;
+    ws.on_upgrade(move |mut socket| async move {
+        let access = match known {
+            Some(a) => a,
+            None => match ws_first_message_auth(&st, ip, &mut socket).await {
+                Some(a) => a,
+                None => return,
+            },
+        };
+        let logs = wants_logs && !matches!(access, Access::Guest(_));
+        ws_session(st, access, socket, logs).await
+    })
+}
+
+/// Waits for `{"type": "auth", "token": …}`; on failure tells the client why and
+/// closes the connection.
+async fn ws_first_message_auth(
+    st: &AppState,
+    ip: Option<IpAddr>,
+    socket: &mut WebSocket,
+) -> Option<Access> {
+    let token = loop {
+        match tokio::time::timeout(WS_AUTH_TIMEOUT, socket.recv()).await {
+            Ok(Some(Ok(Message::Text(t)))) => {
+                break serde_json::from_str::<Value>(&t)
+                    .ok()
+                    .filter(|v| v["type"] == "auth")
+                    .and_then(|v| v["token"].as_str().map(str::to_string));
+            }
+            // Pings and pongs before the token are fine.
+            Ok(Some(Ok(Message::Ping(_) | Message::Pong(_)))) => continue,
+            Ok(Some(Ok(Message::Close(_))) | None | Some(Err(_))) => return None,
+            _ => break None,
+        }
+    };
+    match authenticate(st, ip, token.as_deref()) {
+        Ok(a) => Some(a),
+        Err(e) => {
+            let msg = json!({"type": "error", "error": e.api_error()});
+            let _ = socket.send(Message::text(msg.to_string())).await;
+            let _ = socket
+                .send(Message::Close(Some(CloseFrame {
+                    code: 1008,
+                    reason: "unauthorized".into(),
+                })))
+                .await;
+            None
+        }
+    }
 }
 
 /// MCP Streamable HTTP: JSON-RPC message or batch in, JSON out (202 for notifications only).
 async fn mcp_post(
     State(st): State<AppState>,
     Extension(access): Extension<Access>,
+    headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
     if !agent_enabled(&st.engine) || matches!(access, Access::Guest(_)) {
@@ -390,6 +556,11 @@ async fn mcp_post(
             Json(json!({"ok": false, "error": {"code": "not_found", "message": AGENT_DISABLED}})),
         )
             .into_response();
+    }
+    if !is_json(&headers) {
+        let err =
+            json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32600, "message": NOT_JSON}});
+        return (StatusCode::UNSUPPORTED_MEDIA_TYPE, Json(err)).into_response();
     }
     let msg: Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
@@ -540,6 +711,8 @@ async fn ws_session(st: AppState, access: Access, socket: WebSocket, with_logs: 
                 };
                 let req: WsRequest = match serde_json::from_str(&text) {
                     Ok(r) => r,
+                    // A token sent again once authenticated (header): nothing to do.
+                    Err(_) if serde_json::from_str::<Value>(&text).is_ok_and(|v| v["type"] == "auth") => continue,
                     Err(e) => {
                         let _ = reply_tx.send(json!({"type": "reply", "id": null, "ok": false, "error": {"code": "bad_request", "message": e.to_string()}})).await;
                         continue;

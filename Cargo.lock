@@ -5881,7 +5881,9 @@ dependencies = [
  "tm-core",
  "tm-twitch",
  "tokio",
+ "tokio-tungstenite",
  "tracing",
+ "url",
  "uuid",
 ]
 

@@ -520,13 +520,13 @@ fn status(state: &Value) {
 
 async fn events(url: &str, token: &str) -> anyhow::Result<()> {
     use futures_util::StreamExt;
-    let ws_url = format!("{}/api/v1/ws?token={token}", url.replacen("http", "ws", 1));
+    let ws_url = format!("{}/api/v1/ws", url.replacen("http", "ws", 1));
     let net = tm_twitch::Net::new(&tm_twitch::NetConfig::default())?;
     let net = tm_twitch::Net {
         ws_proxy: None,
         ..net
     };
-    let mut ws = tm_twitch::ws::connect(&net, &ws_url).await?;
+    let mut ws = tm_twitch::ws::connect_with_token(&net, &ws_url, Some(token)).await?;
     while let Some(Ok(msg)) = ws.next().await {
         let Ok(text) = msg.into_text() else { continue };
         let Ok(v) = serde_json::from_str::<Value>(&text) else {

@@ -694,6 +694,9 @@ msgstr "Ajouter une plage"
 msgid "Address of the Twitch identifiers"
 msgstr "Adresse des identifiants Twitch"
 
+msgid "Accept unsigned Twitch identifiers"
+msgstr "Accepter des identifiants Twitch non signés"
+
 msgid "Address of the versions"
 msgstr "Adresse des versions"
 
@@ -1036,6 +1039,9 @@ msgstr "Un message apparaît sur l'accueil quand une nouvelle version sort."
 
 msgid "Where the Twitch identifiers are looked for. Empty = the official address."
 msgstr "Où chercher les identifiants Twitch. Vide = l'adresse officielle."
+
+msgid "Only for an address other than the official one (tests, forks): whoever serves it controls the identifiers. The official address is always checked."
+msgstr "Seulement pour une autre adresse que l'officielle (tests, forks) : qui la sert contrôle les identifiants. L'adresse officielle est toujours vérifiée."
 
 msgid "Where new versions are looked for."
 msgstr "Où chercher les nouvelles versions."

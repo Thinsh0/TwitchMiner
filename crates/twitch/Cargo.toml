@@ -26,6 +26,7 @@ thiserror.workspace = true
 tracing.workspace = true
 parking_lot.workspace = true
 arc-swap.workspace = true
+ring.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

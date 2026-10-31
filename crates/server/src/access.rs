@@ -199,6 +199,26 @@ mod tests {
         );
         assert!(authorize(a, &Command::Snapshot).is_ok());
         assert!(authorize(a, &set("engine", json!({"agent_enabled": true}))).is_err());
+        // Turning off the manifest signature check, or moving the manifest: owner only.
+        assert!(authorize(a, &set("engine", json!({"manifest_unsigned_ok": true}))).is_err());
+        assert!(
+            authorize(
+                a,
+                &set(
+                    "engine",
+                    json!({"paused": true, "manifest_unsigned_ok": true})
+                )
+            )
+            .is_err()
+        );
+        assert!(authorize(a, &set("engine", json!({"manifest_url": "https://evil"}))).is_err());
+        assert!(
+            authorize(
+                &Access::Full,
+                &set("engine", json!({"manifest_unsigned_ok": true}))
+            )
+            .is_ok()
+        );
         assert!(authorize(a, &set("guests", json!({}))).is_err());
         assert!(authorize(a, &Command::GuestInvite { name: "x".into() }).is_err());
         assert!(

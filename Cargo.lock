@@ -5898,6 +5898,7 @@ dependencies = [
  "parking_lot",
  "rand",
  "reqwest",
+ "ring",
  "rustls",
  "rustls-native-certs",
  "serde",

@@ -63,6 +63,10 @@ pub struct EngineSettings {
     /// Where to look for manifest updates (GQL hashes, client ids).
     pub manifest_url: Option<String>,
     pub manifest_auto_update: bool,
+    /// Accept an unsigned manifest from a `manifest_url` other than the official one
+    /// (tests, forks). Whoever serves that address then controls the Twitch
+    /// identifiers. Never applies to the official address.
+    pub manifest_unsigned_ok: bool,
     /// History rows older than this are deleted (statistics are kept forever).
     pub history_retention_days: u32,
     /// Check GitHub releases for a newer version of the application.
@@ -227,6 +231,7 @@ impl Default for EngineSettings {
             proxy: None,
             manifest_url: Some(DEFAULT_MANIFEST_URL.to_string()),
             manifest_auto_update: true,
+            manifest_unsigned_ok: false,
             history_retention_days: 180,
             update_check: true,
             releases_url: DEFAULT_RELEASES_URL.to_string(),

@@ -12,6 +12,7 @@
       },
       "history_retention_days": 180,
       "manifest_auto_update": true,
+      "manifest_unsigned_ok": false,
       "manifest_url": "https://raw.githubusercontent.com/Thinsh0/TwitchMiner/HEAD/manifest/twitch.json",
       "max_watch_slots": 2,
       "paused": false,
@@ -179,6 +180,11 @@
         },
         "manifest_auto_update": {
           "default": true,
+          "type": "boolean"
+        },
+        "manifest_unsigned_ok": {
+          "default": false,
+          "description": "Accept an unsigned manifest from a `manifest_url` other than the official one\n(tests, forks). Whoever serves that address then controls the Twitch\nidentifiers. Never applies to the official address.",
           "type": "boolean"
         },
         "manifest_url": {

@@ -65,6 +65,7 @@ export global SettingText {
         if key == "engine.update_check" { return @tr("Check for new versions"); }
         if key == "engine.manifest_auto_update" { return @tr("Update Twitch identifiers automatically"); }
         if key == "engine.manifest_url" { return @tr("Address of the Twitch identifiers"); }
+        if key == "engine.manifest_unsigned_ok" { return @tr("Accept unsigned Twitch identifiers"); }
         if key == "engine.releases_url" { return @tr("Address of the versions"); }
         if key == "engine.api_allowed_hosts" { return @tr("Other names of this server"); }
         if key == "engine.guest_limits" { return @tr("Guest limits"); }
@@ -97,6 +98,7 @@ export global SettingText {
         if key == "notify.all_urgent" { return @tr("Delivered at once and shown as a pop-up. Otherwise only the test, the confirmation and what needs acting soon (account to reconnect, drop at risk or missed, game account to link)."); }
         if key == "engine.update_check" { return @tr("A notice appears on the home screen when a new version is out."); }
         if key == "engine.manifest_url" { return @tr("Where the Twitch identifiers are looked for. Empty = the official address."); }
+        if key == "engine.manifest_unsigned_ok" { return @tr("Only for an address other than the official one (tests, forks): whoever serves it controls the identifiers. The official address is always checked."); }
         if key == "engine.releases_url" { return @tr("Where new versions are looked for."); }
         if key == "predictions.min_voters" { return @tr("Predictions with fewer participants are skipped."); }
         if key == "predictions.channels" { return @tr("Logins to bet on; empty = every channel."); }

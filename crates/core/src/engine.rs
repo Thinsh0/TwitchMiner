@@ -9,7 +9,7 @@ use chrono::Utc;
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use tm_twitch::auth;
-use tm_twitch::manifest::{self, Manifest, SharedManifest, merge_json};
+use tm_twitch::manifest::{self, Manifest, SharedManifest, Trust, merge_json};
 use tm_twitch::{Gql, Net, NetConfig};
 use tokio_util::sync::CancellationToken;
 
@@ -112,9 +112,13 @@ impl Engine {
             .kv_get(MANIFEST_KV.0.into(), MANIFEST_KV.1.into())
             .await?
         {
-            match serde_json::from_value::<Manifest>(cached) {
-                Ok(c) if c.may_replace(&m) && c.validate().is_ok() => m = c,
-                _ => {}
+            match cached_manifest(&cached, manifest::built_in_key().as_ref(), &m) {
+                Ok(Some(c)) => m = c,
+                Ok(None) => {}
+                Err(why) => tracing::info!(
+                    revision = m.revision,
+                    "cached manifest ignored ({why}), using the embedded one"
+                ),
             }
         }
         store.emit(Event::ManifestUpdated {
@@ -510,27 +514,46 @@ impl Engine {
     }
 
     async fn refresh_manifest(&self) -> Result<Value, ApiError> {
-        let Some(url) = self
-            .shared
-            .store
-            .read(EngineSettings::from_state)
-            .manifest_url
-        else {
+        let settings = self.shared.store.read(EngineSettings::from_state);
+        let Some(url) = settings.manifest_url else {
             return Ok(json!({ "updated": false, "reason": "no manifest url" }));
         };
         let current = self.shared.manifest.load_full();
+        // Unsigned only on the owner's explicit request, and never for the official address.
+        let custom = url != settings::DEFAULT_MANIFEST_URL;
+        let trust = if custom && settings.manifest_unsigned_ok {
+            Trust::Unsigned
+        } else if let Some(t) = Trust::built_in() {
+            t
+        } else {
+            tracing::info!(
+                revision = current.revision,
+                "this build has no manifest public key: downloaded manifests are not used, the embedded one is"
+            );
+            return Err(ApiError::new(
+                "manifest",
+                "this build has no manifest public key: downloaded manifests are not used",
+            ));
+        };
         let net = self.shared.net();
-        match Manifest::fetch(&net.http, &url, &current).await {
-            Ok(Some(m)) => {
-                let rev = m.revision;
-                let v = serde_json::to_value(&m).map_err(ApiError::internal)?;
-                self.shared
-                    .store
-                    .db()
-                    .kv_put(MANIFEST_KV.0.into(), MANIFEST_KV.1.into(), v)
-                    .await
-                    .map_err(ApiError::internal)?;
-                self.shared.manifest.store(Arc::new(m));
+        match Manifest::fetch(&net.http, &url, &current, trust).await {
+            Ok(Some(f)) => {
+                let rev = f.manifest.revision;
+                if trust == Trust::Unsigned {
+                    tracing::warn!(revision = rev, %url, "unsigned manifest adopted (engine.manifest_unsigned_ok), not cached");
+                } else {
+                    let v = json!({
+                        "raw": f.raw,
+                        "signature": manifest::hex_encode(f.signature.as_deref().unwrap_or_default()),
+                    });
+                    self.shared
+                        .store
+                        .db()
+                        .kv_put(MANIFEST_KV.0.into(), MANIFEST_KV.1.into(), v)
+                        .await
+                        .map_err(ApiError::internal)?;
+                }
+                self.shared.manifest.store(Arc::new(f.manifest));
                 self.shared
                     .store
                     .emit(Event::ManifestUpdated { revision: rev });
@@ -538,7 +561,12 @@ impl Engine {
                 Ok(json!({ "updated": true, "revision": rev }))
             }
             Ok(None) => Ok(json!({ "updated": false, "revision": current.revision })),
-            Err(e) => Err(ApiError::new("manifest", e.to_string())),
+            Err(e) => {
+                if matches!(e, tm_twitch::Error::Signature(_)) {
+                    tracing::warn!(error = %e, %url, "downloaded manifest refused, keeping revision {}", current.revision);
+                }
+                Err(ApiError::new("manifest", e.to_string()))
+            }
         }
     }
 
@@ -1145,6 +1173,25 @@ pub fn is_newer(latest: &str, current: &str) -> bool {
     }
 }
 
+/// The manifest cached in the base (`{raw, signature}`), when its signature checks
+/// with `key` over the exact cached text and it is newer than `embedded`. A cache
+/// without a valid signature (older format, no key in this build, altered) is an
+/// error: the caller falls back to the embedded manifest.
+fn cached_manifest(
+    cached: &Value,
+    key: Option<&[u8; 32]>,
+    embedded: &Manifest,
+) -> Result<Option<Manifest>, String> {
+    let key = key.ok_or("no manifest public key in this build")?;
+    let raw = cached["raw"].as_str().ok_or("not signed")?;
+    let signature = cached["signature"]
+        .as_str()
+        .and_then(manifest::hex_decode)
+        .ok_or("not signed")?;
+    let m = Manifest::parse_signed(raw.as_bytes(), &signature, key).map_err(|e| e.to_string())?;
+    Ok(m.may_replace(embedded).then_some(m))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1165,6 +1212,95 @@ mod tests {
                 device_id: "d".into(),
             },
         }
+    }
+
+    /// A throwaway key pair (never stored) and a newer manifest signed with it.
+    fn signed_cache() -> ([u8; 32], Value, Manifest) {
+        use ring::signature::{Ed25519KeyPair, KeyPair};
+        let pkcs8 = Ed25519KeyPair::generate_pkcs8(&ring::rand::SystemRandom::new()).unwrap();
+        let pair = Ed25519KeyPair::from_pkcs8(pkcs8.as_ref()).unwrap();
+        let key: [u8; 32] = pair.public_key().as_ref().try_into().unwrap();
+        let embedded = Manifest::embedded();
+        let mut next = embedded.clone();
+        next.revision += 1;
+        let raw = serde_json::to_string_pretty(&next).unwrap();
+        let sig = pair.sign(raw.as_bytes());
+        let cache = json!({ "raw": raw, "signature": manifest::hex_encode(sig.as_ref()) });
+        (key, cache, embedded)
+    }
+
+    #[test]
+    fn only_a_signed_cache_is_used() {
+        let (key, cache, embedded) = signed_cache();
+        let m = cached_manifest(&cache, Some(&key), &embedded)
+            .unwrap()
+            .unwrap();
+        assert_eq!(m.revision, embedded.revision + 1);
+
+        // No key in this build: the embedded manifest.
+        assert!(cached_manifest(&cache, None, &embedded).is_err());
+        // Another key.
+        let (other, _, _) = signed_cache();
+        assert!(cached_manifest(&cache, Some(&other), &embedded).is_err());
+        // Altered text (one byte), altered or missing signature.
+        let mut tampered = cache.clone();
+        let raw = tampered["raw"]
+            .as_str()
+            .unwrap()
+            .replacen("android_tv", "android_tw", 1);
+        tampered["raw"] = json!(raw);
+        assert!(cached_manifest(&tampered, Some(&key), &embedded).is_err());
+        let mut bad_sig = cache.clone();
+        let mut sig = manifest::hex_decode(bad_sig["signature"].as_str().unwrap()).unwrap();
+        sig[0] ^= 1;
+        bad_sig["signature"] = json!(manifest::hex_encode(&sig));
+        assert!(cached_manifest(&bad_sig, Some(&key), &embedded).is_err());
+        let mut unsigned = cache.clone();
+        unsigned.as_object_mut().unwrap().remove("signature");
+        assert!(cached_manifest(&unsigned, Some(&key), &embedded).is_err());
+        // The former cache (the manifest itself, unsigned).
+        let old = serde_json::to_value(&embedded).unwrap();
+        assert!(cached_manifest(&old, Some(&key), &embedded).is_err());
+        // Signed but not newer: not used, without error.
+        let mut newer = embedded.clone();
+        newer.revision += 5;
+        assert!(
+            cached_manifest(&cache, Some(&key), &newer)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_tampered_cache_falls_back_to_the_embedded_manifest() {
+        tm_twitch::tls::install_crypto_provider();
+        let dir = std::env::temp_dir().join(format!("tm-test-{}", uuid::Uuid::new_v4()));
+        let paths = Paths::at(dir.clone()).unwrap();
+        {
+            let db = Db::open(&paths.db_file()).unwrap();
+            let mut fake = Manifest::embedded();
+            fake.revision += 1;
+            db.kv_put(
+                MANIFEST_KV.0.into(),
+                MANIFEST_KV.1.into(),
+                json!({ "raw": serde_json::to_string(&fake).unwrap(), "signature": "00".repeat(64) }),
+            )
+            .await
+            .unwrap();
+        }
+        let engine = Engine::start(EngineConfig {
+            paths,
+            modules: Vec::new(),
+            version: "test".into(),
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            engine.shared.manifest.load().revision,
+            Manifest::embedded().revision
+        );
+        engine.shutdown().await;
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[tokio::test]

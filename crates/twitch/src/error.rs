@@ -18,6 +18,9 @@ pub enum Error {
     Gql { op: String, message: String },
     #[error("unexpected response: {0}")]
     Decode(String),
+    /// A downloaded manifest whose signature is missing or does not check.
+    #[error("{0}")]
+    Signature(String),
     #[error("operation `{0}` missing from manifest")]
     UnknownOperation(String),
     #[error("timed out after {0:?}")]

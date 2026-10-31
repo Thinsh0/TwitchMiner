@@ -25,7 +25,8 @@ pub const CURRENT: &str = env!("CARGO_PKG_VERSION");
 /// Public key checking the updates: the 32 bytes of the ed25519 key, in hex (see
 /// docs/DESKTOP.md, « Signature des mises à jour », to make the key pair). Empty: this
 /// build installs no update by itself.
-pub const RELEASE_PUBLIC_KEY: &str = "";
+#[rustfmt::skip]
+pub const RELEASE_PUBLIC_KEY: &str = "8ea941644b5ec0aa45e2f5c9a960bdd08efa261c331204c0877271ceb0afd1e3";
 
 /// A signature file larger than this is not one.
 const MAX_SIGNATURE_BYTES: usize = 1024;

@@ -967,6 +967,50 @@ impl Engine {
         Ok(())
     }
 
+    /// Whether the account a guest just logged in may become theirs: never one that
+    /// is already the owner's or another guest's (its credentials are left as they
+    /// are), and not beyond the guest's account limit. Their own account may log in
+    /// again.
+    pub(crate) async fn guest_may_take(&self, guest: &str, account: &str) -> Result<(), ApiError> {
+        let (owner, count, limit) = self.shared.store.read(|s| {
+            (
+                guests::owner_of(s, account),
+                guests::all(s).get(guest).map_or(0, |g| g.accounts.len()),
+                EngineSettings::from_state(s).guest_limits.max_accounts,
+            )
+        });
+        let taken = || {
+            ApiError::new(
+                "forbidden",
+                "this Twitch account is already used on this server by someone else",
+            )
+        };
+        match owner {
+            Some(g) if g == guest => return Ok(()),
+            Some(_) => return Err(taken()),
+            None => {}
+        }
+        let exists = self
+            .shared
+            .store
+            .db()
+            .accounts()
+            .await
+            .map_err(ApiError::internal)?
+            .iter()
+            .any(|a| a.id == account);
+        if exists || self.shared.store.read(|s| s.accounts.contains_key(account)) {
+            return Err(taken());
+        }
+        if count >= limit as usize {
+            return Err(ApiError::new(
+                "forbidden",
+                format!("a guest can have at most {limit} Twitch accounts on this server"),
+            ));
+        }
+        Ok(())
+    }
+
     async fn login_start(&self, profile: Option<String>, guest: Option<String>) -> ApiResult {
         if let Some(g) = &guest
             && !self.shared.store.read(|s| guests::all(s).contains_key(g))
@@ -1012,16 +1056,25 @@ impl Engine {
             .await;
             me.shared.logins.lock().remove(&flow_id);
             let (account, error) = match result {
-                Ok(creds) => match me.add_account(creds).await {
-                    Ok(id) => match &guest {
-                        Some(g) => match me.attach_to_guest(g, &id).await {
-                            Ok(()) => (Some(id), None),
-                            Err(e) => (Some(id), Some(e.message)),
+                Ok(creds) => {
+                    let allowed = match &guest {
+                        Some(g) => me.guest_may_take(g, &creds.user_id).await,
+                        None => Ok(()),
+                    };
+                    match allowed {
+                        Err(e) => (None, Some(e.message)),
+                        Ok(()) => match me.add_account(creds).await {
+                            Ok(id) => match &guest {
+                                Some(g) => match me.attach_to_guest(g, &id).await {
+                                    Ok(()) => (Some(id), None),
+                                    Err(e) => (Some(id), Some(e.message)),
+                                },
+                                None => (Some(id), None),
+                            },
+                            Err(e) => (None, Some(e.message)),
                         },
-                        None => (Some(id), None),
-                    },
-                    Err(e) => (None, Some(e.message)),
-                },
+                    }
+                }
                 Err(e) => (None, Some(e.to_string())),
             };
             me.shared.store.emit(Event::LoginFinished {
@@ -1048,6 +1101,85 @@ pub fn is_newer(latest: &str, current: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    fn stored(id: &str) -> StoredAccount {
+        StoredAccount {
+            id: id.into(),
+            login: format!("user{id}"),
+            display_name: format!("User{id}"),
+            avatar_url: None,
+            enabled: true,
+            credentials: auth::Credentials {
+                user_id: id.into(),
+                login: format!("user{id}"),
+                access_token: format!("TOKEN-{id}"),
+                refresh_token: None,
+                profile: "android_tv".into(),
+                device_id: "d".into(),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn a_guest_never_takes_someone_elses_account() {
+        tm_twitch::tls::install_crypto_provider();
+        let dir = std::env::temp_dir().join(format!("tm-test-{}", uuid::Uuid::new_v4()));
+        let engine = Engine::start(EngineConfig {
+            paths: Paths::at(dir).unwrap(),
+            modules: Vec::new(),
+            version: "test".into(),
+        })
+        .await
+        .unwrap();
+        let invite = |name: &str| {
+            let engine = engine.clone();
+            let name = name.to_string();
+            async move {
+                let out = engine.execute(Command::GuestInvite { name }).await.unwrap();
+                out["id"].as_str().unwrap().to_string()
+            }
+        };
+        let (sam, alex) = (invite("Sam").await, invite("Alex").await);
+        let db = engine.store().db();
+        for id in ["owner-acc", "sam-acc"] {
+            db.upsert_account(stored(id)).await.unwrap();
+        }
+        let s = sam.clone();
+        engine
+            .update_guests(move |all| {
+                all.get_mut(&s).unwrap().accounts.push("sam-acc".into());
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        // The owner's account and another guest's are refused; their own and a new one
+        // are fine.
+        let e = engine.guest_may_take(&alex, "owner-acc").await.unwrap_err();
+        assert_eq!(e.code, "forbidden");
+        assert!(engine.guest_may_take(&alex, "sam-acc").await.is_err());
+        assert!(engine.guest_may_take(&sam, "sam-acc").await.is_ok());
+        assert!(engine.guest_may_take(&alex, "new-acc").await.is_ok());
+        // The owner's credentials are untouched.
+        let owner = db.accounts().await.unwrap();
+        let owner = owner.iter().find(|a| a.id == "owner-acc").unwrap();
+        assert_eq!(owner.credentials.access_token, "TOKEN-owner-acc");
+
+        // The account limit, but their own account may always log in again.
+        engine
+            .execute(Command::SettingsSet {
+                scope: ENGINE_SCOPE.into(),
+                value: json!({"guest_limits": {"max_accounts": 1}}),
+                merge: true,
+            })
+            .await
+            .unwrap();
+        assert!(engine.guest_may_take(&sam, "another-acc").await.is_err());
+        assert!(engine.guest_may_take(&sam, "sam-acc").await.is_ok());
+        engine.shutdown().await;
+    }
+
     #[test]
     fn version_compare() {
         assert!(super::is_newer("v0.2.0", "0.1.9"));

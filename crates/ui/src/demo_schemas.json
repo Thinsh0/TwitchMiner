@@ -3,6 +3,13 @@
     "defaults": {
       "active_hours": [],
       "agent_enabled": false,
+      "api_allowed_hosts": [],
+      "guest_limits": {
+        "games_search_per_minute": 60,
+        "max_accounts": 5,
+        "max_notify_targets": 10,
+        "max_pending_logins": 2
+      },
       "history_retention_days": 180,
       "manifest_auto_update": true,
       "manifest_url": "https://raw.githubusercontent.com/Thinsh0/TwitchMiner/HEAD/manifest/twitch.json",
@@ -31,6 +38,40 @@
     "raw": null,
     "schema": {
       "$defs": {
+        "GuestLimits": {
+          "description": "Per-guest limits against abuse; the defaults leave room for normal use.",
+          "properties": {
+            "games_search_per_minute": {
+              "default": 60,
+              "description": "Game searches (`games_search`) per minute.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_accounts": {
+              "default": 5,
+              "description": "Twitch accounts.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_notify_targets": {
+              "default": 10,
+              "description": "Notification destinations per account.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_pending_logins": {
+              "default": 2,
+              "description": "Twitch logins (`login_start`) waiting at the same time.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
         "Peer": {
           "properties": {
             "name": {
@@ -110,6 +151,24 @@
           "default": false,
           "description": "AI agent access: the MCP endpoint and the agent token. Off = both refused.",
           "type": "boolean"
+        },
+        "api_allowed_hosts": {
+          "default": [],
+          "description": "Extra host names the API answers to (`Host` header), besides IP addresses,\n`localhost` and local names (single label, `*.local`, `*.ts.net`…): e.g. the\npublic name of a reverse proxy. `*.example.com` allows its subdomains. Requests\nfrom a web page of another origin are also accepted from these names.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "guest_limits": {
+          "$ref": "#/$defs/GuestLimits",
+          "default": {
+            "games_search_per_minute": 60,
+            "max_accounts": 5,
+            "max_notify_targets": 10,
+            "max_pending_logins": 2
+          },
+          "description": "What one guest may use at most (the owner has no limit)."
         },
         "history_retention_days": {
           "default": 180,

@@ -9,14 +9,18 @@
 //! see or touch other accounts, the shared or engine settings, the guests, the logs,
 //! backups, updates or the MCP endpoint.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tm_core::event::{Envelope, Event};
 use tm_core::guests;
 #[cfg(test)]
 use tm_core::guests::GUESTS_SCOPE;
-use tm_core::settings::{ENGINE_SCOPE, Scope, parse_scope};
+use tm_core::settings::{ENGINE_SCOPE, EngineSettings, Scope, parse_scope};
+use tm_core::twitch::manifest::merge_json;
+use tm_core::twitch::netguard;
 use tm_core::{ApiError, Command, State};
 
 use crate::access;
@@ -30,6 +34,57 @@ pub struct View {
 
 fn denied(what: &str) -> ApiError {
     ApiError::new("forbidden", format!("a guest token cannot {what}"))
+}
+
+/// Game searches per guest in the current minute.
+static SEARCHES: LazyLock<Mutex<HashMap<String, (Instant, u32)>>> = LazyLock::new(Default::default);
+
+/// Counts one game search for `guest`; `false` past `per_minute` in the minute.
+fn allow_search(guest: &str, per_minute: u32) -> bool {
+    let Ok(mut all) = SEARCHES.lock() else {
+        return true;
+    };
+    let now = Instant::now();
+    let minute = Duration::from_secs(60);
+    if all.len() > 1000 {
+        all.retain(|_, (since, _)| now.duration_since(*since) < minute);
+    }
+    let entry = all.entry(guest.to_string()).or_insert((now, 0));
+    if now.duration_since(entry.0) >= minute {
+        *entry = (now, 0);
+    }
+    entry.1 += 1;
+    entry.1 <= per_minute
+}
+
+/// Checks one notification destination of a guest: the server will post to it, so
+/// only public https addresses, without extra headers (no request forgery towards
+/// the server's network). Unknown kinds are refused (safe for kinds added later).
+fn check_guest_target(t: &Value) -> Result<(), ApiError> {
+    let refused = || ApiError::new("forbidden", netguard::REFUSED);
+    let url = |field: &str| {
+        t.get(field)
+            .and_then(Value::as_str)
+            .ok_or_else(|| ApiError::invalid(format!("`{field}` missing")))
+            .and_then(|u| netguard::check_public_url(u).map_err(|_| refused()))
+            .map(drop)
+    };
+    match t.get("kind").and_then(Value::as_str) {
+        Some("discord") => url("webhook_url"),
+        Some("ntfy") => url("url"),
+        Some("webhook") => {
+            let headers = t.get("headers");
+            if headers
+                .is_some_and(|h| !(h.is_null() || h.as_object().is_some_and(|o| o.is_empty())))
+            {
+                return Err(denied("send extra headers"));
+            }
+            url("url")
+        }
+        // Fixed hosts (api.telegram.org, Google): the module checks the rest.
+        Some("telegram") | Some("fcm") => Ok(()),
+        _ => Err(denied("use this kind of destination")),
+    }
 }
 
 impl View {
@@ -126,15 +181,37 @@ impl View {
                 Err(denied(what))
             }
         };
+        let limits = || EngineSettings::from_state(state).guest_limits;
         match cmd {
-            Command::Snapshot
-            | Command::ModulesList
-            | Command::Summary
-            | Command::GamesSearch { .. } => Ok(cmd),
-            Command::LoginStart { profile, .. } => Ok(Command::LoginStart {
-                profile,
-                guest: Some(self.id.clone()),
-            }),
+            Command::Snapshot | Command::ModulesList | Command::Summary => Ok(cmd),
+            Command::GamesSearch { .. } => {
+                if allow_search(&self.id, limits().games_search_per_minute) {
+                    Ok(cmd)
+                } else {
+                    Err(ApiError::new(
+                        "rate_limited",
+                        "too many game searches: wait a minute",
+                    ))
+                }
+            }
+            Command::LoginStart { profile, .. } => {
+                let max = limits().max_pending_logins;
+                let pending = state
+                    .logins
+                    .values()
+                    .filter(|f| f.guest.as_deref() == Some(self.id.as_str()))
+                    .count();
+                if pending >= max as usize {
+                    return Err(ApiError::new(
+                        "forbidden",
+                        format!("at most {max} logins at a time: finish or cancel one first"),
+                    ));
+                }
+                Ok(Command::LoginStart {
+                    profile,
+                    guest: Some(self.id.clone()),
+                })
+            }
             Command::LoginCancel { ref flow_id } => {
                 let mine = state
                     .logins
@@ -166,10 +243,31 @@ impl View {
                 }
                 Ok(cmd)
             }
-            Command::SettingsSet { ref scope, .. } => match parse_scope(scope) {
-                Some(Scope::AccountModule { account, .. }) if self.owns(account) => Ok(cmd),
-                _ => Err(denied("change settings other than its own accounts'")),
-            },
+            Command::SettingsSet {
+                scope,
+                value,
+                merge,
+            } => {
+                let notify = match parse_scope(&scope) {
+                    Some(Scope::AccountModule { account, module }) if self.owns(account) => {
+                        module == "notify"
+                    }
+                    _ => return Err(denied("change settings other than its own accounts'")),
+                };
+                if !notify {
+                    return Ok(Command::SettingsSet {
+                        scope,
+                        value,
+                        merge,
+                    });
+                }
+                let value = self.checked_notify(&scope, value, merge, state)?;
+                Ok(Command::SettingsSet {
+                    scope,
+                    value,
+                    merge: false,
+                })
+            }
             Command::History { mut query } => {
                 query.account = Some(self.only_account(query.account)?);
                 Ok(Command::History { query })
@@ -198,6 +296,59 @@ impl View {
                 Err(denied("manage guests"))
             }
         }
+    }
+
+    /// The complete notification settings a guest's change leads to (sent whole, so
+    /// what is checked is what is stored): destinations checked and counted, never a
+    /// Firebase key of their own (the server's is used for their phones), and always a
+    /// `targets` list (without one, the owner's destinations would be inherited).
+    fn checked_notify(
+        &self,
+        scope: &str,
+        value: Value,
+        merge: bool,
+        state: &State,
+    ) -> Result<Value, ApiError> {
+        if value
+            .get("firebase_key")
+            .and_then(Value::as_str)
+            .is_some_and(|k| !k.is_empty() && k != "***")
+        {
+            return Err(denied("set a Firebase key (the server's is used)"));
+        }
+        let mut next = if value.is_null() {
+            json!({ "targets": [] })
+        } else if merge {
+            let mut base = state
+                .settings
+                .get(scope)
+                .cloned()
+                .unwrap_or_else(|| json!({}));
+            merge_json(&mut base, &value);
+            base
+        } else {
+            value
+        };
+        let obj = next
+            .as_object_mut()
+            .ok_or_else(|| ApiError::invalid("settings must be a JSON object"))?;
+        obj.remove("firebase_key");
+        let targets = obj
+            .entry("targets")
+            .or_insert_with(|| json!([]))
+            .as_array()
+            .ok_or_else(|| ApiError::invalid("`targets` must be a list"))?;
+        let max = EngineSettings::from_state(state)
+            .guest_limits
+            .max_notify_targets;
+        if targets.len() > max as usize {
+            return Err(ApiError::new(
+                "forbidden",
+                format!("at most {max} notification destinations per account"),
+            ));
+        }
+        targets.iter().try_for_each(check_guest_target)?;
+        Ok(next)
     }
 
     /// History and stats always name one of the guest's accounts.
@@ -487,6 +638,117 @@ mod tests {
             name: "refresh".into(),
             args: Value::Null
         }));
+    }
+
+    fn notify_set(value: Value) -> Command {
+        Command::SettingsSet {
+            scope: "account:mine/module:notify".into(),
+            value,
+            merge: true,
+        }
+    }
+
+    #[test]
+    fn guest_destinations_are_checked() {
+        let s = state();
+        let view = View::of(&s, "g").unwrap();
+        let run = |c: Command| view.authorize(c, &s);
+        let targets = |t: Value| notify_set(json!({ "targets": [t] }));
+        for ok in [
+            json!({"kind": "ntfy", "url": "https://ntfy.sh/topic"}),
+            json!({"kind": "discord", "webhook_url": "https://discord.com/api/webhooks/1/x"}),
+            json!({"kind": "webhook", "url": "https://hooks.example.com/x", "token": "t"}),
+            json!({"kind": "telegram", "bot_token": "1:abc", "chat_id": "2"}),
+            json!({"kind": "fcm", "token": "t", "device": "d", "name": "Pixel"}),
+        ] {
+            assert!(run(targets(ok.clone())).is_ok(), "{ok}");
+        }
+        for bad in [
+            json!({"kind": "ntfy", "url": "http://ntfy.sh/topic"}),
+            json!({"kind": "ntfy", "url": "https://192.168.1.10/topic"}),
+            json!({"kind": "ntfy", "url": "https://100.101.102.103:8080/topic"}),
+            json!({"kind": "webhook", "url": "https://localhost:7878/api/v1/command"}),
+            json!({"kind": "webhook", "url": "https://169.254.169.254/latest"}),
+            json!({"kind": "webhook", "url": "https://hooks.example.com/x", "headers": {"X": "1"}}),
+            json!({"kind": "discord", "webhook_url": "https://mini-pc/x"}),
+            json!({"kind": "smtp", "url": "https://mail.example.com"}),
+        ] {
+            let e = run(targets(bad.clone())).unwrap_err();
+            assert_eq!(e.code, "forbidden", "{bad}");
+        }
+        // No Firebase key of their own.
+        assert!(
+            run(notify_set(
+                json!({"firebase_key": "{\"type\": \"service_account\"}"})
+            ))
+            .is_err()
+        );
+        // The stored document always has its own list and never a key.
+        match run(notify_set(
+            json!({"firebase_key": "***", "events": ["drop_claimed"]}),
+        ))
+        .unwrap()
+        {
+            Command::SettingsSet { value, merge, .. } => {
+                assert!(!merge);
+                assert!(value.get("firebase_key").is_none());
+                assert_eq!(value["targets"][0]["url"], "https://ntfy.sh/MY-TOPIC");
+                assert_eq!(value["events"][0], "drop_claimed");
+            }
+            _ => unreachable!(),
+        }
+        match run(Command::SettingsSet {
+            scope: "account:mine/module:notify".into(),
+            value: Value::Null,
+            merge: false,
+        })
+        .unwrap()
+        {
+            Command::SettingsSet { value, .. } => assert_eq!(value, json!({"targets": []})),
+            _ => unreachable!(),
+        }
+        // At most `max_notify_targets` destinations.
+        let many: Vec<Value> = (0..11)
+            .map(|i| json!({"kind": "ntfy", "url": format!("https://ntfy.sh/t{i}")}))
+            .collect();
+        assert!(run(notify_set(json!({ "targets": many[..10] }))).is_ok());
+        assert!(run(notify_set(json!({ "targets": many }))).is_err());
+    }
+
+    #[test]
+    fn guest_limits() {
+        let mut s = state();
+        let view = View::of(&s, "g").unwrap();
+        let login = || Command::LoginStart {
+            profile: None,
+            guest: None,
+        };
+        // One flow is already waiting (`f-mine`): one more is allowed by default.
+        assert!(view.authorize(login(), &s).is_ok());
+        let mut second = s.logins["f-mine"].clone();
+        second.flow_id = "f-mine-2".into();
+        s.logins.insert(second.flow_id.clone(), second);
+        assert!(view.authorize(login(), &s).is_err());
+        // Game searches per minute.
+        s.settings.insert(
+            ENGINE.into(),
+            json!({"guest_limits": {"games_search_per_minute": 3}}),
+        );
+        let view = View {
+            id: "limits-test".into(),
+            ..view
+        };
+        let search = || Command::GamesSearch {
+            query: "rust".into(),
+            limit: None,
+        };
+        for _ in 0..3 {
+            assert!(view.authorize(search(), &s).is_ok());
+        }
+        assert_eq!(
+            view.authorize(search(), &s).unwrap_err().code,
+            "rate_limited"
+        );
     }
 
     #[test]

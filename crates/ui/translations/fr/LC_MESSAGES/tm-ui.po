@@ -1504,3 +1504,27 @@ msgstr "aucune"
 
 msgid "set"
 msgstr "enregistrée"
+
+msgid "Other names of this server"
+msgstr "Autres noms de ce serveur"
+
+msgid "Guest limits"
+msgstr "Limites des invités"
+
+msgid "Sign-ins at a time"
+msgstr "Connexions en même temps"
+
+msgid "Twitch accounts"
+msgstr "Comptes Twitch"
+
+msgid "Notification destinations per account"
+msgstr "Destinations de notification par compte"
+
+msgid "Game searches per minute"
+msgstr "Recherches de jeux par minute"
+
+msgid "Names the API also answers to, besides IP addresses, localhost and local names (Tailscale, *.local): e.g. the name of a reverse proxy, tm.example.com or *.example.com."
+msgstr "Noms auxquels l'API répond aussi, en plus des adresses IP, de localhost et des noms locaux (Tailscale, *.local) : par exemple le nom d'un reverse proxy, tm.example.com ou *.example.com."
+
+msgid "What each guest may use at most. You have no limit."
+msgstr "Ce que chaque invité peut utiliser au plus. Vous n'avez aucune limite."

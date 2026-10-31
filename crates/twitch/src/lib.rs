@@ -10,6 +10,7 @@ pub mod gql;
 pub mod manifest;
 pub mod models;
 pub mod net;
+pub mod netguard;
 pub mod pubsub;
 pub mod tls;
 pub mod watch;

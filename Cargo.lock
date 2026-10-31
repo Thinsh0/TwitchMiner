@@ -5864,6 +5864,7 @@ dependencies = [
  "tm-twitch",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]

@@ -66,6 +66,12 @@ export global SettingText {
         if key == "engine.manifest_auto_update" { return @tr("Update Twitch identifiers automatically"); }
         if key == "engine.manifest_url" { return @tr("Address of the Twitch identifiers"); }
         if key == "engine.releases_url" { return @tr("Address of the versions"); }
+        if key == "engine.api_allowed_hosts" { return @tr("Other names of this server"); }
+        if key == "engine.guest_limits" { return @tr("Guest limits"); }
+        if key == "engine.guest_limits.max_pending_logins" { return @tr("Sign-ins at a time"); }
+        if key == "engine.guest_limits.max_accounts" { return @tr("Twitch accounts"); }
+        if key == "engine.guest_limits.max_notify_targets" { return @tr("Notification destinations per account"); }
+        if key == "engine.guest_limits.games_search_per_minute" { return @tr("Game searches per minute"); }
         return fallback;
     }
 
@@ -105,6 +111,8 @@ export global SettingText {
         if key == "engine.peers" { return @tr("JSON list. Example: {}.", "[{\"name\": \"mini-pc\", \"url\": \"http://100.64.0.2:7878\", \"token\": \"…\"}]"); }
         if key == "engine.history_retention_days" { return @tr("Older events are deleted; daily statistics are kept forever."); }
         if key == "engine.manifest_auto_update" { return @tr("When Twitch changes its internal identifiers, TwitchMiner fixes itself without a new version."); }
+        if key == "engine.api_allowed_hosts" { return @tr("Names the API also answers to, besides IP addresses, localhost and local names (Tailscale, *.local): e.g. the name of a reverse proxy, tm.example.com or *.example.com."); }
+        if key == "engine.guest_limits" { return @tr("What each guest may use at most. You have no limit."); }
         return fallback;
     }
 

@@ -67,10 +67,20 @@ impl Account {
             .context("unreadable private key in the service account key")?;
         let key = RsaKeyPair::from_pkcs8(&der)
             .map_err(|e| anyhow!("unusable private key in the service account key: {e}"))?;
+        // Both end up in addresses the server posts to.
+        if !valid_project_id(&file.project_id) {
+            return Err(anyhow!("invalid project_id in the service account key"));
+        }
+        let token_uri = file.token_uri.unwrap_or_else(|| TOKEN_URI.into());
+        if !is_google_token_uri(&token_uri) {
+            return Err(anyhow!(
+                "token_uri of the service account key must be on https://oauth2.googleapis.com/"
+            ));
+        }
         Ok(Self {
             project_id: file.project_id,
             client_email: file.client_email,
-            token_uri: file.token_uri.unwrap_or_else(|| TOKEN_URI.into()),
+            token_uri,
             key,
         })
     }
@@ -98,6 +108,24 @@ impl Account {
             .map_err(|_| anyhow!("cannot sign with the service account key"))?;
         Ok(format!("{signed}.{}", URL_SAFE_NO_PAD.encode(sig)))
     }
+}
+
+/// Google Cloud project ids: lowercase letters, digits and hyphens.
+fn valid_project_id(id: &str) -> bool {
+    (1..=63).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// The sign-in address must be Google's (the server posts a signed request there).
+fn is_google_token_uri(uri: &str) -> bool {
+    url::Url::parse(uri).is_ok_and(|u| {
+        u.scheme() == "https"
+            && u.host_str() == Some("oauth2.googleapis.com")
+            && u.port().is_none()
+            && u.username().is_empty()
+    })
 }
 
 /// Access tokens by service account, with when to stop using them.
@@ -263,6 +291,28 @@ mod tests {
         public
             .verify(format!("{}.{}", parts[0], parts[1]).as_bytes(), &sig)
             .unwrap();
+    }
+
+    #[test]
+    fn addresses_in_the_key_are_checked() {
+        let with = |field: &str, value: &str| {
+            let mut v: Value = serde_json::from_str(&key_file(TEST_KEY)).unwrap();
+            v[field] = json!(value);
+            Account::parse(&v.to_string())
+        };
+        assert!(with("project_id", "my-project-123").is_ok());
+        for bad in ["../x", "a/b", "A", "x?y", "", "x.evil"] {
+            assert!(with("project_id", bad).is_err(), "{bad}");
+        }
+        for bad in [
+            "http://oauth2.googleapis.com/token",
+            "https://169.254.169.254/token",
+            "https://oauth2.googleapis.com.evil.example/token",
+            "https://oauth2.googleapis.com:8443/token",
+            "https://user@oauth2.googleapis.com/token",
+        ] {
+            assert!(with("token_uri", bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

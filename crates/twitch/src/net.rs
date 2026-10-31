@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use crate::error::Result;
-use crate::tls;
+use crate::{netguard, tls};
 
 #[derive(Debug, Clone, Default)]
 pub struct NetConfig {
@@ -18,6 +18,13 @@ pub struct Net {
     pub http: reqwest::Client,
     /// Proxy used for WebSocket tunnels (resolved from config or environment).
     pub ws_proxy: Option<url::Url>,
+    /// For addresses chosen by someone other than the owner: public addresses only
+    /// (`netguard::PublicResolver`), no redirects. Check the URL with
+    /// `netguard::check_public_url` first (IP literals skip the resolver), and with
+    /// `netguard::check_public_url_resolved` when `guarded_proxied` (the proxy resolves).
+    pub guarded: reqwest::Client,
+    /// `guarded` goes through a proxy.
+    pub guarded_proxied: bool,
 }
 
 impl Net {
@@ -38,7 +45,22 @@ impl Net {
             .or_else(env_proxy)
             .and_then(|p| url::Url::parse(&p).ok())
             .filter(|u| u.scheme() == "http" || u.scheme() == "https");
-        Ok(Self { http, ws_proxy })
+        let mut guarded = reqwest::Client::builder()
+            .use_preconfigured_tls((*tls::client_config()).clone())
+            .connect_timeout(Duration::from_secs(15))
+            .timeout(Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::none())
+            .dns_resolver(netguard::PublicResolver);
+        guarded = match &ws_proxy {
+            Some(p) => guarded.proxy(reqwest::Proxy::all(p.as_str())?),
+            None => guarded.no_proxy(),
+        };
+        Ok(Self {
+            http,
+            guarded: guarded.build()?,
+            guarded_proxied: ws_proxy.is_some(),
+            ws_proxy,
+        })
     }
 }
 

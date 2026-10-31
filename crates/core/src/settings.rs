@@ -79,6 +79,73 @@ pub struct EngineSettings {
     pub peers: Vec<Peer>,
     /// AI agent access: the MCP endpoint and the agent token. Off = both refused.
     pub agent_enabled: bool,
+    /// Extra host names the API answers to (`Host` header), besides IP addresses,
+    /// `localhost` and local names (single label, `*.local`, `*.ts.net`…): e.g. the
+    /// public name of a reverse proxy. `*.example.com` allows its subdomains. Requests
+    /// from a web page of another origin are also accepted from these names.
+    pub api_allowed_hosts: Vec<String>,
+    /// What one guest may use at most (the owner has no limit).
+    pub guest_limits: GuestLimits,
+}
+
+/// Per-guest limits against abuse; the defaults leave room for normal use.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(default)]
+pub struct GuestLimits {
+    /// Twitch logins (`login_start`) waiting at the same time.
+    pub max_pending_logins: u32,
+    /// Twitch accounts.
+    pub max_accounts: u32,
+    /// Notification destinations per account.
+    pub max_notify_targets: u32,
+    /// Game searches (`games_search`) per minute.
+    pub games_search_per_minute: u32,
+}
+
+impl Default for GuestLimits {
+    fn default() -> Self {
+        Self {
+            max_pending_logins: 2,
+            max_accounts: 5,
+            max_notify_targets: 10,
+            games_search_per_minute: 60,
+        }
+    }
+}
+
+impl GuestLimits {
+    pub fn validate(&self) -> Result<(), String> {
+        let check = |name: &str, v: u32, max: u32| {
+            if (1..=max).contains(&v) {
+                Ok(())
+            } else {
+                Err(format!("guest_limits.{name} must be between 1 and {max}"))
+            }
+        };
+        check("max_pending_logins", self.max_pending_logins, 20)?;
+        check("max_accounts", self.max_accounts, 100)?;
+        check("max_notify_targets", self.max_notify_targets, 100)?;
+        check(
+            "games_search_per_minute",
+            self.games_search_per_minute,
+            1000,
+        )
+    }
+}
+
+/// `true` when `host` (without port) is one of `allowed` (`*.example.com` also
+/// matches its subdomains), ignoring case.
+pub fn host_listed(host: &str, allowed: &[String]) -> bool {
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    allowed.iter().any(|a| {
+        let a = a.trim().trim_end_matches('.').to_ascii_lowercase();
+        match a.strip_prefix("*.") {
+            Some(suffix) => host
+                .strip_suffix(suffix)
+                .is_some_and(|p| p.ends_with('.') && p.len() > 1),
+            None => host == a,
+        }
+    })
 }
 
 #[derive(
@@ -168,6 +235,8 @@ impl Default for EngineSettings {
             role: Role::Primary,
             peers: Vec::new(),
             agent_enabled: false,
+            api_allowed_hosts: Vec::new(),
+            guest_limits: GuestLimits::default(),
         }
     }
 }
@@ -185,6 +254,19 @@ impl EngineSettings {
                 ));
             }
         }
+        for h in &self.api_allowed_hosts {
+            let bare = h.strip_prefix("*.").unwrap_or(h);
+            let ok = !bare.is_empty()
+                && bare
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
+            if !ok {
+                return Err(format!(
+                    "api_allowed_hosts: `{h}` is not a host name (example.com or *.example.com, without scheme or port)"
+                ));
+            }
+        }
+        self.guest_limits.validate()?;
         self.active_hours.iter().try_for_each(TimeWindow::validate)
     }
 
@@ -314,6 +396,26 @@ mod tests {
             .validate()
             .is_err()
         );
+    }
+
+    #[test]
+    fn allowed_hosts() {
+        let list = vec!["tm.example.com".to_string(), "*.home.example".to_string()];
+        assert!(host_listed("TM.example.com", &list));
+        assert!(host_listed("pc.home.example", &list));
+        assert!(!host_listed("home.example", &list));
+        assert!(!host_listed("evilhome.example", &list));
+        assert!(!host_listed("example.com", &list));
+        let mut e = EngineSettings {
+            api_allowed_hosts: list,
+            ..Default::default()
+        };
+        assert!(e.validate().is_ok());
+        e.api_allowed_hosts = vec!["https://tm.example.com".into()];
+        assert!(e.validate().is_err());
+        e.api_allowed_hosts.clear();
+        e.guest_limits.max_accounts = 0;
+        assert!(e.validate().is_err());
     }
 
     #[test]

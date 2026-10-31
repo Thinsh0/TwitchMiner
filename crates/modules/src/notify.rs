@@ -118,6 +118,14 @@ impl Module for Notify {
 
     fn validate_settings(&self, v: &Value) -> Result<(), String> {
         tm_core::module::validate_as::<NotifySettings>(v)?;
+        let s: NotifySettings = serde_json::from_value(v.clone()).map_err(|e| e.to_string())?;
+        for t in &s.targets {
+            if let Target::Telegram { bot_token, .. } = t
+                && !valid_bot_token(bot_token)
+            {
+                return Err("invalid Telegram bot token (expected <digits>:<letters>)".into());
+            }
+        }
         // A wrong file is refused at once rather than failing at the first message.
         match v["firebase_key"].as_str().and_then(fcm::account_for) {
             Some(Err(e)) => Err(format!("firebase_key: {e}")),
@@ -133,7 +141,7 @@ impl Module for Notify {
     async fn run(&self, ctx: ModuleContext) -> anyhow::Result<()> {
         let mut rx = ctx.events();
         let mut settings: NotifySettings = ctx.settings()?;
-        let http = ctx.gql().net().http.clone();
+        let http = Http::of(ctx.gql().net());
         // Sending happens apart, in order: a slow or rate-limited service never holds
         // up the events (the queue ends when this module stops).
         let (queue, mut pending) = tokio::sync::mpsc::channel::<Outgoing>(QUEUE);
@@ -145,6 +153,7 @@ impl Module for Notify {
                     event: &o.event,
                     urgent: o.urgent,
                     firebase: &o.firebase,
+                    guest: o.guest,
                 };
                 send_all(&sender_http, &o.targets, &m).await;
             }
@@ -160,6 +169,7 @@ impl Module for Notify {
                 event,
                 urgent,
                 firebase: firebase(settings),
+                guest: is_guest_account(&ctx),
             };
             if queue.try_send(o).is_err() {
                 tracing::warn!("notification dropped: too many waiting");
@@ -222,6 +232,7 @@ impl Module for Notify {
                             event: &json!({"type": "test"}),
                             urgent: true,
                             firebase: &firebase(&settings),
+                            guest: is_guest_account(&ctx),
                         };
                         let errors = send_all(&http, &settings.targets, &m).await;
                         Ok(json!({"sent": settings.targets.len() - errors.len(), "errors": errors}))
@@ -268,6 +279,77 @@ struct Outgoing {
     event: Value,
     urgent: bool,
     firebase: Firebase,
+    guest: bool,
+}
+
+/// The HTTP clients notifications are sent with.
+#[derive(Clone)]
+struct Http {
+    /// The owner's destinations: anything they configured (LAN ntfy, local agent…).
+    open: reqwest::Client,
+    /// A guest's: public https addresses only, no redirects (see `tm_twitch::netguard`).
+    guarded: reqwest::Client,
+    /// `guarded` goes through a proxy, which resolves names itself: they are checked
+    /// before sending instead.
+    proxied: bool,
+}
+
+impl Http {
+    fn of(net: &tm_twitch::Net) -> Self {
+        Self {
+            open: net.http.clone(),
+            guarded: net.guarded.clone(),
+            proxied: net.guarded_proxied,
+        }
+    }
+}
+
+/// The account belongs to a guest: its destinations were chosen by someone other
+/// than the owner of this server.
+fn is_guest_account(ctx: &ModuleContext) -> bool {
+    ctx.store()
+        .read(|s| tm_core::guests::owner_of(s, ctx.account_id()).is_some())
+}
+
+/// Telegram bot tokens (`123456:ABC-def_…`) end up in the request path.
+fn valid_bot_token(t: &str) -> bool {
+    let Some((id, secret)) = t.split_once(':') else {
+        return false;
+    };
+    (1..=20).contains(&id.len())
+        && id.bytes().all(|b| b.is_ascii_digit())
+        && (1..=128).contains(&secret.len())
+        && secret
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+/// What every failure to reach a guest's destination says: the details (refused
+/// address, connection error, HTTP status) could help map the server's network.
+const GUEST_SEND_FAILED: &str =
+    "this destination was refused or could not be reached (public https:// addresses only)";
+
+/// A guest's destination may only be a public https address (checked again at
+/// connection time by the guarded client's resolver), without extra headers.
+async fn check_guest_target(t: &Target, proxied: bool) -> Result<(), &'static str> {
+    let url = match t {
+        Target::Discord { webhook_url } => webhook_url,
+        Target::Ntfy { url, .. } => url,
+        Target::Webhook { url, headers, .. } => {
+            if !headers.is_empty() {
+                return Err(tm_twitch::netguard::REFUSED);
+            }
+            url
+        }
+        // Fixed Google and Telegram hosts.
+        Target::Telegram { .. } | Target::Fcm { .. } => return Ok(()),
+    };
+    if proxied {
+        tm_twitch::netguard::check_public_url_resolved(url).await?;
+    } else {
+        tm_twitch::netguard::check_public_url(url)?;
+    }
+    Ok(())
 }
 
 /// The Firebase account to send `fcm` destinations with, or why there is none.
@@ -285,6 +367,8 @@ struct Message<'a> {
     event: &'a Value,
     urgent: bool,
     firebase: &'a Firebase,
+    /// Sent for a guest's account (see `check_guest_target`).
+    guest: bool,
 }
 
 /// Events that need the user soon: sent with a high priority.
@@ -521,13 +605,17 @@ fn format_event(ctx: &ModuleContext, s: &NotifySettings, env: &Envelope) -> Opti
 }
 
 /// Sends to every target; returns one error message per failed target.
-async fn send_all(http: &reqwest::Client, targets: &[Target], m: &Message<'_>) -> Vec<String> {
+async fn send_all(http: &Http, targets: &[Target], m: &Message<'_>) -> Vec<String> {
     let mut errors = Vec::new();
     for t in targets {
         if let Err(e) = send_retrying(http, t, m).await {
             let msg = format!("{e:#}");
-            tracing::warn!(error = %msg, "notification failed");
-            errors.push(msg);
+            tracing::warn!(error = %msg, guest = m.guest, "notification failed");
+            errors.push(if m.guest {
+                GUEST_SEND_FAILED.to_string()
+            } else {
+                msg
+            });
         }
     }
     errors
@@ -535,7 +623,7 @@ async fn send_all(http: &reqwest::Client, targets: &[Target], m: &Message<'_>) -
 
 /// Sends to one target: a rate limit (429) waits what the service asks, a network or
 /// server error waits a little; `ATTEMPTS` tries in all.
-async fn send_retrying(http: &reqwest::Client, t: &Target, m: &Message<'_>) -> anyhow::Result<()> {
+async fn send_retrying(http: &Http, t: &Target, m: &Message<'_>) -> anyhow::Result<()> {
     let mut attempt = 1;
     loop {
         match send(http, t, m).await {
@@ -552,13 +640,22 @@ async fn send_retrying(http: &reqwest::Client, t: &Target, m: &Message<'_>) -> a
     }
 }
 
-async fn send(http: &reqwest::Client, t: &Target, m: &Message<'_>) -> Result<(), SendError> {
+async fn send(http: &Http, t: &Target, m: &Message<'_>) -> Result<(), SendError> {
     let &Message {
         text,
         event,
         urgent,
+        guest,
         ..
     } = m;
+    let http = if guest {
+        check_guest_target(t, http.proxied)
+            .await
+            .map_err(|e| SendError::fatal(anyhow::anyhow!(e)))?;
+        &http.guarded
+    } else {
+        &http.open
+    };
     let req = match t {
         Target::Discord { webhook_url } => http.post(webhook_url).json(&json!({ "content": text })),
         Target::Ntfy { url, token } => {
@@ -576,11 +673,17 @@ async fn send(http: &reqwest::Client, t: &Target, m: &Message<'_>) -> Result<(),
             }
             r
         }
-        Target::Telegram { bot_token, chat_id } => http
-            .post(format!(
+        Target::Telegram { bot_token, chat_id } => {
+            if !valid_bot_token(bot_token) {
+                return Err(SendError::fatal(anyhow::anyhow!(
+                    "invalid Telegram bot token"
+                )));
+            }
+            http.post(format!(
                 "https://api.telegram.org/bot{bot_token}/sendMessage"
             ))
-            .json(&json!({ "chat_id": chat_id, "text": text })),
+            .json(&json!({ "chat_id": chat_id, "text": text }))
+        }
         Target::Webhook {
             url,
             token,
@@ -676,6 +779,29 @@ mod tests {
             event: &EVENT,
             urgent: false,
             firebase: &NO_KEY,
+            guest: false,
+        }
+    }
+
+    fn plain(client: reqwest::Client) -> Http {
+        Http {
+            open: client.clone(),
+            guarded: client,
+            proxied: false,
+        }
+    }
+
+    /// Like the engine's clients, without the environment's proxy.
+    fn net_http() -> Http {
+        Http {
+            open: reqwest::Client::builder().no_proxy().build().unwrap(),
+            guarded: reqwest::Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .dns_resolver(tm_twitch::netguard::PublicResolver)
+                .build()
+                .unwrap(),
+            proxied: false,
         }
     }
 
@@ -687,7 +813,7 @@ mod tests {
             device: "d".into(),
             name: "Pixel".into(),
         }];
-        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let http = plain(reqwest::Client::builder().no_proxy().build().unwrap());
         let errors = send_all(&http, &targets, &test_message()).await;
         assert_eq!(errors, ["none"]);
         let s = NotifySettings {
@@ -759,10 +885,82 @@ mod tests {
             token: None,
             headers: BTreeMap::new(),
         }];
-        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let http = plain(reqwest::Client::builder().no_proxy().build().unwrap());
         let errors = send_all(&http, &targets, &test_message()).await;
         assert!(errors.is_empty(), "{errors:?}");
         server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn guest_destinations_stay_public() {
+        tm_twitch::tls::install_crypto_provider();
+        // A local listener the owner may reach, a guest may not.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let seen = hits.clone();
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let mut buf = [0u8; 4096];
+                let _ = sock.read(&mut buf).await;
+                let _ = sock
+                    .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                    .await;
+            }
+        });
+        let http = net_http();
+        let local = |url: String| Target::Webhook {
+            url,
+            token: None,
+            headers: BTreeMap::new(),
+        };
+        let targets = [
+            local(format!("http://{addr}/hook")),
+            local(format!("https://{addr}/hook")),
+            local("https://localhost/hook".into()),
+            local("https://169.254.169.254/latest/meta-data".into()),
+            Target::Webhook {
+                url: "https://example.com/hook".into(),
+                token: None,
+                headers: BTreeMap::from([("X-Evil".into(), "1".into())]),
+            },
+            Target::Ntfy {
+                url: format!("https://[::1]:{}/topic", addr.port()),
+                token: None,
+            },
+        ];
+        let mut m = test_message();
+        m.guest = true;
+        let errors = send_all(&http, &targets, &m).await;
+        assert_eq!(errors.len(), targets.len());
+        assert!(errors.iter().all(|e| e == GUEST_SEND_FAILED), "{errors:?}");
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 0);
+        // The owner reaches the same local address.
+        let errors = send_all(&http, &targets[..1], &test_message()).await;
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn telegram_tokens_are_checked() {
+        assert!(valid_bot_token(
+            "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw"
+        ));
+        for bad in [
+            "",
+            "123",
+            ":abc",
+            "abc:def",
+            "1:a/../../x",
+            "1:a?b",
+            "1:a b",
+            "1:a@b",
+        ] {
+            assert!(!valid_bot_token(bad), "{bad}");
+        }
+        let s = json!({"targets": [{"kind": "telegram", "bot_token": "1:a/../x", "chat_id": "1"}]});
+        assert!(Notify.validate_settings(&s).is_err());
     }
 
     #[tokio::test]
@@ -773,10 +971,12 @@ mod tests {
             bot_token: "123:SECRET".into(),
             chat_id: "1".into(),
         }];
-        let http = reqwest::Client::builder()
-            .proxy(reqwest::Proxy::all("http://127.0.0.1:9").unwrap())
-            .build()
-            .unwrap();
+        let http = plain(
+            reqwest::Client::builder()
+                .proxy(reqwest::Proxy::all("http://127.0.0.1:9").unwrap())
+                .build()
+                .unwrap(),
+        );
         let errors = send_all(&http, &targets, &test_message()).await;
         assert_eq!(errors.len(), 1);
         assert!(!errors[0].contains("SECRET"), "{}", errors[0]);

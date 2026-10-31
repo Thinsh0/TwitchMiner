@@ -31,7 +31,15 @@ pub fn diagnose(url: &str, reason: &str) -> Fault {
         ])
     {
         Fault::NotHttps
-    } else if has(&["401", "403", "unauthorized", "forbidden"]) {
+    } else if has(&[
+        "401",
+        "403",
+        "unauthorized",
+        "forbidden",
+        // Locked out after repeated bad tokens.
+        "429",
+        "too many requests",
+    ]) {
         Fault::BadToken
     } else if has(&[
         "connection refused",
@@ -98,6 +106,11 @@ mod tests {
             (
                 "http://h:7878",
                 "websocket error: HTTP error: 401 Unauthorized",
+                Fault::BadToken,
+            ),
+            (
+                "http://h:7878",
+                "websocket error: HTTP error: 429 Too Many Requests",
                 Fault::BadToken,
             ),
             (

@@ -19,6 +19,13 @@ pub const EMBEDDED: &str = include_str!("../../../manifest/twitch.json");
 /// Highest manifest schema understood by this build.
 pub const SUPPORTED_SCHEMA: u32 = 1;
 
+/// A manifest more than this many revisions ahead of the current one is refused: a
+/// `revision` near `u32::MAX` would otherwise block every later fix.
+pub const MAX_REVISION_JUMP: u32 = 1000;
+
+/// A downloaded manifest larger than this is refused (the real one is a few KB).
+pub const MAX_BYTES: usize = 256 * 1024;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
     pub schema: u32,
@@ -68,7 +75,8 @@ impl Manifest {
         Ok(m)
     }
 
-    fn validate(&self) -> Result<()> {
+    /// Checks the schema and every identifier and address (only Twitch over https).
+    pub fn validate(&self) -> Result<()> {
         if self.schema > SUPPORTED_SCHEMA {
             return Err(Error::decode(format!(
                 "manifest schema {} unsupported",
@@ -87,8 +95,21 @@ impl Manifest {
             if p.client_id.is_empty() || p.user_agents.is_empty() {
                 return Err(Error::decode("profile without client id / user agent"));
             }
+            if !is_https(&p.client_url) {
+                return Err(Error::decode("client_url must be an https:// address"));
+            }
+        }
+        if !is_https(&self.spade_url) || !is_twitch_host(&self.spade_url) {
+            return Err(Error::decode(
+                "spade_url must be an https:// address on twitch.tv",
+            ));
         }
         Ok(())
+    }
+
+    /// Whether this manifest may replace `current`: newer, but not absurdly so.
+    pub fn may_replace(&self, current: &Manifest) -> bool {
+        self.revision > current.revision && self.revision - current.revision <= MAX_REVISION_JUMP
     }
 
     pub fn profile(&self, name: &str) -> Option<&ClientProfile> {
@@ -107,17 +128,43 @@ impl Manifest {
         url: &str,
         current: &Manifest,
     ) -> Result<Option<Self>> {
-        let text = http
+        let mut resp = http
             .get(url)
             .timeout(std::time::Duration::from_secs(20))
             .send()
             .await?
-            .error_for_status()?
-            .text()
-            .await?;
+            .error_for_status()?;
+        if resp.content_length().is_some_and(|n| n > MAX_BYTES as u64) {
+            return Err(Error::decode("manifest too large"));
+        }
+        let mut body = Vec::new();
+        while let Some(chunk) = resp.chunk().await? {
+            if body.len() + chunk.len() > MAX_BYTES {
+                return Err(Error::decode("manifest too large"));
+            }
+            body.extend_from_slice(&chunk);
+        }
+        let text = String::from_utf8(body).map_err(|_| Error::decode("manifest is not UTF-8"))?;
         let m = Manifest::parse(&text)?;
-        Ok((m.revision > current.revision).then_some(m))
+        if m.revision > current.revision && !m.may_replace(current) {
+            return Err(Error::decode(format!(
+                "manifest revision {} is too far ahead of {}",
+                m.revision, current.revision
+            )));
+        }
+        Ok(m.may_replace(current).then_some(m))
     }
+}
+
+fn is_https(raw: &str) -> bool {
+    url::Url::parse(raw).is_ok_and(|u| u.scheme() == "https" && u.host_str().is_some())
+}
+
+fn is_twitch_host(raw: &str) -> bool {
+    url::Url::parse(raw).is_ok_and(|u| {
+        u.host_str()
+            .is_some_and(|h| h == "twitch.tv" || h.ends_with(".twitch.tv"))
+    })
 }
 
 /// Shared, hot-swappable manifest handle.
@@ -149,6 +196,34 @@ mod tests {
         let m = Manifest::embedded();
         assert!(m.operation("Inventory").is_ok());
         assert!(m.profile(&m.default_profile).is_some());
+    }
+
+    #[test]
+    fn addresses_and_revisions_are_checked() {
+        let base = Manifest::embedded();
+        let with = |f: &dyn Fn(&mut Manifest)| {
+            let mut m = base.clone();
+            f(&mut m);
+            m.validate()
+        };
+        assert!(with(&|m| m.spade_url = "http://spade.twitch.tv/track".into()).is_err());
+        assert!(with(&|m| m.spade_url = "https://evil.example/track".into()).is_err());
+        assert!(with(&|m| m.spade_url = "https://twitch.tv.evil.example/x".into()).is_err());
+        assert!(with(&|m| m.spade_url = "https://video-edge.twitch.tv/x".into()).is_ok());
+        assert!(
+            with(&|m| {
+                for p in m.profiles.values_mut() {
+                    p.client_url = "http://www.twitch.tv".into();
+                }
+            })
+            .is_err()
+        );
+        let mut next = base.clone();
+        next.revision = base.revision + 1;
+        assert!(next.may_replace(&base));
+        assert!(!base.may_replace(&next));
+        next.revision = u32::MAX;
+        assert!(!next.may_replace(&base));
     }
 
     #[test]

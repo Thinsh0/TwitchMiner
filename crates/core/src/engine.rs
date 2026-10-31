@@ -113,7 +113,7 @@ impl Engine {
             .await?
         {
             match serde_json::from_value::<Manifest>(cached) {
-                Ok(c) if c.revision > m.revision && c.schema <= manifest::SUPPORTED_SCHEMA => m = c,
+                Ok(c) if c.may_replace(&m) && c.validate().is_ok() => m = c,
                 _ => {}
             }
         }

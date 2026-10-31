@@ -1,0 +1,19 @@
+# cargo deny check advisories bans sources (CI job "dependencies").
+# Licenses are not checked here.
+
+[advisories]
+# Unmaintained crates are reported only when the workspace uses them directly.
+unmaintained = "workspace"
+yanked = "deny"
+# Advisories that cannot be fixed yet, each with why it does not apply or what
+# blocks the fix. Review them at every dependency update.
+ignore = []
+
+[bans]
+multiple-versions = "allow"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

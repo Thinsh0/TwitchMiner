@@ -33,6 +33,18 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+  # Known vulnerabilities and yanked crates in Cargo.lock, crate sources (deny.toml).
+  # A new advisory fails the CI (and so the Release): update the crate, or list the
+  # advisory in deny.toml with the reason it cannot be fixed yet.
+  dependencies:
+    name: dependencies (cargo deny)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories bans sources
+
   build:
     name: build ${{ matrix.target }}
     needs: check

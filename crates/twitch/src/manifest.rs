@@ -35,7 +35,8 @@ pub const MAX_BYTES: usize = 256 * 1024;
 /// hex. Its private key is kept offline by the maintainer and is not the release
 /// key (see docs/DEVELOPMENT.md, « Signer le manifeste Twitch »). Empty: this build
 /// uses no downloaded manifest, only the embedded one.
-pub const MANIFEST_PUBLIC_KEY: &str = "";
+#[rustfmt::skip]
+pub const MANIFEST_PUBLIC_KEY: &str = "1499a6dbfe7c2f3e54f2da17ef116a3abd923e8592799eba01b47399df1222e1";
 
 /// The signature of `<url>` is at `<url>` + this suffix (`twitch.json.sig`).
 pub const SIGNATURE_SUFFIX: &str = ".sig";

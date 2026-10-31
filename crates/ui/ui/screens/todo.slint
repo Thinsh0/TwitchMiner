@@ -82,8 +82,9 @@ export component LoginCard inherits Card {
     }
 }
 
-// One action card: icon, title, explanation, buttons on the right (below the text on
-// a compact layout).
+// One action card: icon and title, explanation, buttons below. Each wrapped text sits
+// directly in its row: nested deeper (or in a grid), its height was measured for
+// another width and the buttons spilled out of the card on a phone.
 export component ActionCard inherits Card {
     in property <image> icon: Icons.alert;
     in property <Tone> tone: Tone.warning;
@@ -92,60 +93,53 @@ export component ActionCard inherits Card {
     in property <bool> closable;
     callback close();
     inner-padding: 14px;
-    GridLayout {
-        spacing-horizontal: 12px;
-        spacing-vertical: 10px;
-        Rectangle {
-            row: 0;
-            col: 0;
-            width: 34px;
-            height: 34px;
-            border-radius: Theme.radius-m;
-            background: Tones.bg(root.tone);
-            Icon {
-                source: root.icon;
-                colorize: Tones.fg(root.tone);
-            }
-        }
+    spacing: 4px;
+    HorizontalLayout {
+        spacing: 12px;
         VerticalLayout {
-            row: 0;
-            col: 1;
-            spacing: 3px;
-            alignment: center;
-            horizontal-stretch: 1;
-            Text {
-                text: root.title;
-                font-weight: 600;
-                color: Theme.text;
-                wrap: word-wrap;
-            }
-            if root.body != "": Muted {
-                text: root.body;
-            }
-        }
-        HorizontalLayout {
-            row: Theme.compact ? 1 : 0;
-            col: Theme.compact ? 1 : 2;
-            spacing: 8px;
-            alignment: Theme.compact ? start : end;
-            VerticalLayout {
-                alignment: center;
-                HorizontalLayout {
-                    spacing: 8px;
-                    @children
+            alignment: start;
+            Rectangle {
+                width: 34px;
+                height: 34px;
+                border-radius: Theme.radius-m;
+                background: Tones.bg(root.tone);
+                Icon {
+                    source: root.icon;
+                    colorize: Tones.fg(root.tone);
                 }
             }
         }
+        Text {
+            text: root.title;
+            font-weight: 600;
+            color: Theme.text;
+            wrap: word-wrap;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
         VerticalLayout {
-            row: 0;
-            col: 3;
-            alignment: Theme.compact ? start : center;
-            if root.closable: IconButton {
+            alignment: start;
+            width: root.closable ? 30px : 0px;
+            IconButton {
+                visible: root.closable;
                 icon: Icons.x;
                 tooltip: @tr("Dismiss");
                 clicked => { root.close(); }
             }
         }
+    }
+    if root.body != "": HorizontalLayout {
+        padding-left: 46px;
+        Muted {
+            text: root.body;
+        }
+    }
+    HorizontalLayout {
+        padding-left: 46px;
+        padding-top: 6px;
+        spacing: 8px;
+        alignment: start;
+        @children
     }
 }
 

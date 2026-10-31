@@ -7,3 +7,10 @@
 /packaging/android/.gradle
 /packaging/android/google-services.json
 /packaging/android/local.properties
+# Private keys never belong in the repository (release, manifest, APK signing).
+*.pem
+*.key
+*.der
+*.p8
+*.p12
+!crates/modules/src/notify/fcm_test_key.pem

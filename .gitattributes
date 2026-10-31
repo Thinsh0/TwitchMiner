@@ -1,0 +1,6 @@
+# The manifest is signed byte for byte (tools/sign-manifest.sh): no line-ending
+# conversion, so the signed file is the committed, embedded and published one.
+manifest/twitch.json -text
+manifest/twitch.json.sig binary
+# Shell scripts also run in Git Bash on Windows, which rejects CRLF.
+*.sh text eol=lf

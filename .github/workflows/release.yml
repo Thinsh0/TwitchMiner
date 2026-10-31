@@ -71,7 +71,7 @@ jobs:
           fi
           umask 077
           printf '%s\n' "$RELEASE_SIGNING_KEY" > "$RUNNER_TEMP/release-signing.pem"
-          public=$(openssl pkey -in "$RUNNER_TEMP/release-signing.pem" -pubout -outform DER | tail -c 32 | od -An -tx1 | tr -d ' \n')
+          public=$(openssl pkey -in "$RUNNER_TEMP/release-signing.pem" -pubout -outform DER | tail -c 32 | od -An -v -tx1 | tr -d ' \n')
           if [ ${#public} -ne 64 ]; then
             echo "::error::RELEASE_SIGNING_KEY is not an ed25519 private key (PEM)"
             exit 1

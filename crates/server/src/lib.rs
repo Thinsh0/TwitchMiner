@@ -513,8 +513,9 @@ async fn ws_first_message_auth(
     ip: Option<IpAddr>,
     socket: &mut WebSocket,
 ) -> Option<Access> {
+    let deadline = tokio::time::Instant::now() + WS_AUTH_TIMEOUT;
     let token = loop {
-        match tokio::time::timeout(WS_AUTH_TIMEOUT, socket.recv()).await {
+        match tokio::time::timeout_at(deadline, socket.recv()).await {
             Ok(Some(Ok(Message::Text(t)))) => {
                 break serde_json::from_str::<Value>(&t)
                     .ok()

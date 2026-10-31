@@ -8,7 +8,7 @@ Rust natif, workspace Cargo. Lire `docs/ARCHITECTURE.md` et `docs/API.md` avant 
 - **Un seul emplacement de données** : le dossier `Paths` (une base SQLite + `logs/`). Pas de fichiers de config à côté.
 - Les interfaces passent par `tm_client::Backend` (ou `Engine::execute` / `Store::snapshot_and_subscribe`). Elles n'appellent jamais `tm-twitch` directement.
 - Nouvelle fonctionnalité = nouveau `Module` dans `crates/modules` (voir `docs/MODULES.md`). Le cœur ne connaît aucune fonctionnalité.
-- Identifiants Twitch volatils (hashes GQL, client ids) : uniquement dans `manifest/twitch.json`. Incrémenter `revision` à chaque modification.
+- Identifiants Twitch volatils (hashes GQL, client ids) : uniquement dans `manifest/twitch.json`. À chaque modification : incrémenter `revision` ET re-signer (`tools/sign-manifest.sh <clé privée>`, commiter `manifest/twitch.json.sig` avec ; voir `docs/DEVELOPMENT.md`).
 - Un nouvel `Event` demande : la variante dans `event.rs`, `kind()`, `account()`/`channel_id()` si pertinent, la branche dans `state::apply`, la doc dans `docs/API.md`.
 - Une nouvelle `Command` demande : la variante dans `command.rs`, la branche dans `Engine::execute`, la doc dans `docs/API.md`. Si elle est sensible (suppression, fichiers, trafic sortant, secrets), la refuser au jeton agent dans `crates/server/src/access.rs`.
 - Interface native : `crates/ui` (Slint) + `apps/desktop`. Textes en anglais dans `@tr()`, traduction française obligatoire dans `crates/ui/translations/fr/LC_MESSAGES/tm-ui.po` (testé). Voir `docs/DESKTOP.md`.

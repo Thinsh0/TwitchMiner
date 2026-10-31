@@ -32,24 +32,26 @@ L'app vérifie la dernière version publiée sur GitHub au démarrage puis toute
 
 Une mise à jour n'est installée automatiquement que si sa signature correspond à la clé publique `RELEASE_PUBLIC_KEY` de `crates/ui/src/update.rs`. Tant que cette constante est vide (cas du dépôt tel quel), l'app ne s'installe jamais elle-même : elle propose la page de la version. Pour l'activer, une seule fois :
 
-1. Créer la paire de clés, **hors du dépôt** (jamais commitée) :
+1. Créer la paire de clés, **hors du dépôt** (jamais commitée ; `*.pem` est ignoré par git). Sous Windows, dans **Git Bash** : Git for Windows fournit OpenSSL 3 (`C:\Program Files\Git\usr\bin\openssl.exe`, soit `/usr/bin/openssl` dans Git Bash) :
 
    ```bash
-   openssl genpkey -algorithm ed25519 -out release-signing.pem
-   chmod 600 release-signing.pem
+   openssl genpkey -algorithm ed25519 -out ~/release-signing.pem
+   chmod 600 ~/release-signing.pem
    # clé publique : les 32 octets bruts, en hexadécimal (64 caractères)
-   openssl pkey -in release-signing.pem -pubout -outform DER | tail -c 32 | od -An -tx1 | tr -d ' \n'; echo
+   openssl pkey -in ~/release-signing.pem -pubout -outform DER | tail -c 32 | od -An -v -tx1 | tr -d ' \n'; echo
    ```
+
+   Cette clé n'est pas celle du manifeste Twitch, qui reste hors ligne (voir [DEVELOPMENT.md](DEVELOPMENT.md#signer-le-manifeste-twitch)).
 
 2. Ajouter le secret GitHub **`RELEASE_SIGNING_KEY`** (Settings › Secrets and variables › Actions) avec tout le contenu de `release-signing.pem` (lignes `-----BEGIN PRIVATE KEY-----` comprises). Garder une copie hors ligne : perdue, les versions déjà installées ne pourront plus se mettre à jour seules.
 3. Coller la clé publique (64 caractères hexadécimaux) dans `RELEASE_PUBLIC_KEY`, puis publier une version comme d'habitude.
 
 Le workflow **Release** échoue si le secret manque, ou si la clé publique du code n'est pas celle du secret. Il signe chaque fichier publié (`<fichier>.sig`, 64 octets bruts). Seules les versions construites avec la clé publique sauront vérifier (et donc installer) les suivantes : la première version qui l'intègre s'installe encore à la main.
 
-Vérifier un fichier à la main :
+Vérifier un fichier à la main (Git Bash compris) :
 
 ```bash
-python3 -c "import sys; sys.stdout.buffer.write(bytes.fromhex('302a300506032b6570032100' + sys.argv[1]))" "<clé publique hex>" > release.der
+printf "$(printf '302a300506032b6570032100%s' "<clé publique hex>" | sed 's/../\\x&/g')" > release.der
 openssl pkey -pubin -inform DER -in release.der -out release.pub
 openssl pkeyutl -verify -pubin -inkey release.pub -rawin -in TwitchMiner-vX.Y.Z-windows.exe -sigfile TwitchMiner-vX.Y.Z-windows.exe.sig
 ```

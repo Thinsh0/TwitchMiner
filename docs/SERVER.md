@@ -137,7 +137,7 @@ Hors de portée : quelqu'un qui a déjà ton jeton complet, ou un accès à ton 
   - le jeton n'est plus mis dans l'URL du WebSocket : l'app l'envoie en en-tête, la page d'accueil dans le premier message. `?token=` reste accepté pour les anciens clients, mais déconseillé (les adresses finissent dans les journaux et l'historique).
 - **Invités** : destinations de notification limitées aux adresses `https://` publiques, comptes déjà présents refusés, limites `guest_limits` (voir plus haut).
 - **Données** : sous Unix, le dossier de données est en `0700` et les sauvegardes (`backup`) en `0600`, dans un dossier `backups/` en `0700` ; un chemin de sauvegarde explicite doit être absolu. Sous Windows, le dossier par défaut (`%APPDATA%\Thinsh0\TwitchMiner\data`) hérite des droits du profil utilisateur (toi, SYSTEM, les administrateurs) ; TwitchMiner ne les restreint pas davantage. En mode portable ou avec `--data-dir`, choisir un dossier que les autres comptes de la machine ne lisent pas.
-- **Manifeste Twitch** (téléchargé toutes les 6 h) : adresses `https://` de `twitch.tv` uniquement, au plus 256 Kio, et une révision au plus 1000 au-dessus de l'actuelle (une révision énorme bloquerait les corrections suivantes). Il n'est pas encore signé : la confiance repose sur HTTPS et sur ce dépôt GitHub.
+- **Manifeste Twitch** (téléchargé toutes les 6 h) : adresses `https://` de `twitch.tv` uniquement, au plus 256 Kio, et une révision au plus 1000 au-dessus de l'actuelle (une révision énorme bloquerait les corrections suivantes). Il est **signé** (ed25519, clé hors ligne du mainteneur) : un fichier sans signature valide est refusé, même servi par GitHub. Tant que la version n'embarque pas de clé publique, aucun manifeste téléchargé n'est utilisé. Voir [ARCHITECTURE.md](ARCHITECTURE.md#manifeste-twitch-mises-à-jour-sans-recompiler) ; `engine.manifest_unsigned_ok` (jeton complet) lève la vérification pour une adresse personnalisée seulement.
 - **Mises à jour de l'app Windows** : installées seulement si leur signature ed25519 est valide (voir [DESKTOP.md](DESKTOP.md#mises-à-jour)).
 
 ### Exposer le serveur hors de Tailscale
@@ -165,5 +165,5 @@ Hors de portée : quelqu'un qui a déjà ton jeton complet, ou un accès à ton 
 
 - Sans Tailscale (réseau local seul), le trafic n'est pas chiffré : quelqu'un qui écoute le réseau voit le jeton.
 - Avec un proxy sortant (`engine.proxy`), les destinations des invités sont vérifiées par une résolution DNS juste avant l'envoi, mais c'est le proxy qui résout pour de bon.
-- Le manifeste Twitch n'est pas signé (voir plus haut).
+- Un manifeste Twitch signé reste un fichier public : la signature garantit qu'il vient du mainteneur, pas qu'il est récent (une révision plus ancienne ne remplace jamais l'actuelle).
 - Signaler une faille : [SECURITY.md](../SECURITY.md).

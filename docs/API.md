@@ -114,7 +114,7 @@ Les commandes s'exécutent en parallèle : utilisez `id` pour associer chaque r�
 | `stats` | `account?`, `channel_id?`, `from?`, `to?` (jours locaux `YYYY-MM-DD`), `group_by: "day"\|"hour"\|"channel"`, `tz_offset_minutes?` | `[{key, points, watch_minutes, drops}]`. Stocké par heure UTC ; les jours sont découpés selon `tz_offset_minutes` (décalage de celui qui demande, ex. `120` pour UTC+2), par défaut le fuseau de la machine du moteur. Une interface distante doit envoyer le sien |
 | `games_search` | `query`, `limit?` (10, max 25) | `[{id, name, slug?, box_art_url?}]`, meilleure correspondance d'abord (autocomplétion de la liste de jeux). Moins de 2 caractères : `[]`. Un invité : au plus `guest_limits.games_search_per_minute` par minute (`rate_limited`) |
 | `module_call` | `account`, `module`, `name`, `args?` | défini par le module |
-| `manifest_refresh` | — | `{updated, revision}` |
+| `manifest_refresh` | — | `{updated, revision}`. Erreur `manifest` si la signature du fichier téléchargé manque ou est invalide, ou si cette version n'a pas de clé publique de manifeste (voir [ARCHITECTURE.md](ARCHITECTURE.md#manifeste-twitch-mises-à-jour-sans-recompiler)) |
 | `update_check` | — | `{current, latest, update_available, url}`. Une notice `update` est aussi levée si besoin |
 | `notice_dismiss` | `id` | `{}` |
 | `guest_invite` | `name` | `{id, name, token}`. Crée un invité ; le jeton n'est donné qu'ici (seule son empreinte SHA-256 est gardée). Jeton complet uniquement |
@@ -141,7 +141,8 @@ Codes d'erreur : `not_found`, `invalid`, `auth`, `module`, `unavailable`, `timeo
 ## Réglages
 
 Portées :
-- `engine` : `max_watch_slots` (1-2), `proxy`, `manifest_url`, `manifest_auto_update`, `history_retention_days`, `update_check`, `releases_url`, `paused`, `active_hours`, `agent_enabled`, `api_allowed_hosts`, `guest_limits` ;
+- `engine` : `max_watch_slots` (1-2), `proxy`, `manifest_url`, `manifest_auto_update`, `manifest_unsigned_ok`, `history_retention_days`, `update_check`, `releases_url`, `paused`, `active_hours`, `agent_enabled`, `api_allowed_hosts`, `guest_limits` ;
+  - **Manifeste non signé** : `manifest_unsigned_ok` (défaut `false`) accepte un manifeste sans signature, seulement depuis un `manifest_url` autre que l'adresse officielle (tests, fork). Celui qui sert cette adresse décide alors des identifiants Twitch utilisés par le moteur. Jeton complet uniquement (refusé au jeton agent, comme `manifest_url`). L'adresse officielle est toujours vérifiée.
   - **Noms du serveur** : `api_allowed_hosts` (défaut `[]`), noms auxquels l'API répond en plus des adresses IP, de `localhost` et des noms locaux, par exemple le nom public d'un reverse proxy : `["tm.example.com"]`, ou `["*.example.com"]` pour ses sous-domaines. Sans schéma ni port. Les pages web de ces noms peuvent aussi agir sur l'API (CORS). Voir [SERVER.md](SERVER.md#exposer-le-serveur-hors-de-tailscale).
   - **Limites des invités** : `guest_limits` = `{"max_pending_logins": 2, "max_accounts": 5, "max_notify_targets": 10, "games_search_per_minute": 60}` (chacune ≥ 1). Par invité ; le propriétaire n'a aucune limite.
   - **Agents IA** : `agent_enabled` (défaut `false`). Désactivé, la route `/mcp` répond 404 et le jeton agent est refusé partout (403), y compris les WebSocket déjà ouverts. Seul le jeton complet peut le changer. Voir [AGENT.md](AGENT.md).

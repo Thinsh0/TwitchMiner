@@ -47,6 +47,44 @@ Tout se fait sur `main`. La CI construit chaque commit : vérifications (fmt, cl
 
 Publier une version : passer `version` du workspace (`Cargo.toml`) à la nouvelle valeur, `cargo update -w`, pousser sur `main`, attendre que la CI soit verte, puis lancer le workflow **Release** à la main (entrée `tag` = `v` + la version). Il ne recompile rien : il reprend les binaires de la CI de ce commit, crée le tag et la release, y joint les fichiers avec leur signature ed25519 (`<fichier>.sig`) et publie l'image Docker `ghcr.io/thinsh0/twitchminer` (amd64 + arm64). L'appli Windows propose ensuite la mise à jour d'elle-même (installée seulement si la signature est valide). Secrets requis : `RELEASE_SIGNING_KEY` ([DESKTOP.md](DESKTOP.md#signature-des-mises-à-jour-mainteneur)) et ceux de l'APK ([ANDROID.md](ANDROID.md)) ; sans eux, la Release échoue avant de publier quoi que ce soit.
 
+## Signer le manifeste Twitch
+
+`manifest/twitch.json` est téléchargé par toutes les installations (voir [ARCHITECTURE.md](ARCHITECTURE.md#manifeste-twitch-mises-à-jour-sans-recompiler)) et n'est accepté que signé par une clé ed25519 **hors ligne**, différente de `RELEASE_SIGNING_KEY` : elle ne va ni dans le dépôt ni dans les secrets GitHub. Les commandes marchent sous Linux, macOS et, sous Windows, dans **Git Bash** (Git for Windows fournit OpenSSL 3 : `C:\Program Files\Git\usr\bin\openssl.exe`, soit `/usr/bin/openssl` dans Git Bash ; un autre openssl se choisit avec `OPENSSL=/chemin/openssl`).
+
+Une seule fois :
+
+1. Créer la paire, **hors du dépôt** (le script refuse un chemin dans le dépôt ; `*.pem` est ignoré par git) :
+
+   ```bash
+   tools/sign-manifest.sh --generate ~/twitchminer-manifest.pem
+   ```
+
+   Équivalent à la main (Git Bash compris) :
+
+   ```bash
+   openssl genpkey -algorithm ed25519 -out ~/twitchminer-manifest.pem
+   # clé publique : les 32 octets bruts, en hexadécimal (64 caractères)
+   openssl pkey -in ~/twitchminer-manifest.pem -pubout -outform DER | tail -c 32 | od -An -v -tx1 | tr -d ' \n'; echo
+   ```
+
+   Garder la clé privée hors ligne, avec une copie de secours : perdue, les versions qui embarquent sa clé publique ne peuvent plus recevoir de manifeste (il faudra une nouvelle clé et une nouvelle version).
+2. Coller la clé publique (64 caractères hexadécimaux) dans `MANIFEST_PUBLIC_KEY` (`crates/twitch/src/manifest.rs`).
+3. Signer (étape suivante), commiter `manifest/twitch.json.sig` avec la constante, publier une version : seules les versions qui embarquent la clé acceptent les manifestes téléchargés.
+
+**À chaque modification de `manifest/twitch.json`** :
+
+1. incrémenter `revision` (sinon les installations ne la prennent pas) ;
+2. re-signer :
+
+   ```bash
+   tools/sign-manifest.sh ~/twitchminer-manifest.pem
+   ```
+
+   Le script refuse un fichier en fins de ligne Windows (CRLF : les octets signés ne seraient pas ceux publiés ; `.gitattributes` empêche git de les convertir) et une clé qui n'est pas celle de `MANIFEST_PUBLIC_KEY`. Il écrit `manifest/twitch.json.sig` (64 octets bruts, `openssl pkeyutl -sign -rawin`), le relit et le vérifie avec la clé publique dérivée, puis affiche la clé publique ;
+3. commiter et pousser `manifest/twitch.json` **et** `manifest/twitch.json.sig` dans le même commit. Un `.sig` oublié ou périmé fait échouer `cargo test` (donc la CI) dès que la clé est renseignée, et les installations refuseraient le fichier.
+
+Juste après un push, le cache de `raw.githubusercontent.com` (quelques minutes) peut servir un fichier et une signature de versions différentes : le moteur refuse alors le fichier et réessaie 6 h plus tard.
+
 ## Plateformes
 
 Windows 10/11 (x86_64), Linux (glibc ≥ 2.35, ou binaire statique musl x86_64 / aarch64), Docker (amd64, arm64), Android 8+ (arm64).

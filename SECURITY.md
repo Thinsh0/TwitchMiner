@@ -20,3 +20,5 @@ Seule la dernière version publiée reçoit des correctifs : l'app et le daemon 
 ## Modèle de menace
 
 Ce que TwitchMiner protège par défaut, et ce qu'il attend de son environnement : voir [docs/SERVER.md](docs/SERVER.md#garde-fous) (jetons, invités, agents IA, exposition hors Tailscale) et [docs/AGENT.md](docs/AGENT.md).
+
+Deux clés ed25519 distinctes, détenues par le mainteneur : celle des versions publiées (mises à jour de l'app Windows, [docs/DESKTOP.md](docs/DESKTOP.md#signature-des-mises-à-jour-mainteneur)) et celle, hors ligne, du manifeste Twitch téléchargé par le moteur ([docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#signer-le-manifeste-twitch)). Une signature absente ou invalide fait refuser le fichier.

@@ -827,19 +827,33 @@ impl Engine {
             Command::UpdateCheck => self.check_update().await,
             Command::Backup { path } => {
                 let path = match path {
-                    Some(p) => std::path::PathBuf::from(p),
+                    Some(p) => {
+                        let p = std::path::PathBuf::from(p);
+                        // Relative to what? The engine's working directory is rarely
+                        // the caller's.
+                        if !p.is_absolute() {
+                            return Err(ApiError::invalid("the backup path must be absolute"));
+                        }
+                        p
+                    }
                     None => {
                         let dir = self.shared.paths.root.join("backups");
-                        std::fs::create_dir_all(&dir).map_err(ApiError::internal)?;
+                        create_private_dir(&dir).map_err(ApiError::internal)?;
                         dir.join(format!(
                             "twitchminer-{}.db",
                             Utc::now().format("%Y%m%d-%H%M%S")
                         ))
                     }
                 };
-                db.backup_to(path.clone())
-                    .await
+                // The copy holds the Twitch tokens: readable by its owner only.
+                let created = create_private_file(&path)
                     .map_err(|e| ApiError::new("backup", e.to_string()))?;
+                if let Err(e) = db.backup_to(path.clone()).await {
+                    if created {
+                        let _ = std::fs::remove_file(&path);
+                    }
+                    return Err(ApiError::new("backup", e.to_string()));
+                }
                 Ok(json!({ "path": path.display().to_string() }))
             }
             Command::NoticeDismiss { id } => {
@@ -1085,6 +1099,38 @@ impl Engine {
         });
         serde_json::to_value(flow).map_err(ApiError::internal)
     }
+}
+
+/// Creates `dir` (and its parents); under Unix, `dir` itself is private (`0700`).
+fn create_private_dir(dir: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+/// Opens `path` for a backup, creating it empty if needed (`VACUUM INTO` refuses a
+/// file with content), private to its owner under Unix (`0600`). Returns whether
+/// the file was created.
+fn create_private_file(path: &std::path::Path) -> std::io::Result<bool> {
+    let existed = path.exists();
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    opts.open(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(!existed)
 }
 
 /// `true` when `latest` (e.g. `v1.2.0`) is a higher version than `current`.

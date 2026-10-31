@@ -140,19 +140,7 @@ impl Module for Predictions {
 
     fn validate_settings(&self, v: &Value) -> Result<(), String> {
         let s: PredictionSettings = serde_json::from_value(v.clone()).map_err(|e| e.to_string())?;
-        if !(s.percent > 0.0 && s.percent <= 100.0) {
-            return Err("percent must be above 0 and at most 100".into());
-        }
-        if !(1..=120).contains(&s.seconds_before_close) {
-            return Err("seconds_before_close must be between 1 and 120".into());
-        }
-        if s.min_odds < 0.0 || s.max_odds < 0.0 {
-            return Err("odds limits cannot be negative".into());
-        }
-        if s.max_odds > 0.0 && s.min_odds > s.max_odds {
-            return Err("min_odds must not be above max_odds".into());
-        }
-        Ok(())
+        check_settings(&s)
     }
 
     async fn run(&self, ctx: ModuleContext) -> anyhow::Result<()> {
@@ -468,6 +456,30 @@ async fn place(ctx: &ModuleContext, s: &PredictionSettings, event_id: &str, p: &
     }
 }
 
+/// Checks values serde accepts but the strategy cannot use (NaN and infinities can
+/// reach here from a Rust caller even though JSON has no such numbers).
+fn check_settings(s: &PredictionSettings) -> Result<(), String> {
+    if ![s.percent, s.min_odds, s.max_odds]
+        .iter()
+        .all(|x| x.is_finite())
+    {
+        return Err("percent, min_odds and max_odds must be finite numbers".into());
+    }
+    if !(s.percent > 0.0 && s.percent <= 100.0) {
+        return Err("percent must be above 0 and at most 100".into());
+    }
+    if !(1..=120).contains(&s.seconds_before_close) {
+        return Err("seconds_before_close must be between 1 and 120".into());
+    }
+    if s.min_odds < 0.0 || s.max_odds < 0.0 {
+        return Err("odds limits cannot be negative".into());
+    }
+    if s.max_odds > 0.0 && s.min_odds > s.max_odds {
+        return Err("min_odds must not be above max_odds".into());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -495,6 +507,23 @@ mod tests {
             (s.bets, s.wins, s.losses, s.refunds, s.net),
             (3, 1, 1, 1, 200)
         );
+    }
+
+    #[test]
+    fn settings_must_be_finite() {
+        let ok = PredictionSettings::default();
+        assert!(check_settings(&ok).is_ok());
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut s = ok.clone();
+            s.min_odds = bad;
+            assert!(check_settings(&s).is_err());
+            let mut s = ok.clone();
+            s.max_odds = bad;
+            assert!(check_settings(&s).is_err());
+            let mut s = ok.clone();
+            s.percent = bad;
+            assert!(check_settings(&s).is_err());
+        }
     }
 
     #[test]

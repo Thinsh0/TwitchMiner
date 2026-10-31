@@ -96,8 +96,16 @@ fn hide(v: &mut Value) {
 
 /// Masks secrets inside one settings document.
 pub fn redact_settings(scope: &str, doc: &mut Value) {
+    // Settings documents are objects (or null when deleted); anything else is hidden
+    // whole rather than indexed (indexing a non-object would panic).
+    if !doc.is_object() {
+        hide(doc);
+        return;
+    }
     if scope == tm_core::settings::ENGINE_SCOPE {
-        hide(&mut doc["proxy"]);
+        if let Some(proxy) = doc.get_mut("proxy") {
+            hide(proxy);
+        }
         if let Some(peers) = doc.get_mut("peers").and_then(Value::as_array_mut) {
             for p in peers {
                 if let Some(t) = p.get_mut("token") {
@@ -202,6 +210,33 @@ mod tests {
             )
             .is_ok()
         );
+    }
+
+    #[test]
+    fn odd_documents_never_panic() {
+        for mut doc in [
+            json!(null),
+            json!("x"),
+            json!(3),
+            json!([1, 2]),
+            json!(true),
+        ] {
+            let before = doc.clone();
+            redact_settings("engine", &mut doc);
+            redact_settings("module:notify", &mut doc);
+            assert!(doc.is_null() == before.is_null());
+            assert!(doc.is_null() || doc == "***");
+        }
+        let mut doc = json!({"targets": [1, "x", null, {"url": "https://h"}], "peers": "x"});
+        redact_settings("module:notify", &mut doc);
+        assert_eq!(doc["targets"][3]["url"], "***");
+        let mut env = json!({"type": "settings_changed", "scope": "engine", "value": "x"});
+        let event = Event::SettingsChanged {
+            scope: "engine".into(),
+            value: json!("x"),
+        };
+        redact_envelope(&event, &mut env);
+        assert_eq!(env["value"], "***");
     }
 
     #[test]

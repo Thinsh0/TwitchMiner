@@ -431,7 +431,15 @@ async fn ctl(
                 .await?,
         ),
         Ctl::Events => events(&url, &token).await?,
-        Ctl::Backup { path } => print(c.call(json!({"cmd": "backup", "path": path})).await?),
+        Ctl::Backup { path } => {
+            // The engine wants an absolute path: a relative one is taken from here.
+            let path = path.map(|p| {
+                std::path::absolute(&p)
+                    .map(|a| a.display().to_string())
+                    .unwrap_or(p)
+            });
+            print(c.call(json!({"cmd": "backup", "path": path})).await?)
+        }
     }
     Ok(())
 }

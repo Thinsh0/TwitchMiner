@@ -239,3 +239,51 @@ async fn the_engine_says_whether_watching_is_allowed() {
     engine.shutdown().await;
     let _ = std::fs::remove_dir_all(&paths.root);
 }
+
+#[tokio::test]
+async fn backups_are_private_and_need_an_absolute_path() {
+    tm_twitch::tls::install_crypto_provider();
+    let paths = temp_paths();
+    let engine = start(&paths).await;
+    let relative = engine
+        .execute(Command::Backup {
+            path: Some("backup.db".into()),
+        })
+        .await;
+    assert_eq!(relative.unwrap_err().code, "invalid");
+    let target = paths.root.join("copy.db");
+    let out = engine
+        .execute(Command::Backup {
+            path: Some(target.display().to_string()),
+        })
+        .await
+        .unwrap();
+    assert_eq!(out["path"], target.display().to_string());
+    assert!(std::fs::metadata(&target).unwrap().len() > 0);
+    let default = engine
+        .execute(Command::Backup { path: None })
+        .await
+        .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&target), 0o600);
+        let default = std::path::PathBuf::from(default["path"].as_str().unwrap());
+        assert_eq!(mode(&default), 0o600);
+        assert_eq!(mode(default.parent().unwrap()), 0o700);
+    }
+    #[cfg(not(unix))]
+    let _ = default;
+    // An existing copy is never overwritten.
+    assert!(
+        engine
+            .execute(Command::Backup {
+                path: Some(target.display().to_string()),
+            })
+            .await
+            .is_err()
+    );
+    engine.shutdown().await;
+    let _ = std::fs::remove_dir_all(&paths.root);
+}

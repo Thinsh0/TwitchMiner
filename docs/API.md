@@ -53,7 +53,11 @@ Si le client prend trop de retard (`RecvError::Lagged`), il reprend un snapshot.
 ## Serveur HTTP / WebSocket
 
 Adresse par défaut : `127.0.0.1:7878` (`--bind`). Authentification par jeton :
-- en-tête `Authorization: Bearer <token>`, ou paramètre `?token=<token>` (pratique pour le WebSocket d'un navigateur) ;
+- en-tête `Authorization: Bearer <token>`, partout (WebSocket compris : c'est ce que fait `tm_client::Remote`) ;
+- un navigateur, qui ne peut pas mettre d'en-tête sur un WebSocket, ouvre `/api/v1/ws` sans jeton et envoie d'abord `{"type": "auth", "token": "<token>"}` (dans les 10 s) ; voir [Messages WebSocket](#messages-websocket) ;
+- `?token=<token>` dans l'URL reste accepté pour les anciens clients, mais est **déconseillé** : les adresses finissent dans les journaux, l'historique du navigateur et les proxys. Le serveur note une fois dans son journal qu'un client l'utilise (sans le jeton) ;
+- après 10 mauvais jetons depuis une même adresse IP, elle est refusée 30 s (`429`, code `rate_limited`, en-tête `Retry-After`), puis le double à chaque récidive, jusqu'à 15 min. Jamais pour `127.0.0.1` / `::1` ;
+- un moteur intégré sans jeton (`ServerConfig.token: None`) ne démarre que sur une adresse de bouclage ;
 - le jeton est généré au premier lancement et stocké dans la base. Pour le lire : `twitchminer api-token`.
 - un second jeton, **agent** (`twitchminer api-token --agent`), donne un accès restreint pour les agents IA : certaines commandes sont refusées (`forbidden`) et les secrets sont masqués (`***`) dans l'état, les réglages et les événements. Détails : [AGENT.md](AGENT.md).
 - des jetons **invité** (`guest_invite`), un par personne : l'invité n'utilise le moteur que pour ses propres comptes Twitch (un ami sur ton serveur). Il ne reçoit que ce qui les concerne : l'état, les événements et les réponses sont filtrés par le serveur (comptes, connexions en cours, avis, réglages), pas seulement masqués par l'interface. Il peut ajouter des comptes (`login_start` : ils deviennent les siens), les configurer (`settings_set` sur `account:<le sien>/module:*` uniquement), les mettre en pause ou les retirer, lire leur historique et leurs statistiques. Tout le reste est refusé (`forbidden`) : autres comptes, réglages partagés et du moteur, invités, journal (`/logs` 403), sauvegardes, mises à jour, `/mcp`. Il lit les réglages partagés des modules (les valeurs par défaut de ses comptes), sauf les destinations de notifications, et ceux du moteur sans secrets. Un jeton révoqué (`guest_remove`) répond `unauthorized`.
@@ -62,10 +66,15 @@ Adresse par défaut : `127.0.0.1:7878` (`--bind`). Authentification par jeton :
 |---|---|
 | `GET /api/v1/health` | `{ok, version, api_version, seq, instance_id}`, sans authentification |
 | `GET /api/v1/state` | le `State` complet |
-| `POST /api/v1/command` | corps = une `Command`. Réponse `{"ok":true,"data":…}` ou `{"ok":false,"error":{"code","message"}}` |
+| `POST /api/v1/command` | corps = une `Command`, avec `Content-Type: application/json` (sinon `415`). Réponse `{"ok":true,"data":…}` ou `{"ok":false,"error":{"code","message"}}` |
 | `GET /api/v1/logs?n=200` | dernières lignes de journal `[{ts, level, target, message}]` |
 | `GET /api/v1/ws[?logs=1]` | flux temps réel, voir ci-dessous |
-| `POST /api/v1/mcp` | serveur MCP (JSON-RPC 2.0, Streamable HTTP en réponses JSON) pour les agents IA, voir [AGENT.md](AGENT.md) |
+| `POST /api/v1/mcp` | serveur MCP (JSON-RPC 2.0, Streamable HTTP en réponses JSON, `Content-Type: application/json`) pour les agents IA, voir [AGENT.md](AGENT.md) |
+
+**Navigateurs et autres sites** (toutes les routes) :
+- l'en-tête `Host` doit être une adresse IP, `localhost`, un nom local (un seul mot comme `mini-pc`, `*.local`, `*.lan`, `*.home.arpa`, `*.internal`, `*.ts.net`) ou un nom de `engine.api_allowed_hosts`, sinon `403` (protection contre le *DNS rebinding*) ;
+- une requête qui agit (tout sauf `GET`/`HEAD`, et l'ouverture d'un WebSocket) avec un en-tête `Origin` d'un autre site est refusée (`403`). Même site = même nom et même port que `Host`, ou un nom de `api_allowed_hosts`. Les clients natifs n'envoient pas d'`Origin` ;
+- les en-têtes CORS (`Access-Control-Allow-Origin`, avec `Vary: Origin`) ne sont renvoyés qu'à ces origines ; une requête préliminaire `OPTIONS` d'une autre origine reçoit `403`.
 
 ### Messages WebSocket
 
@@ -81,8 +90,10 @@ Du serveur vers le client :
 ```
 Du client vers le serveur :
 ```json
+{"type": "auth", "token": "<token>"}
 {"id": 7, "cmd": {"cmd": "settings_set", "scope": "module:drops", "value": {"games": ["Rust"]}, "merge": true}}
 ```
+`auth` : seulement si le jeton n'a pas été donné à l'ouverture (en-tête ou ancien `?token=`), et en premier message, dans les 10 s. Accepté, le serveur répond par le `snapshot` ; refusé, par `{"type": "error", "error": {"code": "unauthorized" | "rate_limited" | "forbidden", "message"}}`, puis ferme la connexion (code 1008). Un `auth` envoyé alors que la connexion est déjà authentifiée est ignoré.
 Les commandes s'exécutent en parallèle : utilisez `id` pour associer chaque réponse à sa commande.
 
 ## Commandes (`Command`, champ `cmd`)
@@ -92,7 +103,7 @@ Les commandes s'exécutent en parallèle : utilisez `id` pour associer chaque r�
 | `snapshot` | — | `State` |
 | `summary` | — | vue dérivée compacte (comptes, chaînes regardées, drop en cours avec progression et ETA, totaux) pour icône de barre système, notifications et widgets. En Rust : `tm_core::view::summary(&state, now)` |
 | `modules_list` | — | `[{id, name, description, default_settings, settings_schema}]` |
-| `login_start` | `profile?`, `guest?` (le compte ajouté appartiendra à cet invité ; imposé par le serveur pour un jeton invité) | `{flow_id, user_code, verification_uri, verification_uri_complete, expires_at}`. `verification_uri_complete` est la même page avec le code déjà rempli. La fin arrive en événement `login_finished` |
+| `login_start` | `profile?`, `guest?` (le compte ajouté appartiendra à cet invité ; imposé par le serveur pour un jeton invité) | `{flow_id, user_code, verification_uri, verification_uri_complete, expires_at}`. `verification_uri_complete` est la même page avec le code déjà rempli. La fin arrive en événement `login_finished`. Pour un invité : au plus `guest_limits.max_pending_logins` connexions en attente (`forbidden`) ; à la fin, un compte Twitch déjà présent sur le serveur (le propriétaire ou un autre invité) est refusé sans toucher à ses identifiants (`login_finished` avec `error`, sans `account`), de même au-delà de `guest_limits.max_accounts` comptes. Ses propres comptes peuvent toujours se reconnecter |
 | `login_cancel` | `flow_id` | `{cancelled}` |
 | `login_with_token` | `access_token`, `refresh_token?`, `profile?` | `{account}` |
 | `account_remove` | `account` | `{removed}` |
@@ -101,16 +112,16 @@ Les commandes s'exécutent en parallèle : utilisez `id` pour associer chaque r�
 | `settings_set` | `scope`, `value`, `merge?` | document enregistré (`value: null` supprime la portée) |
 | `history` | `account?`, `channel_id?`, `kinds?[]`, `before_id?`, `since?`, `limit?` | `[{id, seq, ts, account, kind, channel_id, event}]`, du plus récent au plus ancien |
 | `stats` | `account?`, `channel_id?`, `from?`, `to?` (jours locaux `YYYY-MM-DD`), `group_by: "day"\|"hour"\|"channel"`, `tz_offset_minutes?` | `[{key, points, watch_minutes, drops}]`. Stocké par heure UTC ; les jours sont découpés selon `tz_offset_minutes` (décalage de celui qui demande, ex. `120` pour UTC+2), par défaut le fuseau de la machine du moteur. Une interface distante doit envoyer le sien |
-| `games_search` | `query`, `limit?` (10, max 25) | `[{id, name, slug?, box_art_url?}]`, meilleure correspondance d'abord (autocomplétion de la liste de jeux). Moins de 2 caractères : `[]` |
+| `games_search` | `query`, `limit?` (10, max 25) | `[{id, name, slug?, box_art_url?}]`, meilleure correspondance d'abord (autocomplétion de la liste de jeux). Moins de 2 caractères : `[]`. Un invité : au plus `guest_limits.games_search_per_minute` par minute (`rate_limited`) |
 | `module_call` | `account`, `module`, `name`, `args?` | défini par le module |
 | `manifest_refresh` | — | `{updated, revision}` |
 | `update_check` | — | `{current, latest, update_available, url}`. Une notice `update` est aussi levée si besoin |
 | `notice_dismiss` | `id` | `{}` |
 | `guest_invite` | `name` | `{id, name, token}`. Crée un invité ; le jeton n'est donné qu'ici (seule son empreinte SHA-256 est gardée). Jeton complet uniquement |
 | `guest_remove` | `id` | `{removed}`. Révoque le jeton ; les comptes de l'invité restent. Jeton complet uniquement |
-| `backup` | `path?` | `{path}`. Copie cohérente de la base, faisable à chaud. Par défaut dans `<data>/backups/`. Pour restaurer : arrêter, puis remplacer `twitchminer.db` |
+| `backup` | `path?` | `{path}`. Copie cohérente de la base, faisable à chaud. Par défaut dans `<data>/backups/`. `path` doit être **absolu** (sinon `invalid`) et ne pas désigner un fichier non vide. Sous Unix la copie est créée en `0600` (elle contient les jetons Twitch) et `backups/` en `0700`. Pour restaurer : arrêter, puis remplacer `twitchminer.db` |
 
-Codes d'erreur : `not_found`, `invalid`, `auth`, `module`, `unavailable`, `timeout`, `manifest`, `internal`, `bad_command`, `unauthorized`, `forbidden` (jeton agent ou invité).
+Codes d'erreur : `not_found`, `invalid`, `auth`, `module`, `unavailable`, `timeout`, `manifest`, `internal`, `bad_command`, `bad_request` (corps illisible, `Content-Type` manquant), `unauthorized`, `forbidden` (jeton agent ou invité, autre site, nom d'hôte inconnu), `rate_limited` (trop de mauvais jetons, trop de recherches d'un invité).
 
 ### Actions des modules (`module_call`)
 
@@ -130,12 +141,15 @@ Codes d'erreur : `not_found`, `invalid`, `auth`, `module`, `unavailable`, `timeo
 ## Réglages
 
 Portées :
-- `engine` : `max_watch_slots` (1-2), `proxy`, `manifest_url`, `manifest_auto_update`, `history_retention_days`, `update_check`, `releases_url`, `paused`, `active_hours`, `agent_enabled` ;
+- `engine` : `max_watch_slots` (1-2), `proxy`, `manifest_url`, `manifest_auto_update`, `history_retention_days`, `update_check`, `releases_url`, `paused`, `active_hours`, `agent_enabled`, `api_allowed_hosts`, `guest_limits` ;
+  - **Noms du serveur** : `api_allowed_hosts` (défaut `[]`), noms auxquels l'API répond en plus des adresses IP, de `localhost` et des noms locaux, par exemple le nom public d'un reverse proxy : `["tm.example.com"]`, ou `["*.example.com"]` pour ses sous-domaines. Sans schéma ni port. Les pages web de ces noms peuvent aussi agir sur l'API (CORS). Voir [SERVER.md](SERVER.md#exposer-le-serveur-hors-de-tailscale).
+  - **Limites des invités** : `guest_limits` = `{"max_pending_logins": 2, "max_accounts": 5, "max_notify_targets": 10, "games_search_per_minute": 60}` (chacune ≥ 1). Par invité ; le propriétaire n'a aucune limite.
   - **Agents IA** : `agent_enabled` (défaut `false`). Désactivé, la route `/mcp` répond 404 et le jeton agent est refusé partout (403), y compris les WebSocket déjà ouverts. Seul le jeton complet peut le changer. Voir [AGENT.md](AGENT.md).
   - **Pause globale** : `settings_set engine {"paused": true}`. Rien n'est regardé (`watch_stopped{cause:"paused"}`), mais les modules continuent de suivre et de récupérer les bonus.
   - **Plusieurs instances** : `role` (`primary` | `secondary`) et `peers: [{name?, url, token?}]`. Un secondaire passe en `standby` les comptes qu'un pair mine déjà, et les reprend si le pair disparaît. Voir [SERVER.md](SERVER.md).
   - **Plages horaires** : `{"active_hours": [{"days": [1,2,3,4,5], "start": "18:00", "end": "02:00"}]}`. Heure locale, `days` en ISO (1 = lundi), une fin avant le début passe minuit, `days` vide = tous les jours. Hors plage : `cause:"outside active hours"`.
 - `guests` : `{"<id>": {name, token_sha256, accounts: [ids], created_at}}`, écrite par `guest_invite`, `guest_remove`, la fin d'un `login_start` d'invité (le compte s'ajoute à `accounts`, et reçoit `account:<id>/module:notify` `{"targets": []}` pour ne pas hériter des destinations du propriétaire) et `account_remove`. Jamais envoyée aux agents ni aux invités.
+- **Notifications d'un invité** (`settings_set` sur `account:<le sien>/module:notify`) : le serveur calcule le document complet (fusion comprise) et l'enregistre tel quel (`merge` ignoré). Il garde toujours une liste `targets` (sinon les destinations du propriétaire seraient héritées ; `value: null` devient `{"targets": []}`), jamais de `firebase_key` (refusée si envoyée, ses téléphones utilisent celle du serveur). Chaque destination `discord`, `ntfy` ou `webhook` doit être une adresse `https://` publique : pas d'IP privée, de bouclage, link-local, CGNAT `100.64.0.0/10` (Tailscale), ULA `fc00::/7`, ni de nom local (`localhost`, un seul mot, `*.local`, `*.ts.net`…) ; pas d'`headers` ; au plus `guest_limits.max_notify_targets` destinations ; un type inconnu est refusé (`forbidden`). À l'envoi, le module revérifie l'adresse, refuse un nom qui se résout vers une adresse privée et ne suit aucune redirection ; l'invité ne voit qu'une erreur générique.
 - `module:<id>` : réglages partagés par tous les comptes ;
 - `account:<account_id>/module:<id>` : surcharge pour un compte.
 
@@ -170,11 +184,13 @@ Chaque portée a un **JSON Schema** (`settings_get(...).schema`, ou `modules_lis
 //   confirmation d'une nouvelle destination (envoyée dès qu'elle apparaît dans targets),
 //   auth_required et les alertes at_risk / will_miss / not_linked ; pour tout si all_urgent
 // targets: {"kind":"discord","webhook_url"} | {"kind":"ntfy","url","token?"} | {"kind":"telegram","bot_token","chat_id"} | {"kind":"webhook","url","token?","headers?"}
+//   bot_token : <chiffres>:<lettres, chiffres, - ou _> (sinon settings_set refusé)
 //   | {"kind":"fcm","token","device","name"} : un téléphone avec l'appli, ajouté par l'appli elle-même
 //   (jeton Firebase ; device = ANDROID_ID : un nouveau jeton du même téléphone remplace l'ancien)
 // fcm : API HTTP v1 de Firebase Cloud Messaging, avec firebase_key (JWT RS256 → jeton d'accès
 //   Google, gardé ~55 min) ; message « notification » (affiché par Android même appli fermée),
-//   canal urgent ou events. firebase_key invalide → settings_set refusé. Seule la clé du projet
+//   canal urgent ou events. firebase_key invalide → settings_set refusé (aussi : project_id hors
+//   [a-z0-9-], token_uri ailleurs que sur https://oauth2.googleapis.com/). Seule la clé du projet
 //   Firebase avec lequel l'APK a été construit peut l'atteindre (UNREGISTERED : appli désinstallée
 //   ou données effacées, ré-ajouter le téléphone). firebase_key est masquée ("***") pour l'agent et,
 //   héritée du propriétaire, pour les invités

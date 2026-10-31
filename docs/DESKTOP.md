@@ -25,8 +25,34 @@ Si le serveur ne répond pas, l'écran de connexion dit pourquoi en clair : adre
 
 L'app vérifie la dernière version publiée sur GitHub au démarrage puis toutes les 6 heures (sauf si « Vérifier les mises à jour » est coupé dans les réglages du moteur), et quand on clique « Rechercher des mises à jour » (Réglages › Avancé › À propos). Une nouvelle version ajoute une carte dans « À faire » :
 
-- **Windows** : « Mettre à jour » télécharge `TwitchMiner-vX.Y.Z-windows.exe`, vérifie sa taille et son empreinte SHA-256 (publiée par GitHub), remplace l'exe en place (l'ancien est renommé `.old` puis supprimé au démarrage suivant) et relance l'app (`--updated` : la nouvelle attend que l'ancienne soit fermée). Le dossier de l'exe doit être modifiable par l'utilisateur.
+- **Windows** : « Mettre à jour » télécharge `TwitchMiner-vX.Y.Z-windows.exe` et sa signature `TwitchMiner-vX.Y.Z-windows.exe.sig`, vérifie sa taille, son empreinte SHA-256 (publiée par GitHub) et sa **signature ed25519** avec la clé publique intégrée au programme, remplace l'exe en place (l'ancien est renommé `.old` puis supprimé au démarrage suivant) et relance l'app (`--updated` : la nouvelle attend que l'ancienne soit fermée). Le dossier de l'exe doit être modifiable par l'utilisateur. S'il manque quoi que ce soit (signature, empreinte, clé publique dans cette version) ou si une vérification échoue, rien n'est installé : seule la page de la version est proposée.
 - **Linux** : « Télécharger » ouvre la page de la version.
+
+### Signature des mises à jour (mainteneur)
+
+Une mise à jour n'est installée automatiquement que si sa signature correspond à la clé publique `RELEASE_PUBLIC_KEY` de `crates/ui/src/update.rs`. Tant que cette constante est vide (cas du dépôt tel quel), l'app ne s'installe jamais elle-même : elle propose la page de la version. Pour l'activer, une seule fois :
+
+1. Créer la paire de clés, **hors du dépôt** (jamais commitée) :
+
+   ```bash
+   openssl genpkey -algorithm ed25519 -out release-signing.pem
+   chmod 600 release-signing.pem
+   # clé publique : les 32 octets bruts, en hexadécimal (64 caractères)
+   openssl pkey -in release-signing.pem -pubout -outform DER | tail -c 32 | od -An -tx1 | tr -d ' \n'; echo
+   ```
+
+2. Ajouter le secret GitHub **`RELEASE_SIGNING_KEY`** (Settings › Secrets and variables › Actions) avec tout le contenu de `release-signing.pem` (lignes `-----BEGIN PRIVATE KEY-----` comprises). Garder une copie hors ligne : perdue, les versions déjà installées ne pourront plus se mettre à jour seules.
+3. Coller la clé publique (64 caractères hexadécimaux) dans `RELEASE_PUBLIC_KEY`, puis publier une version comme d'habitude.
+
+Le workflow **Release** échoue si le secret manque, ou si la clé publique du code n'est pas celle du secret. Il signe chaque fichier publié (`<fichier>.sig`, 64 octets bruts). Seules les versions construites avec la clé publique sauront vérifier (et donc installer) les suivantes : la première version qui l'intègre s'installe encore à la main.
+
+Vérifier un fichier à la main :
+
+```bash
+python3 -c "import sys; sys.stdout.buffer.write(bytes.fromhex('302a300506032b6570032100' + sys.argv[1]))" "<clé publique hex>" > release.der
+openssl pkey -pubin -inform DER -in release.der -out release.pub
+openssl pkeyutl -verify -pubin -inkey release.pub -rawin -in TwitchMiner-vX.Y.Z-windows.exe -sigfile TwitchMiner-vX.Y.Z-windows.exe.sig
+```
 
 Avec un moteur distant, l'avis « mise à jour » du moteur concerne le serveur : avec Docker, récupérer la nouvelle image (bouton *Update* de Dockge, ou `docker compose pull && docker compose up -d`). En local, le moteur fait partie de l'app : seule la carte de l'app est montrée.
 

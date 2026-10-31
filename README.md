@@ -76,6 +76,7 @@ Puis connecte l'appli de bureau ou Android au serveur (« Serveur distant »). G
 | [Agents IA](docs/AGENT.md) | piloter TwitchMiner depuis un agent (MCP) |
 | [Développement](docs/DEVELOPMENT.md) | compiler, organisation du code, CI et versions |
 | [Architecture](docs/ARCHITECTURE.md) · [API](docs/API.md) · [Modules](docs/MODULES.md) | pour aller plus loin |
+| [Sécurité](SECURITY.md) | signaler une faille, ce qui est protégé ([garde-fous](docs/SERVER.md#garde-fous)) |
 
 ## État du projet
 

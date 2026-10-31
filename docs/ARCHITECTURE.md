@@ -94,15 +94,15 @@ Twitch change régulièrement les *hashes* de ses requêtes GQL persistées et s
 - le moteur vérifie toutes les 6 h `engine.manifest_url` (par défaut le fichier de ce dépôt sur la branche par défaut) et adopte toute révision plus récente et valide, mise en cache dans la base ;
 - quand Twitch casse un hash : on corrige `manifest/twitch.json`, on incrémente `revision`, on pousse, et toutes les installations se corrigent seules.
 
-Le schéma est validé (hashes de 64 caractères hexadécimaux, profil par défaut présent…). Un manifeste ne contient que des identifiants, jamais d'URL arbitraire ni de code.
+Le schéma est validé (hashes de 64 caractères hexadécimaux, profil par défaut présent, `spade_url` en `https://` sur `twitch.tv`, `client_url` en `https://`…). Un manifeste ne contient que des identifiants, jamais d'URL arbitraire ni de code. Une révision plus de 1000 au-dessus de l'actuelle est refusée (une révision énorme bloquerait toutes les corrections suivantes), de même qu'un fichier de plus de 256 Kio ; la copie en cache dans la base est revalidée au démarrage. Le manifeste n'est pas signé : la confiance repose sur HTTPS et sur ce dépôt (une signature ed25519, comme pour les mises à jour de l'app, est une suite possible).
 
 ## Robustesse
 
 - **GQL** : lots de 30 requêtes, 6 requêtes concurrentes au maximum par compte, retry avec backoff sur les erreurs transitoires (`service timeout`…). Les erreurs partielles sont tolérées (champ à `null`). `PersistedQueryNotFound` est une erreur distincte, qui signale un manifeste périmé.
 - **Réseau** : un seul pool HTTP. TLS par rustls/ring avec les racines Mozilla + les racines du système (fonctionne derrière un proxy d'entreprise). Proxy HTTP configurable, y compris pour les WebSockets (tunnel `CONNECT`).
 - **Drops** : si la progression ne bouge pas pendant 8 min, la chaîne est écartée 30 min. Après 2 blocages sur la même campagne, la campagne est écartée 2 h (cas typique : compte de jeu non lié). Un rafraîchissement des campagnes qui échoue est réessayé après 30 s, puis jusqu'à 15 min.
-- **Persistance** : SQLite en WAL, toutes les écritures sur un thread dédié, donc dans l'ordre des événements. Checkpoint à l'arrêt, sauvegarde à chaud (`backup`). Sous Unix, le dossier de données est réservé à son propriétaire (`0700`) : la base contient les jetons.
-- **Notifications** : envoyées à part, dans l'ordre, sans retenir le moteur. Une limite de débit (429) attend le délai demandé par le service (au plus 1 min), une erreur réseau ou serveur est réessayée ; 3 essais par cible.
+- **Persistance** : SQLite en WAL, toutes les écritures sur un thread dédié, donc dans l'ordre des événements. Checkpoint à l'arrêt, sauvegarde à chaud (`backup`). Sous Unix, le dossier de données est réservé à son propriétaire (`0700`), comme les sauvegardes (`0600`) : la base contient les jetons. Sous Windows, le dossier par défaut hérite des droits du profil utilisateur (voir [SERVER.md](SERVER.md#ce-qui-est-protégé-par-défaut)).
+- **Notifications** : envoyées à part, dans l'ordre, sans retenir le moteur. Une limite de débit (429) attend le délai demandé par le service (au plus 1 min), une erreur réseau ou serveur est réessayée ; 3 essais par cible. Celles d'un compte invité passent par un client à part (`Net::guarded`, `tm_twitch::netguard`) : adresses `https://` publiques seulement, vérifiées à la résolution DNS, sans redirection.
 - **Sans PubSub** (si Twitch le coupait) : le minage continue grâce aux interrogations périodiques.
   - En ligne / hors ligne : toutes les 5 min.
   - Solde et coffres bonus des chaînes regardées : toutes les 4 min.

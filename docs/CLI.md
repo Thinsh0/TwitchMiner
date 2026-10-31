@@ -26,7 +26,7 @@ twitchminer ctl call drops plan       # le plan des drops
 twitchminer ctl call drops refresh    # relire les campagnes maintenant
 twitchminer ctl events                # flux d'événements en direct
 twitchminer ctl history               # historique
-twitchminer ctl backup                # copie cohérente de la base
+twitchminer ctl backup [chemin]       # copie cohérente de la base (0600 ; un chemin relatif part du dossier courant)
 twitchminer ctl raw '{"cmd": "guest_invite", "name": "Sam"}'   # n'importe quelle commande de l'API
 ```
 

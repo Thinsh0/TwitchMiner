@@ -30,7 +30,9 @@ Une action refusée renvoie l'erreur `forbidden`.
 ## Transport 1 : HTTP (agent sur le mini PC ou ailleurs dans Tailscale)
 
 - URL : `http://127.0.0.1:7878/api/v1/mcp`, ou `http://<ip-tailscale>:7878/api/v1/mcp` si l'agent tourne sur une autre machine ;
-- en-tête : `Authorization: Bearer <jeton agent>`.
+- en-têtes : `Authorization: Bearer <jeton agent>` et `Content-Type: application/json` (obligatoire : sans lui, `415`) ;
+- l'adresse doit être une IP, `localhost` ou un nom local (MagicDNS, `*.local`…) ; un autre nom (reverse proxy) doit figurer dans `engine.api_allowed_hosts` (voir [SERVER.md](SERVER.md#garde-fous)) ;
+- un agent qui se trompe de jeton 10 fois de suite depuis une autre machine est bloqué 30 s, puis plus longtemps (`429`, `Retry-After`) ; jamais en local (`127.0.0.1`).
 
 Forme générique (la syntaxe exacte dépend de l'agent, voir sa doc « MCP servers ») :
 
@@ -103,6 +105,7 @@ twitchminer ctl set module:notify '{
 - corps envoyé : `{"text": "<message lisible>", "event": {...}}` (l'événement complet, ex. `drop_alert` avec `kind`, `campaign`, `game`, `ends_at`, `missing_minutes`, `link_url`) ;
 - `token` → en-tête `Authorization: Bearer <secret>` ; `headers` pour d'autres en-têtes si l'agent en demande ;
 - l'URL et le chemin exacts dépendent de l'agent : voir sa doc « webhook ».
+- une adresse locale (`http://127.0.0.1:…`, IP Tailscale) n'est possible que pour tes propres comptes : les destinations des comptes d'un invité doivent être des adresses `https://` publiques, sans `headers`.
 - `twitchminer ctl call notify test --account <id>` envoie un message de test.
 
 Sans webhook, l'agent peut aussi passer régulièrement via sa propre tâche planifiée (`status`, `get_drop_plan`).

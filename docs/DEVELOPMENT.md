@@ -43,9 +43,9 @@ docs/            documentation (en français)
 
 ## CI et versions
 
-Tout se fait sur `main`. La CI construit chaque commit : vérifications (fmt, clippy, tests, doc), binaires Windows, Linux gnu / musl / aarch64-musl, moteur Android et APK.
+Tout se fait sur `main`. La CI construit chaque commit : vérifications (fmt, clippy, tests, doc), avis de sécurité des dépendances (`cargo deny check advisories bans sources`, configuré par `deny.toml` : un nouvel avis fait échouer la CI, donc la Release ; mettre à jour la crate avec `cargo update -p <crate>`, ou ajouter l'avis à `ignore` dans `deny.toml` avec la raison s'il n'a pas encore de correctif), binaires Windows, Linux gnu / musl / aarch64-musl, moteur Android et APK. Dependabot propose chaque semaine les mises à jour des crates, des GitHub Actions et des images Docker (`.github/dependabot.yml`).
 
-Publier une version : passer `version` du workspace (`Cargo.toml`) à la nouvelle valeur, `cargo update -w`, pousser sur `main`, attendre que la CI soit verte, puis lancer le workflow **Release** à la main (entrée `tag` = `v` + la version). Il ne recompile rien : il reprend les binaires de la CI de ce commit, crée le tag et la release, y joint les fichiers et publie l'image Docker `ghcr.io/thinsh0/twitchminer` (amd64 + arm64). L'appli Windows propose ensuite la mise à jour d'elle-même.
+Publier une version : passer `version` du workspace (`Cargo.toml`) à la nouvelle valeur, `cargo update -w`, pousser sur `main`, attendre que la CI soit verte, puis lancer le workflow **Release** à la main (entrée `tag` = `v` + la version). Il ne recompile rien : il reprend les binaires de la CI de ce commit, crée le tag et la release, y joint les fichiers avec leur signature ed25519 (`<fichier>.sig`) et publie l'image Docker `ghcr.io/thinsh0/twitchminer` (amd64 + arm64). L'appli Windows propose ensuite la mise à jour d'elle-même (installée seulement si la signature est valide). Secrets requis : `RELEASE_SIGNING_KEY` ([DESKTOP.md](DESKTOP.md#signature-des-mises-à-jour-mainteneur)) et ceux de l'APK ([ANDROID.md](ANDROID.md)) ; sans eux, la Release échoue avant de publier quoi que ce soit.
 
 ## Plateformes
 

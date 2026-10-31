@@ -17,12 +17,23 @@ Le téléphone doit pouvoir joindre le serveur : même réseau, ou Tailscale con
 
 **Mettre à jour** : installer l'APK de la nouvelle release par-dessus (les réglages sont gardés).
 
-**Signature** : la CI signe l'APK avec la clé du dépôt si les secrets `ANDROID_KEYSTORE` (keystore en base64), `ANDROID_KEYSTORE_PASSWORD` et `ANDROID_KEY_ALIAS` existent, sinon avec la clé de test publique `packaging/android/debug.keystore` (n'importe qui peut signer avec : suffisant pour un usage perso, pas pour diffuser). Passer d'une clé à l'autre oblige à désinstaller l'appli une fois. Pour créer une clé privée :
+**Signature** : la CI signe l'APK avec la clé du dépôt si les secrets `ANDROID_KEYSTORE` (keystore en base64), `ANDROID_KEYSTORE_PASSWORD` et `ANDROID_KEY_ALIAS` existent, sinon avec la clé de test publique `packaging/android/debug.keystore` (n'importe qui peut signer avec : suffisant pour essayer une pull request ou un build perso, jamais pour diffuser). Le workflow **Release** refuse de publier un APK signé avec la clé de test : sans ces trois secrets, aucune release ne sort (il faut aussi `RELEASE_SIGNING_KEY`, voir [DESKTOP.md](DESKTOP.md#signature-des-mises-à-jour-mainteneur)). Passer d'une clé à l'autre oblige à désinstaller l'appli une fois. Pour créer une clé privée :
 
 ```bash
 keytool -genkeypair -keystore release.keystore -alias twitchminer -keyalg RSA -keysize 2048 -validity 10950
 base64 -w0 release.keystore   # valeur du secret ANDROID_KEYSTORE
 ```
+
+Secrets GitHub (Settings › Secrets and variables › Actions) :
+
+| Secret | Contenu | Sans lui |
+|---|---|---|
+| `ANDROID_KEYSTORE` | le keystore en base64 | APK signé avec la clé de test : la Release échoue |
+| `ANDROID_KEYSTORE_PASSWORD` | son mot de passe | idem |
+| `ANDROID_KEY_ALIAS` | l'alias de la clé (`twitchminer` ci-dessus) | idem |
+| `GOOGLE_SERVICES_JSON` | `google-services.json` du projet Firebase (facultatif) | APK sans notifications Firebase |
+
+Ne jamais commiter le keystore privé ni son mot de passe : `build-apk.sh` les lit dans l'environnement.
 
 **Construire** : cargo-ndk pour la bibliothèque Rust, puis Gradle (code Java et Firebase), puis apksigner.
 

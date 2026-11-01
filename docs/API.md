@@ -179,6 +179,8 @@ Chaque portée a un **JSON Schema** (`settings_get(...).schema`, ou `modules_lis
 //   ou données effacées, ré-ajouter le téléphone). firebase_key est masquée ("***") pour l'agent et,
 //   héritée du propriétaire, pour les invités
 // webhook : POST {"text", "event"} ; token → "Authorization: Bearer …" ; headers = en-têtes en plus (réveil d'un agent IA)
+// drop_claimed : seulement pour les jeux de la liste des drops du compte (tous si elle est vide),
+//   et une fois par drop sur 24 h (Twitch laisse gagner certains drops à chaque heure regardée)
 // 3 essais par cible ; un 429 attend son Retry-After (ou le retry_after de Discord / Telegram), au plus 1 min
 ```
 </details>

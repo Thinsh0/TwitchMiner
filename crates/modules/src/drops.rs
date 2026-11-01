@@ -16,7 +16,7 @@ use tm_twitch::pubsub::topics;
 use tm_twitch::{PubSubEvent, PubSubMessage};
 use tokio::time::Instant;
 
-mod plan;
+pub(crate) mod plan;
 
 use plan::{Availability, Plan, Status, norm};
 

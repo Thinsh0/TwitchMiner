@@ -133,6 +133,9 @@ impl Module for Notify {
     async fn run(&self, ctx: ModuleContext) -> anyhow::Result<()> {
         let mut rx = ctx.events();
         let mut settings: NotifySettings = ctx.settings()?;
+        // Drops already announced, and when (see REPEAT_QUIET).
+        let mut announced: std::collections::HashMap<String, std::time::Instant> =
+            Default::default();
         let http = ctx.gql().net().http.clone();
         // Sending happens apart, in order: a slow or rate-limited service never holds
         // up the events (the queue ends when this module stops).
@@ -240,6 +243,17 @@ impl Module for Notify {
             if settings.targets.is_empty() || !concerns_me(&ctx, &env) {
                 continue;
             }
+            if let Event::DropClaimed { drop_id, game, .. } = &env.event {
+                // A drop of a game outside the list was claimed in passing (the channel
+                // watched for points streamed it): not worth a message. Nor is the same
+                // drop again (Twitch lets some be earned every hour of watching).
+                let now = std::time::Instant::now();
+                announced.retain(|_, t| now.duration_since(*t) < REPEAT_QUIET);
+                if !wanted_game(&ctx, game) || announced.contains_key(drop_id) {
+                    continue;
+                }
+                announced.insert(drop_id.clone(), now);
+            }
             let Some(text) = format_event(&ctx, &settings, &env) else {
                 continue;
             };
@@ -253,6 +267,29 @@ impl Module for Notify {
             );
         }
     }
+}
+
+/// A drop claimed again within this time is not announced again.
+const REPEAT_QUIET: Duration = Duration::from_secs(24 * 3600);
+
+/// `game` is in the account's drops list, or the list is empty (every game wanted).
+fn wanted_game(ctx: &ModuleContext, game: &str) -> bool {
+    let games = ctx.store().read(|s| {
+        tm_core::settings::module_effective(s, ctx.account_id(), "drops", &json!({}))["games"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+    });
+    games_include(&games, game)
+}
+
+fn games_include(games: &[Value], game: &str) -> bool {
+    let game = crate::drops::plan::norm(game);
+    games.is_empty()
+        || games
+            .iter()
+            .filter_map(Value::as_str)
+            .any(|g| crate::drops::plan::norm(g) == game)
 }
 
 /// Notifications waiting to be sent, at most.
@@ -700,6 +737,14 @@ mod tests {
                 .validate_settings(&json!(NotifySettings::default()))
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn claimed_drops_of_other_games_are_not_announced() {
+        let list = [json!("Overwatch"), json!("Cyberpunk 2077")];
+        assert!(games_include(&list, "overwatch "));
+        assert!(!games_include(&list, "Dead by Daylight"));
+        assert!(games_include(&[], "Dead by Daylight"));
     }
 
     #[test]
